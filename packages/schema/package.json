@@ -1,0 +1,28 @@
+{
+  "name": "@celsian/schema",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "peerDependencies": {
+    "@sinclair/typebox": ">=0.30.0",
+    "zod": ">=3.0.0",
+    "valibot": ">=0.30.0"
+  },
+  "peerDependenciesMeta": {
+    "@sinclair/typebox": { "optional": true },
+    "zod": { "optional": true },
+    "valibot": { "optional": true }
+  },
+  "license": "MIT"
+}

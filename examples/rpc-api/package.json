@@ -1,0 +1,13 @@
+{
+  "name": "example-rpc-api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npx tsx src/index.ts"
+  },
+  "dependencies": {
+    "celsian": "workspace:*",
+    "@celsian/rpc": "workspace:*",
+    "@sinclair/typebox": "^0.34.0"
+  }
+}

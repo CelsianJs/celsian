@@ -1,0 +1,22 @@
+name = "celsian-worker"
+main = "dist/index.js"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+# KV namespace binding — create with:
+#   wrangler kv namespace create CACHE
+#   wrangler kv namespace create CACHE --preview
+[[kv_namespaces]]
+binding = "CACHE"
+id = "your-kv-namespace-id"
+preview_id = "your-kv-preview-namespace-id"
+
+# Environment variables
+[vars]
+ENVIRONMENT = "production"
+
+# Development overrides
+[env.dev]
+name = "celsian-worker-dev"
+[env.dev.vars]
+ENVIRONMENT = "development"

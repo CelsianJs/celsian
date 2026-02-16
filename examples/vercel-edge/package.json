@@ -1,0 +1,9 @@
+{
+  "name": "example-vercel-edge",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@celsian/core": "workspace:*",
+    "@celsian/adapter-vercel": "workspace:*"
+  }
+}

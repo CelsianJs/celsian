@@ -1,0 +1,12 @@
+{
+  "name": "example-rest-api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npx tsx src/index.ts"
+  },
+  "dependencies": {
+    "celsian": "workspace:*",
+    "@sinclair/typebox": "^0.34.0"
+  }
+}

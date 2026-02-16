@@ -1,0 +1,11 @@
+{
+  "name": "example-basic",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npx tsx src/index.ts"
+  },
+  "dependencies": {
+    "celsian": "workspace:*"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "celsian-crud-api-example",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@celsian/core": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0",
+    "vitest": "^3.0.0"
+  }
+}

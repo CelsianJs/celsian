@@ -1,0 +1,19 @@
+{
+  "name": "@celsian/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "celsian": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@celsian/core": "workspace:*",
+    "@celsian/schema": "workspace:*"
+  },
+  "license": "MIT"
+}

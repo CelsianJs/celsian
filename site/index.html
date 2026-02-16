@@ -1,0 +1,1334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CelsianJS — The Backend Framework Built on Standards</title>
+  <meta name="description" content="Hook-based server runtime, type-safe RPC, real-time streaming, caching, and task queues — all on Web Standard APIs. 590 tests. Zero lock-in.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --sans: 'Inter', -apple-system, sans-serif;
+      --mono: 'JetBrains Mono', monospace;
+      --text: #1c1917;
+      --text-secondary: #57534e;
+      --text-muted: #a8a29e;
+      --bg: #fafaf9;
+      --bg-alt: #ffffff;
+      --bg-dark: #1c1917;
+      --accent: #d97706;
+      --accent-light: #f59e0b;
+      --accent-subtle: #fffbeb;
+      --accent-glow: rgba(217, 119, 6, 0.15);
+      --border: #e7e5e4;
+      --code-bg: #f5f5f4;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { font-size: 16px; scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--sans);
+      color: var(--text);
+      background: var(--bg);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes shimmer {
+      0% { background-position: -200% center; }
+      100% { background-position: 200% center; }
+    }
+
+    .animate { animation: fadeUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
+    .delay-1 { animation-delay: 0.1s; }
+    .delay-2 { animation-delay: 0.2s; }
+    .delay-3 { animation-delay: 0.3s; }
+    .delay-4 { animation-delay: 0.4s; }
+
+    /* Nav */
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      padding: 16px 32px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(28, 25, 23, 0.97);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      z-index: 100;
+    }
+
+    .logo {
+      font-weight: 800;
+      font-size: 20px;
+      text-decoration: none;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      letter-spacing: -0.02em;
+    }
+
+    .logo-accent { color: var(--accent-light); }
+
+    .logo-badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      background: var(--accent);
+      color: white;
+      border-radius: 4px;
+    }
+
+    .nav-links { display: flex; gap: 32px; }
+
+    .nav-links a {
+      color: rgba(255,255,255,0.5);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover { color: #fff; }
+
+    /* Hero */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      padding: 120px 32px 80px;
+      background: var(--bg-dark);
+      color: #fff;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: -300px;
+      right: -200px;
+      width: 800px;
+      height: 800px;
+      background: radial-gradient(circle, rgba(245, 158, 11, 0.12) 0%, rgba(217, 119, 6, 0.05) 40%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .hero::after {
+      content: '';
+      position: absolute;
+      bottom: -150px;
+      left: -150px;
+      width: 500px;
+      height: 500px;
+      background: radial-gradient(circle, rgba(217, 119, 6, 0.08) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    /* Crystal lattice decoration */
+    .crystal-grid {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: 50%;
+      pointer-events: none;
+      opacity: 0.04;
+      background-image:
+        linear-gradient(30deg, #fff 1px, transparent 1px),
+        linear-gradient(150deg, #fff 1px, transparent 1px),
+        linear-gradient(270deg, #fff 1px, transparent 1px);
+      background-size: 60px 104px;
+      background-position: 0 0, 30px 52px, 0 0;
+    }
+
+    .hero-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      width: 100%;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 64px;
+      align-items: center;
+      position: relative;
+    }
+
+    .hero h1 {
+      font-size: clamp(40px, 5vw, 56px);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1.08;
+      margin-bottom: 24px;
+    }
+
+    .hero h1 .gradient {
+      background: linear-gradient(135deg, #fbbf24, #f59e0b, #d97706);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-subtitle {
+      font-size: 18px;
+      color: rgba(255,255,255,0.55);
+      line-height: 1.7;
+      margin-bottom: 36px;
+      max-width: 480px;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      margin-bottom: 52px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      padding: 14px 28px;
+      font-size: 15px;
+      font-weight: 600;
+      text-decoration: none;
+      border-radius: 8px;
+      transition: all 0.2s;
+      border: none;
+      cursor: pointer;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-light);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(217, 119, 6, 0.35);
+    }
+
+    .btn-ghost {
+      color: rgba(255,255,255,0.7);
+      border: 1px solid rgba(255,255,255,0.15);
+      background: transparent;
+    }
+
+    .btn-ghost:hover {
+      border-color: rgba(255,255,255,0.35);
+      color: #fff;
+    }
+
+    .btn-dark {
+      background: var(--text);
+      color: #fff;
+    }
+
+    .btn-dark:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+    }
+
+    .hero-stats {
+      display: flex;
+      gap: 40px;
+    }
+
+    .stat { display: flex; flex-direction: column; }
+
+    .stat-value {
+      font-family: var(--mono);
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--accent-light);
+    }
+
+    .stat-label {
+      font-size: 13px;
+      color: rgba(255,255,255,0.35);
+      margin-top: 4px;
+    }
+
+    /* Code block (dark) */
+    .hero-code {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .code-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .code-dots { display: flex; gap: 6px; }
+
+    .code-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.12);
+    }
+
+    .code-dot:first-child { background: #ef4444; opacity: 0.6; }
+    .code-dot:nth-child(2) { background: var(--accent-light); opacity: 0.6; }
+    .code-dot:last-child { background: #22c55e; opacity: 0.6; }
+
+    .code-filename {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: rgba(255,255,255,0.35);
+    }
+
+    .code-content { padding: 20px; }
+
+    .code-content pre {
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.7;
+      overflow-x: auto;
+      color: rgba(255,255,255,0.8);
+    }
+
+    .kw { color: #fbbf24; }
+    .str { color: #34d399; }
+    .cmt { color: rgba(255,255,255,0.25); }
+    .fn { color: #f59e0b; }
+    .num { color: #fb923c; }
+    .type { color: #38bdf8; }
+
+    /* Sections */
+    .section {
+      padding: 100px 32px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .section-header {
+      max-width: 600px;
+      margin-bottom: 64px;
+    }
+
+    .section-center .section-header {
+      text-align: center;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .section-label {
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--accent);
+      margin-bottom: 12px;
+    }
+
+    .section-title {
+      font-size: 36px;
+      font-weight: 700;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+      margin-bottom: 16px;
+    }
+
+    .section-desc {
+      font-size: 17px;
+      color: var(--text-secondary);
+      line-height: 1.7;
+    }
+
+    /* Features */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+    }
+
+    .feature {
+      padding: 32px;
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      transition: all 0.2s;
+    }
+
+    .feature:hover {
+      border-color: var(--accent);
+      box-shadow: 0 4px 16px var(--accent-glow);
+    }
+
+    .feature-icon {
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--accent-subtle);
+      border: 1px solid rgba(217, 119, 6, 0.1);
+      border-radius: 10px;
+      margin-bottom: 20px;
+      font-size: 20px;
+    }
+
+    .feature h3 {
+      font-size: 17px;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+
+    .feature p {
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    /* Code examples (light) */
+    .examples-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    .example {
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .example-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .example-header h4 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .example-header p {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .example-code {
+      padding: 20px;
+      background: var(--code-bg);
+    }
+
+    .example-code pre {
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.6;
+      overflow-x: auto;
+      color: var(--text);
+    }
+
+    .example-code .kw { color: #92400e; }
+    .example-code .str { color: #059669; }
+    .example-code .cmt { color: #a8a29e; }
+    .example-code .fn { color: #b45309; }
+    .example-code .num { color: #c2410c; }
+    .example-code .type { color: #0284c7; }
+
+    /* Middleware showcase */
+    .middleware-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 16px;
+    }
+
+    .mw-card {
+      padding: 24px;
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      text-align: center;
+      transition: all 0.2s;
+    }
+
+    .mw-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px var(--accent-glow);
+    }
+
+    .mw-icon { font-size: 24px; margin-bottom: 12px; }
+
+    .mw-card h4 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .mw-card p {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* Benchmarks */
+    .bench-section {
+      background: var(--bg-dark);
+      color: #fff;
+      padding: 100px 32px;
+    }
+
+    .bench-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .bench-section .section-label { color: var(--accent-light); }
+    .bench-section .section-title { color: #fff; }
+    .bench-section .section-desc { color: rgba(255,255,255,0.5); }
+
+    .benchmarks-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 20px;
+    }
+
+    .bench-card {
+      padding: 28px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      text-align: center;
+      transition: border-color 0.2s;
+    }
+
+    .bench-card:hover { border-color: rgba(245, 158, 11, 0.3); }
+
+    .bench-value {
+      font-family: var(--mono);
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--accent-light);
+      margin-bottom: 4px;
+    }
+
+    .bench-unit {
+      font-size: 14px;
+      color: rgba(255,255,255,0.5);
+      margin-bottom: 12px;
+    }
+
+    .bench-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .bench-detail {
+      font-size: 12px;
+      color: rgba(255,255,255,0.35);
+      margin-top: 4px;
+    }
+
+    /* Architecture */
+    .arch-section {
+      background: var(--bg-alt);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .arch-flow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 40px 0;
+    }
+
+    .arch-node {
+      padding: 12px 20px;
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    .arch-node.highlight {
+      background: var(--accent-subtle);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .arch-arrow {
+      color: var(--text-muted);
+      font-size: 18px;
+    }
+
+    /* Stack section */
+    .stack-section {
+      background: linear-gradient(180deg, var(--bg-alt) 0%, var(--bg) 100%);
+      border-top: 1px solid var(--border);
+    }
+
+    .stack-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+    }
+
+    .stack-card {
+      padding: 32px;
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      text-align: center;
+    }
+
+    .stack-card.current {
+      border-color: var(--accent);
+      box-shadow: 0 4px 24px var(--accent-glow);
+    }
+
+    .stack-card h4 {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .stack-card .stack-type {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+      margin-bottom: 12px;
+    }
+
+    .stack-card p {
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    /* Get started */
+    .get-started {
+      background: var(--bg-dark);
+      color: #fff;
+      padding: 100px 32px;
+    }
+
+    .get-started-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 64px;
+      align-items: center;
+    }
+
+    .get-started .section-label { color: var(--accent-light); }
+    .get-started .section-title { color: #fff; }
+    .get-started .section-desc { color: rgba(255,255,255,0.55); }
+
+    .install-cmd {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 20px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 8px;
+      font-family: var(--mono);
+      font-size: 15px;
+      color: #fff;
+      margin-bottom: 32px;
+    }
+
+    .install-cmd .prompt { color: var(--accent-light); }
+
+    .steps { list-style: none; }
+
+    .steps li {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 20px;
+      align-items: flex-start;
+    }
+
+    .step-num {
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(217, 119, 6, 0.2);
+      color: var(--accent-light);
+      border-radius: 50%;
+      font-size: 13px;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    .step-text {
+      font-size: 15px;
+      color: rgba(255,255,255,0.65);
+      line-height: 1.6;
+    }
+
+    .step-text code {
+      font-family: var(--mono);
+      font-size: 13px;
+      background: rgba(255,255,255,0.08);
+      padding: 2px 8px;
+      border-radius: 4px;
+      color: #fff;
+    }
+
+    /* Ecosystem */
+    .ecosystem-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+
+    .eco-card {
+      padding: 24px;
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      transition: border-color 0.2s;
+    }
+
+    .eco-card:hover { border-color: var(--accent); }
+
+    .eco-card h4 {
+      font-family: var(--mono);
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: var(--accent);
+    }
+
+    .eco-card p {
+      font-size: 13px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    /* Footer */
+    footer {
+      padding: 48px 32px;
+      border-top: 1px solid var(--border);
+    }
+
+    .footer-content {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .footer-left {
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+
+    .footer-links { display: flex; gap: 24px; }
+
+    .footer-links a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 14px;
+      transition: color 0.2s;
+    }
+
+    .footer-links a:hover { color: var(--text); }
+
+    /* Responsive */
+    @media (max-width: 1024px) {
+      .hero-inner { grid-template-columns: 1fr; gap: 48px; }
+      .features-grid { grid-template-columns: repeat(2, 1fr); }
+      .examples-grid { grid-template-columns: 1fr; }
+      .middleware-grid { grid-template-columns: repeat(3, 1fr); }
+      .benchmarks-grid { grid-template-columns: repeat(2, 1fr); }
+      .get-started-inner { grid-template-columns: 1fr; gap: 48px; }
+      .ecosystem-grid { grid-template-columns: repeat(2, 1fr); }
+      .stack-grid { grid-template-columns: 1fr; }
+      .crystal-grid { display: none; }
+    }
+
+    @media (max-width: 768px) {
+      .nav-links { display: none; }
+      .hero { padding: 100px 24px 60px; }
+      .section { padding: 60px 24px; }
+      .features-grid { grid-template-columns: 1fr; }
+      .middleware-grid { grid-template-columns: repeat(2, 1fr); }
+      .benchmarks-grid { grid-template-columns: repeat(2, 1fr); }
+      .hero-actions { flex-direction: column; align-items: flex-start; }
+      .hero-stats { gap: 24px; }
+      .arch-flow { gap: 4px; }
+      .arch-node { padding: 8px 12px; font-size: 11px; }
+      .ecosystem-grid { grid-template-columns: 1fr; }
+      .bench-section { padding: 60px 24px; }
+      .get-started { padding: 60px 24px; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <a href="/" class="logo">
+      Celsian<span class="logo-accent">JS</span>
+      <span class="logo-badge">v0.1</span>
+    </a>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#code">Code</a>
+      <a href="#middleware">Middleware</a>
+      <a href="#performance">Performance</a>
+      <a href="/docs">Docs</a>
+      <a href="https://github.com/CelsianJs">GitHub</a>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="crystal-grid"></div>
+    <div class="hero-inner">
+      <div>
+        <h1 class="animate">
+          The backend framework<br>
+          <span class="gradient">built on standards</span>
+        </h1>
+        <p class="hero-subtitle animate delay-1">
+          Hook-based server, type-safe RPC, real-time streaming, caching, and task queues. Built entirely on Web Standard APIs. Deploy to Node, Bun, Deno, Cloudflare, or Lambda.
+        </p>
+        <div class="hero-actions animate delay-2">
+          <a href="#get-started" class="btn btn-primary">Get Started</a>
+          <a href="https://github.com/CelsianJs" class="btn btn-ghost">View on GitHub</a>
+        </div>
+        <div class="hero-stats animate delay-3">
+          <div class="stat">
+            <span class="stat-value">125K</span>
+            <span class="stat-label">req/sec</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value">0.46&mu;s</span>
+            <span class="stat-label">route matching</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value">590</span>
+            <span class="stat-label">passing tests</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="hero-code animate delay-3">
+        <div class="code-header">
+          <div class="code-dots">
+            <span class="code-dot"></span>
+            <span class="code-dot"></span>
+            <span class="code-dot"></span>
+          </div>
+          <span class="code-filename">app.ts</span>
+        </div>
+        <div class="code-content">
+<pre><span class="kw">import</span> { createApp, cors, rateLimit } <span class="kw">from</span> <span class="str">'@celsian/server'</span>;
+
+<span class="kw">const</span> app = <span class="fn">createApp</span>();
+
+<span class="cmt">// Register middleware</span>
+<span class="kw">await</span> app.<span class="fn">register</span>(cors, { origin: <span class="str">'*'</span> });
+<span class="kw">await</span> app.<span class="fn">register</span>(rateLimit, { max: <span class="num">100</span> });
+
+<span class="cmt">// Routes</span>
+app.<span class="fn">get</span>(<span class="str">'/api/users/:id'</span>, (req, reply) <span class="kw">=></span> {
+  <span class="kw">return</span> reply.<span class="fn">json</span>({
+    id: req.params.id,
+    name: <span class="str">`User ${req.params.id}`</span>
+  });
+});
+
+<span class="cmt">// Works everywhere</span>
+Bun.<span class="fn">serve</span>({ fetch: app.fetch });
+Deno.<span class="fn">serve</span>(app.fetch);</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section id="features" class="section">
+    <div class="section-header">
+      <p class="section-label">Features</p>
+      <h2 class="section-title">Everything you need for production backends</h2>
+      <p class="section-desc">A complete server toolkit built from the ground up on Web Standard APIs. No Express, no Fastify &mdash; just standards.</p>
+    </div>
+
+    <div class="features-grid">
+      <div class="feature">
+        <div class="feature-icon">&#x2693;</div>
+        <h3>Hook-Based Lifecycle</h3>
+        <p>8 lifecycle hooks give you control over every stage: onRequest, preParsing, preValidation, preHandler, preSerialization, onSend, onResponse, onError.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x1F50C;</div>
+        <h3>Type-Safe RPC</h3>
+        <p>Build procedures with input/output schema validation, compose routers, call from the client with full TypeScript inference and auto-generated OpenAPI.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x26A1;</div>
+        <h3>Real-Time Streaming</h3>
+        <p>First-class SSE with createSSEStream() and fan-out hubs. WebSocket abstractions with rooms, broadcasting, and registry-based routing.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x1F4E6;</div>
+        <h3>Caching &amp; Sessions</h3>
+        <p>Response caching with HIT/MISS headers, KV store abstraction with TTL and atomic counters, cookie-based session management.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x23F0;</div>
+        <h3>Task Queues &amp; Cron</h3>
+        <p>Background job processing with retry/backoff, concurrency control, and delayed jobs. Cron scheduler with human-readable schedules like "every 5m".</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x1F9E9;</div>
+        <h3>Plugin System</h3>
+        <p>Encapsulated plugins with inherited hooks and decorators. Build composable middleware that doesn't leak across boundaries.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Architecture -->
+  <section class="section arch-section">
+    <div class="section-header section-center" style="max-width: 1200px; margin: 0 auto 48px;">
+      <p class="section-label">Architecture</p>
+      <h2 class="section-title">Request lifecycle</h2>
+    </div>
+    <div class="arch-flow" style="max-width: 1200px; margin: 0 auto;">
+      <span class="arch-node highlight">Request</span>
+      <span class="arch-arrow">&rarr;</span>
+      <span class="arch-node">onRequest</span>
+      <span class="arch-arrow">&rarr;</span>
+      <span class="arch-node">preParsing</span>
+      <span class="arch-arrow">&rarr;</span>
+      <span class="arch-node highlight">Body Parse</span>
+      <span class="arch-arrow">&rarr;</span>
+      <span class="arch-node">preValidation</span>
+      <span class="arch-arrow">&rarr;</span>
+      <span class="arch-node">preHandler</span>
+      <span class="arch-arrow">&rarr;</span>
+      <span class="arch-node highlight">Handler</span>
+      <span class="arch-arrow">&rarr;</span>
+      <span class="arch-node">preSerialization</span>
+      <span class="arch-arrow">&rarr;</span>
+      <span class="arch-node">onSend</span>
+      <span class="arch-arrow">&rarr;</span>
+      <span class="arch-node highlight">Response</span>
+    </div>
+  </section>
+
+  <!-- Code Examples -->
+  <section id="code" class="section">
+    <div class="section-header">
+      <p class="section-label">Code</p>
+      <h2 class="section-title">Reads clearly, runs fast</h2>
+      <p class="section-desc">Expressive APIs that get out of your way. Every feature is designed for production use from day one.</p>
+    </div>
+
+    <div class="examples-grid">
+      <div class="example">
+        <div class="example-header">
+          <h4>Type-Safe RPC</h4>
+          <p>Build procedures with schema validation and auto-generated clients</p>
+        </div>
+        <div class="example-code">
+<pre><span class="kw">import</span> { procedure, router } <span class="kw">from</span> <span class="str">'@celsian/rpc'</span>;
+<span class="kw">import</span> { z } <span class="kw">from</span> <span class="str">'zod'</span>;
+
+<span class="kw">const</span> appRouter = <span class="fn">router</span>({
+  user: {
+    getById: procedure
+      .<span class="fn">input</span>(z.object({ id: z.string() }))
+      .<span class="fn">query</span>(<span class="kw">async</span> ({ input }) => {
+        <span class="kw">return</span> db.users.<span class="fn">find</span>(input.id);
+      }),
+    create: procedure
+      .<span class="fn">input</span>(z.object({ name: z.string() }))
+      .<span class="fn">mutation</span>(<span class="kw">async</span> ({ input }) => {
+        <span class="kw">return</span> db.users.<span class="fn">create</span>(input);
+      }),
+  },
+});
+
+<span class="cmt">// Client — full type inference</span>
+<span class="kw">const</span> user = <span class="kw">await</span> rpc.user.getById.<span class="fn">query</span>({ id: <span class="str">'1'</span> });</pre>
+        </div>
+      </div>
+
+      <div class="example">
+        <div class="example-header">
+          <h4>Server-Sent Events</h4>
+          <p>Real-time streaming with fan-out hub pattern</p>
+        </div>
+        <div class="example-code">
+<pre><span class="kw">import</span> { createSSEStream, createSSEHub }
+  <span class="kw">from</span> <span class="str">'@celsian/server'</span>;
+
+<span class="cmt">// Single client stream</span>
+app.<span class="fn">get</span>(<span class="str">'/api/events'</span>, (req) => {
+  <span class="kw">const</span> channel = <span class="fn">createSSEStream</span>(req);
+  channel.<span class="fn">send</span>({ event: <span class="str">'hello'</span>, data: { ok: <span class="num">true</span> } });
+  <span class="kw">return</span> channel.response;
+});
+
+<span class="cmt">// Fan-out to all subscribers</span>
+<span class="kw">const</span> hub = <span class="fn">createSSEHub</span>();
+
+app.<span class="fn">get</span>(<span class="str">'/api/live'</span>, (req) => {
+  <span class="kw">const</span> channel = hub.<span class="fn">subscribe</span>(req);
+  <span class="kw">return</span> channel.response;
+});
+
+<span class="cmt">// Broadcast to everyone</span>
+hub.<span class="fn">broadcast</span>({ event: <span class="str">'update'</span>, data: payload });</pre>
+        </div>
+      </div>
+
+      <div class="example">
+        <div class="example-header">
+          <h4>Background Tasks</h4>
+          <p>Job queue with retry, concurrency, and cron scheduling</p>
+        </div>
+        <div class="example-code">
+<pre><span class="kw">import</span> { createTaskQueue, createCronScheduler }
+  <span class="kw">from</span> <span class="str">'@celsian/server'</span>;
+
+<span class="kw">const</span> queue = <span class="fn">createTaskQueue</span>({ concurrency: <span class="num">5</span> });
+
+queue.<span class="fn">register</span>({
+  name: <span class="str">'send-email'</span>,
+  handler: <span class="kw">async</span> (job) => {
+    <span class="kw">await</span> <span class="fn">sendEmail</span>(job.payload);
+    <span class="kw">return</span> { success: <span class="num">true</span> };
+  },
+  maxRetries: <span class="num">3</span>,
+  retryDelayMs: <span class="num">5000</span>,
+});
+
+<span class="cmt">// Enqueue with optional delay</span>
+<span class="kw">await</span> queue.<span class="fn">enqueue</span>(<span class="str">'send-email'</span>, { to: <span class="str">'ada@example.com'</span> });
+
+<span class="cmt">// Cron jobs with human-readable schedules</span>
+<span class="kw">const</span> cron = <span class="fn">createCronScheduler</span>();
+cron.<span class="fn">add</span>({ name: <span class="str">'cleanup'</span>, schedule: <span class="str">'every 1h'</span>,
+  handler: () => db.<span class="fn">cleanup</span>() });</pre>
+        </div>
+      </div>
+
+      <div class="example">
+        <div class="example-header">
+          <h4>Caching &amp; Sessions</h4>
+          <p>Response cache, KV store, and session management</p>
+        </div>
+        <div class="example-code">
+<pre><span class="kw">import</span> { MemoryKVStore, createResponseCache,
+  createSessionManager } <span class="kw">from</span> <span class="str">'@celsian/cache'</span>;
+
+<span class="kw">const</span> store = <span class="kw">new</span> <span class="fn">MemoryKVStore</span>();
+<span class="kw">const</span> cache = <span class="fn">createResponseCache</span>({ store, ttlMs: <span class="num">60_000</span> });
+<span class="kw">const</span> sessions = <span class="fn">createSessionManager</span>({ store });
+
+<span class="cmt">// Automatic response caching</span>
+app.<span class="fn">get</span>(<span class="str">'/api/data'</span>, (req, reply) => {
+  <span class="kw">return</span> cache.<span class="fn">cached</span>(req, () => {
+    <span class="kw">return</span> reply.<span class="fn">json</span>(<span class="fn">expensiveQuery</span>());
+  });
+}); <span class="cmt">// x-cache: HIT | MISS</span>
+
+<span class="cmt">// Session management</span>
+app.<span class="fn">post</span>(<span class="str">'/api/login'</span>, <span class="kw">async</span> (req, reply) => {
+  <span class="kw">const</span> session = <span class="kw">await</span> sessions.<span class="fn">create</span>({ user });
+  <span class="kw">return</span> reply.<span class="fn">header</span>(<span class="str">'set-cookie'</span>, sessions.<span class="fn">cookie</span>(session.id))
+    .<span class="fn">json</span>({ ok: <span class="num">true</span> });
+});</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Middleware -->
+  <section id="middleware" class="section section-center">
+    <div class="section-header">
+      <p class="section-label">Middleware</p>
+      <h2 class="section-title">Batteries included</h2>
+      <p class="section-desc">Production-ready middleware out of the box. Register with a single line.</p>
+    </div>
+
+    <div class="middleware-grid">
+      <div class="mw-card">
+        <div class="mw-icon">&#x1F310;</div>
+        <h4>CORS</h4>
+        <p>Origin whitelisting, credentials, preflight handling</p>
+      </div>
+      <div class="mw-card">
+        <div class="mw-icon">&#x1F6E1;</div>
+        <h4>Rate Limit</h4>
+        <p>Sliding window with custom store support</p>
+      </div>
+      <div class="mw-card">
+        <div class="mw-icon">&#x1F511;</div>
+        <h4>JWT Auth</h4>
+        <p>Token validation, custom claims, route protection</p>
+      </div>
+      <div class="mw-card">
+        <div class="mw-icon">&#x1F4DD;</div>
+        <h4>Logger</h4>
+        <p>Structured logging with request timing</p>
+      </div>
+      <div class="mw-card">
+        <div class="mw-icon">&#x1F4BE;</div>
+        <h4>ETag</h4>
+        <p>Conditional responses with cache validation</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Performance -->
+  <section id="performance" class="bench-section">
+    <div class="bench-inner">
+      <div class="section-header section-center" style="margin-left: auto; margin-right: auto;">
+        <p class="section-label">Performance</p>
+        <h2 class="section-title">Measured, not promised</h2>
+        <p class="section-desc">Real numbers from our test suite. 590 tests across 54 files. Zero flaky.</p>
+      </div>
+
+      <div class="benchmarks-grid">
+        <div class="bench-card">
+          <div class="bench-value">125K</div>
+          <div class="bench-unit">req/sec</div>
+          <div class="bench-label">Server throughput</div>
+          <div class="bench-detail">with hooks enabled</div>
+        </div>
+        <div class="bench-card">
+          <div class="bench-value">0.46&mu;s</div>
+          <div class="bench-unit">per match</div>
+          <div class="bench-label">Static route lookup</div>
+          <div class="bench-detail">O(1) cache + radix tree</div>
+        </div>
+        <div class="bench-card">
+          <div class="bench-value">1.2M</div>
+          <div class="bench-unit">ops/sec</div>
+          <div class="bench-label">KV store throughput</div>
+          <div class="bench-detail">in-memory with TTL</div>
+        </div>
+        <div class="bench-card">
+          <div class="bench-value">229K</div>
+          <div class="bench-unit">req/sec</div>
+          <div class="bench-label">Response cache HIT</div>
+          <div class="bench-detail">4.37&mu;s average latency</div>
+        </div>
+        <div class="bench-card">
+          <div class="bench-value">974K</div>
+          <div class="bench-unit">loads/sec</div>
+          <div class="bench-label">Session load</div>
+          <div class="bench-detail">1.03&mu;s p50 latency</div>
+        </div>
+        <div class="bench-card">
+          <div class="bench-value">165K</div>
+          <div class="bench-unit">req/sec</div>
+          <div class="bench-label">RPC with middleware</div>
+          <div class="bench-detail">3 middleware chain</div>
+        </div>
+        <div class="bench-card">
+          <div class="bench-value">2.2M</div>
+          <div class="bench-unit">ops/sec</div>
+          <div class="bench-label">Wire encode</div>
+          <div class="bench-detail">type-preserving JSON</div>
+        </div>
+        <div class="bench-card">
+          <div class="bench-value">214K</div>
+          <div class="bench-unit">req/sec</div>
+          <div class="bench-label">RPC 200 procedures</div>
+          <div class="bench-detail">lookup + handle</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Ecosystem -->
+  <section class="section">
+    <div class="section-header">
+      <p class="section-label">Ecosystem</p>
+      <h2 class="section-title">Modular by design</h2>
+      <p class="section-desc">Use the full stack or pick the pieces you need. Every package works standalone.</p>
+    </div>
+
+    <div class="ecosystem-grid">
+      <div class="eco-card">
+        <h4>@celsian/server</h4>
+        <p>Hook-based server runtime with routing, plugins, middleware, SSE, WebSockets, and task queues.</p>
+      </div>
+      <div class="eco-card">
+        <h4>@celsian/rpc</h4>
+        <p>Type-safe RPC with procedures, routers, schema validation, wire protocol, and OpenAPI generation.</p>
+      </div>
+      <div class="eco-card">
+        <h4>@celsian/cache</h4>
+        <p>KV store abstraction, response caching with HIT/MISS, session management with cookies.</p>
+      </div>
+      <div class="eco-card">
+        <h4>@celsian/schema</h4>
+        <p>Universal schema adapter for Zod, TypeBox, Valibot, and StandardSchema.</p>
+      </div>
+      <div class="eco-card">
+        <h4>@celsian/adapter-node</h4>
+        <p>Node.js HTTP adapter that bridges Web Standard APIs to node:http.</p>
+      </div>
+      <div class="eco-card">
+        <h4>@celsian/adapter-vercel</h4>
+        <p>Vercel Build Output API v3 adapter for serverless deployment.</p>
+      </div>
+      <div class="eco-card">
+        <h4>@celsian/adapter-cloudflare</h4>
+        <p>Cloudflare Workers adapter for edge deployment.</p>
+      </div>
+      <div class="eco-card">
+        <h4>@celsian/adapter-lambda</h4>
+        <p>AWS Lambda adapter with API Gateway event mapping.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Stack -->
+  <section class="section stack-section">
+    <div class="section-header section-center" style="margin-left: auto; margin-right: auto;">
+      <p class="section-label">Part of a stack</p>
+      <h2 class="section-title">Three frameworks, one vision</h2>
+      <p class="section-desc">CelsianJS is the backend layer of a full-stack TypeScript ecosystem. Use it standalone or with ThenJS for a complete framework.</p>
+    </div>
+
+    <div class="stack-grid">
+      <div class="stack-card">
+        <div class="stack-type">Frontend</div>
+        <h4>What Framework</h4>
+        <p>Signals-based reactivity with fine-grained DOM updates. No virtual DOM. Components that render at the speed of vanilla JS.</p>
+      </div>
+      <div class="stack-card current">
+        <div class="stack-type">Backend</div>
+        <h4>CelsianJS</h4>
+        <p>Hook-based server, RPC, caching, real-time, task queues. Built on Web Standard APIs. You are here.</p>
+      </div>
+      <div class="stack-card">
+        <div class="stack-type">Meta-framework</div>
+        <h4>ThenJS</h4>
+        <p>Combines What + CelsianJS with file-based routing, SSR, hybrid rendering, and build tooling. Like Next.js for this stack.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Get Started -->
+  <section id="get-started" class="get-started">
+    <div class="get-started-inner">
+      <div>
+        <div class="section-header" style="margin-bottom: 32px;">
+          <p class="section-label">Get Started</p>
+          <h2 class="section-title">Ship your API in minutes</h2>
+          <p class="section-desc">Scaffold a new project, add your routes, deploy anywhere.</p>
+        </div>
+
+        <div class="install-cmd">
+          <span class="prompt">$</span>
+          <span>npx create-celsian my-api</span>
+        </div>
+
+        <ul class="steps">
+          <li>
+            <span class="step-num">1</span>
+            <span class="step-text">Scaffold your project with <code>npx create-celsian my-api</code></span>
+          </li>
+          <li>
+            <span class="step-num">2</span>
+            <span class="step-text">Define routes, RPC procedures, and middleware in your app</span>
+          </li>
+          <li>
+            <span class="step-num">3</span>
+            <span class="step-text">Run <code>celsian dev</code> for development with hot reload</span>
+          </li>
+          <li>
+            <span class="step-num">4</span>
+            <span class="step-text">Deploy with <code>Bun.serve({ fetch: app.fetch })</code> or any adapter</span>
+          </li>
+        </ul>
+      </div>
+
+      <div class="hero-code" style="animation: fadeUp 0.7s ease both;">
+        <div class="code-header">
+          <div class="code-dots">
+            <span class="code-dot"></span>
+            <span class="code-dot"></span>
+            <span class="code-dot"></span>
+          </div>
+          <span class="code-filename">server.ts</span>
+        </div>
+        <div class="code-content">
+<pre><span class="kw">import</span> { createApp, cors, jwtAuth } <span class="kw">from</span> <span class="str">'@celsian/server'</span>;
+<span class="kw">import</span> { procedure, router } <span class="kw">from</span> <span class="str">'@celsian/rpc'</span>;
+<span class="kw">import</span> { z } <span class="kw">from</span> <span class="str">'zod'</span>;
+
+<span class="kw">const</span> app = <span class="fn">createApp</span>();
+<span class="kw">await</span> app.<span class="fn">register</span>(cors, { origin: <span class="str">'*'</span> });
+
+<span class="cmt">// REST routes</span>
+app.<span class="fn">get</span>(<span class="str">'/health'</span>, (req, reply) <span class="kw">=></span>
+  reply.<span class="fn">json</span>({ status: <span class="str">'ok'</span> })
+);
+
+<span class="cmt">// Type-safe RPC</span>
+<span class="kw">const</span> rpc = <span class="fn">router</span>({
+  hello: procedure
+    .<span class="fn">input</span>(z.object({ name: z.string() }))
+    .<span class="fn">query</span>(({ input }) <span class="kw">=></span> <span class="str">`Hello ${input.name}!`</span>),
+});
+
+app.<span class="fn">mount</span>(<span class="str">'/rpc'</span>, rpc);
+
+<span class="cmt">// One-line deploy</span>
+Bun.<span class="fn">serve</span>({ fetch: app.fetch, port: <span class="num">3000</span> });</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="footer-content">
+      <div class="footer-left">
+        CelsianJS v0.1.0 &mdash; MIT License &mdash; Part of the ThenJS Stack
+      </div>
+      <div class="footer-links">
+        <a href="/docs">Documentation</a>
+        <a href="https://github.com/CelsianJs">GitHub</a>
+        <a href="https://www.npmjs.com/org/celsian">npm</a>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

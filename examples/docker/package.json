@@ -1,0 +1,21 @@
+{
+  "name": "celsian-docker-example",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "docker:build": "docker build -t celsian-api .",
+    "docker:run": "docker run -p 3000:3000 celsian-api",
+    "compose:up": "docker compose up --build"
+  },
+  "dependencies": {
+    "@celsian/core": "workspace:*"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.3",
+    "tsx": "^4.21.0"
+  }
+}

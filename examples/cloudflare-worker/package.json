@@ -1,0 +1,19 @@
+{
+  "name": "example-cloudflare-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "wrangler dev --env dev",
+    "deploy": "node build.mjs && wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "dependencies": {
+    "@celsian/core": "workspace:*",
+    "@celsian/adapter-cloudflare": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241205.0",
+    "wrangler": "^3.99.0"
+  }
+}

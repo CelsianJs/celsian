@@ -1,0 +1,39 @@
+# SAM CLI deployment configuration
+# Run `sam deploy --guided` on first deploy to populate these values
+
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "celsian-api"
+resolve_s3 = true
+s3_prefix = "celsian-api"
+region = "us-east-1"
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+parameter_overrides = "Stage=dev"
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.local_start_api.parameters]
+warm_containers = "EAGER"
+port = 3000
+
+[staging.deploy.parameters]
+stack_name = "celsian-api-staging"
+resolve_s3 = true
+s3_prefix = "celsian-api-staging"
+region = "us-east-1"
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+parameter_overrides = "Stage=staging"
+
+[prod.deploy.parameters]
+stack_name = "celsian-api-prod"
+resolve_s3 = true
+s3_prefix = "celsian-api-prod"
+region = "us-east-1"
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = false
+parameter_overrides = "Stage=prod"

@@ -1,0 +1,17 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/schema" },
+    { "path": "packages/core" },
+    { "path": "packages/rpc" },
+    { "path": "packages/cli" },
+    { "path": "packages/create-celsian" },
+    { "path": "packages/celsian" },
+    { "path": "packages/jwt" },
+    { "path": "packages/rate-limit" },
+    { "path": "packages/compress" },
+    { "path": "packages/adapter-vercel" },
+    { "path": "packages/adapter-lambda" },
+    { "path": "packages/adapter-cloudflare" }
+  ]
+}

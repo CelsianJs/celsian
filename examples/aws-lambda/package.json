@@ -1,0 +1,22 @@
+{
+  "name": "example-aws-lambda",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "deploy": "npm run build && sam deploy",
+    "deploy:guided": "npm run build && sam deploy --guided",
+    "dev": "sam local start-api --warm-containers EAGER",
+    "invoke": "sam local invoke CelsianFunction --event events/get-health.json",
+    "validate": "sam validate",
+    "logs": "sam logs --name CelsianFunction --tail"
+  },
+  "dependencies": {
+    "@celsian/core": "workspace:*",
+    "@celsian/adapter-lambda": "workspace:*"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.3"
+  }
+}

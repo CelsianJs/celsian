@@ -1,0 +1,89 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: CelsianJS API deployed on AWS Lambda with API Gateway v2
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 256
+    Runtime: nodejs20.x
+    Architectures:
+      - arm64
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+
+Resources:
+  CelsianApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref Stage
+      CorsConfiguration:
+        AllowOrigins:
+          - '*'
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - PATCH
+          - DELETE
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+          - X-Request-Id
+        MaxAge: 86400
+
+  CelsianFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'celsian-api-${Stage}'
+      Handler: index.handler
+      CodeUri: dist/
+      Description: CelsianJS serverless API handler
+      Environment:
+        Variables:
+          NODE_ENV: !If
+            - IsProd
+            - production
+            - development
+          STAGE: !Ref Stage
+      Events:
+        ApiCatchAll:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref CelsianApi
+            Path: /{proxy+}
+            Method: ANY
+        ApiRoot:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref CelsianApi
+            Path: /
+            Method: ANY
+
+  CelsianFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/celsian-api-${Stage}'
+      RetentionInDays: 14
+
+Conditions:
+  IsProd: !Equals [!Ref Stage, prod]
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub 'https://${CelsianApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}'
+  FunctionArn:
+    Description: Lambda function ARN
+    Value: !GetAtt CelsianFunction.Arn
+  FunctionName:
+    Description: Lambda function name
+    Value: !Ref CelsianFunction
