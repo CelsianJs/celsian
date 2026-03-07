@@ -1,32 +1,31 @@
 // @celsian/schema — TypeBox adapter (first-class)
+// Uses top-level await to load TypeBox dynamically (ESM-safe, no require())
 
-import { createRequire } from 'node:module';
 import type { StandardSchema, SchemaResult } from '../standard.js';
 
-const require = createRequire(import.meta.url);
+// Pre-load TypeBox Value module at import time via top-level await.
+// If @sinclair/typebox is not installed, Value stays null and
+// validate() throws a descriptive error on first use.
+let Value: any = null;
+try {
+  const mod = await import('@sinclair/typebox/value');
+  Value = mod.Value;
+} catch {
+  // @sinclair/typebox not installed — will error at validate time
+}
 
 export function fromTypeBox<T>(typeboxSchema: any): StandardSchema<T, T> {
-  // Lazy-load Value from @sinclair/typebox/value
-  let Value: any;
-
-  function getValueModule(): any {
-    if (!Value) {
-      try {
-        Value = require('@sinclair/typebox/value').Value;
-      } catch {
-        throw new Error('@sinclair/typebox is required for TypeBox schema validation. Install it with: npm install @sinclair/typebox');
-      }
-    }
-    return Value;
-  }
-
   return {
     validate(input: unknown): SchemaResult<T> {
+      if (!Value) {
+        throw new Error(
+          '@sinclair/typebox is required for TypeBox schema validation. Install it with: npm install @sinclair/typebox',
+        );
+      }
       try {
-        const V = getValueModule();
-        const errors = [...V.Errors(typeboxSchema, input)];
+        const errors = [...Value.Errors(typeboxSchema, input)];
         if (errors.length === 0) {
-          return { success: true, data: V.Cast(typeboxSchema, input) };
+          return { success: true, data: Value.Cast(typeboxSchema, input) };
         }
         return {
           success: false,

@@ -81,6 +81,7 @@ export class Router {
         onRequest: hooks?.onRequest ?? [],
         preHandler: hooks?.preHandler ?? [],
         preSerialization: hooks?.preSerialization ?? [],
+        onSend: hooks?.onSend ?? [],
       },
     };
 

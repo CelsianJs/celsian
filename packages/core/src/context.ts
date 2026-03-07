@@ -73,6 +73,7 @@ export class EncapsulationContext {
             ...ctx.hooks.preSerialization,
             ...(opts?.preSerialization ? (Array.isArray(opts.preSerialization) ? opts.preSerialization : [opts.preSerialization]) : []),
           ],
+          onSend: opts?.onSend ? (Array.isArray(opts.onSend) ? opts.onSend : [opts.onSend]) : [],
         },
       );
     };
@@ -106,6 +107,15 @@ export class EncapsulationContext {
           ctx.hooks.onError.push(handler as OnErrorHandler);
         } else {
           (ctx.hooks[name] as HookHandler[]).push(handler as HookHandler);
+        }
+        // onSend and onResponse are cross-cutting — propagate to parent so they
+        // apply to all routes, not just routes registered within this plugin context
+        if ((name === 'onSend' || name === 'onResponse') && ctx.parent) {
+          let ancestor: EncapsulationContext | null = ctx.parent;
+          while (ancestor) {
+            (ancestor.hooks[name] as HookHandler[]).push(handler as HookHandler);
+            ancestor = ancestor.parent;
+          }
         }
       },
 

@@ -73,7 +73,15 @@ export class CelsianApp {
 
   async register(plugin: PluginFunction, options?: PluginOptions): Promise<void> {
     assertPlugin(plugin);
-    const p = this.pluginContext.register(plugin, options);
+    const before = new Set(this.rootContext.decorations.keys());
+    const p = this.pluginContext.register(plugin, options).then(() => {
+      // Sync new decorations from plugin context to app instance (BUG-4 fix)
+      for (const [name, value] of this.rootContext.decorations) {
+        if (!before.has(name) && !(name in this)) {
+          Object.defineProperty(this, name, { value, writable: true, configurable: true, enumerable: true });
+        }
+      }
+    });
     this.pendingPlugins.push(p);
     return p;
   }
@@ -216,10 +224,14 @@ export class CelsianApp {
   // ─── Lifecycle ───
 
   async ready(): Promise<void> {
-    if (!this.readyPromise) {
-      this.readyPromise = Promise.all(this.pendingPlugins).then(() => {});
+    if (!this.readyPromise && this.pendingPlugins.length > 0) {
+      const pending = this.pendingPlugins;
+      this.pendingPlugins = [];
+      this.readyPromise = Promise.all(pending).then(() => {
+        this.readyPromise = null;
+      });
     }
-    return this.readyPromise;
+    if (this.readyPromise) await this.readyPromise;
   }
 
   // ─── Test Injection ───
@@ -231,6 +243,9 @@ export class CelsianApp {
   // ─── Request Handling ───
 
   async handle(request: Request): Promise<Response> {
+    // Ensure all registered plugins are loaded before handling
+    await this.ready();
+
     const url = new URL(request.url);
     const method = request.method.toUpperCase() as import('./types.js').RouteMethod;
     const pathname = url.pathname;
@@ -386,21 +401,42 @@ export class CelsianApp {
     // 8. preSerialization hooks
     await runHooks(route.hooks.preSerialization, request, reply);
 
-    // 9. onSend hooks
-    await runHooks(this.rootContext.hooks.onSend, request, reply);
-
-    // Apply reply.headers set by onSend hooks (e.g. CORS) to the response
-    const replyHeaders = reply.headers;
-    if (Object.keys(replyHeaders).length > 0) {
-      const mergedHeaders = new Headers(response.headers);
-      for (const [key, value] of Object.entries(replyHeaders)) {
-        mergedHeaders.set(key, value);
+    // 9. onSend hooks — run route-level (from route options) then rootContext (includes plugin hooks)
+    const hasOnSend = route.hooks.onSend.length > 0 || this.rootContext.hooks.onSend.length > 0;
+    if (hasOnSend) {
+      // Snapshot reply headers before onSend (handler/onRequest hooks already baked into response)
+      const headersBefore = new Map<string, string>();
+      for (const [k, v] of Object.entries(reply.headers)) {
+        headersBefore.set(k, v);
       }
-      response = new Response(response.body, {
-        status: response.status,
-        statusText: response.statusText,
-        headers: mergedHeaders,
-      });
+
+      // Route-level onSend (from route options only, not context-baked)
+      await runHooks(route.hooks.onSend, request, reply);
+      // Root-level onSend (includes hooks propagated up from encapsulated plugins)
+      await runHooks(this.rootContext.hooks.onSend, request, reply);
+
+      // Merge headers that were added or changed during onSend
+      const replyHeaders = reply.headers;
+      let needsMerge = false;
+      for (const [k, v] of Object.entries(replyHeaders)) {
+        if (headersBefore.get(k) !== v) {
+          needsMerge = true;
+          break;
+        }
+      }
+      if (needsMerge) {
+        const mergedHeaders = new Headers(response.headers);
+        for (const [k, v] of Object.entries(replyHeaders)) {
+          if (headersBefore.get(k) !== v) {
+            mergedHeaders.set(k, v);
+          }
+        }
+        response = new Response(response.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: mergedHeaders,
+        });
+      }
     }
 
     // 10. onResponse hooks (fire-and-forget)

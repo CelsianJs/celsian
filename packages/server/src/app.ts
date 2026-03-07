@@ -237,9 +237,16 @@ export class CelsianApp {
    * This is the core entry point used by all adapters.
    */
   async handle(request: Request): Promise<Response> {
-    const url = new URL(request.url);
-    const method = request.method.toUpperCase() as RouteMethod;
-    const pathname = url.pathname;
+    // Fast pathname extraction — avoid full URL parse when possible
+    const rawUrl = request.url;
+    const method = request.method as RouteMethod;
+    let pathname: string;
+    let _url: URL | null = null;
+
+    // Extract pathname from raw URL string (skip protocol + host)
+    const pathStart = rawUrl.indexOf('/', rawUrl.indexOf('//') + 2);
+    const qIdx = rawUrl.indexOf('?', pathStart);
+    pathname = qIdx === -1 ? rawUrl.substring(pathStart) : rawUrl.substring(pathStart, qIdx);
 
     // Match route
     const match = this.router.match(method, pathname);
@@ -247,7 +254,8 @@ export class CelsianApp {
       // For unmatched routes (e.g. OPTIONS preflight), still run root-level
       // onRequest hooks so middleware like CORS can handle them
       if (this.rootContext.hooks.onRequest.length > 0) {
-        const thenRequest = this.buildRequest(request, url, {});
+        if (!_url) _url = new URL(rawUrl);
+        const thenRequest = this.buildRequest(request, _url, rawUrl, {});
         const reply = createReply();
         const earlyResponse = await this.runHooks(this.rootContext.hooks.onRequest, thenRequest, reply);
         if (earlyResponse) return earlyResponse;
@@ -255,8 +263,9 @@ export class CelsianApp {
       return new Response('Not Found', { status: 404 });
     }
 
-    // Build CelsianRequest
-    const thenRequest = this.buildRequest(request, url, match.params);
+    // Build CelsianRequest — URL only parsed lazily when query is accessed
+    if (!_url) _url = new URL(rawUrl);
+    const thenRequest = this.buildRequest(request, _url, rawUrl, match.params);
 
     // Apply request decorations from root context (skip when none registered)
     if (this.rootContext.requestDecorations.size > 0) {
@@ -296,17 +305,32 @@ export class CelsianApp {
   private buildRequest(
     request: Request,
     url: URL,
+    rawUrl: string,
     params: Record<string, string>,
   ): CelsianRequest {
-    const query: Record<string, string> = {};
-    for (const [key, value] of url.searchParams) {
-      query[key] = value;
-    }
+    // Lazy query parsing — only allocate when accessed
+    let _query: Record<string, string> | null = null;
+    const hasQuery = rawUrl.indexOf('?') !== -1;
 
     // Create a CelsianRequest by extending the original request
     const thenRequest = Object.create(request, {
       params: { value: params, writable: true },
-      query: { value: query, writable: true },
+      query: {
+        get() {
+          if (!_query) {
+            _query = {};
+            if (hasQuery) {
+              for (const [key, value] of url.searchParams) {
+                _query[key] = value;
+              }
+            }
+          }
+          return _query;
+        },
+        set(v: Record<string, string>) { _query = v; },
+        enumerable: true,
+        configurable: true,
+      },
       parsedBody: { value: undefined, writable: true },
     }) as CelsianRequest;
 

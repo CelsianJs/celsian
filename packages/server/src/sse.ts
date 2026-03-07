@@ -23,6 +23,9 @@ export interface SSEStreamOptions {
   onClose?: () => void;
 }
 
+// Module-level singleton — avoids per-channel allocation
+const encoder = new TextEncoder();
+
 /**
  * Format an SSE event into the wire format.
  */
@@ -92,7 +95,6 @@ export function createSSEStream(
 
   const stream = new TransformStream<string, Uint8Array>();
   const writer = stream.writable.getWriter();
-  const encoder = new TextEncoder();
 
   // Keep-alive ping
   if (pingInterval > 0) {

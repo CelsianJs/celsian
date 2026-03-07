@@ -265,6 +265,31 @@ describe('CelsianApp', () => {
     expect(body.tags).toEqual(['a', 'b', 'c']);
   });
 
+  // ─── BUG-4: Plugin decorations accessible as properties ───
+
+  it('should sync non-encapsulated plugin decorations to app instance', async () => {
+    const app = createApp();
+    await app.register(
+      (ctx) => { ctx.decorate('myService', { active: true }); },
+      { encapsulate: false },
+    );
+    await app.ready();
+
+    expect((app as any).myService).toEqual({ active: true });
+    expect(app.getDecoration('myService')).toEqual({ active: true });
+  });
+
+  it('should NOT leak encapsulated plugin decorations to app instance', async () => {
+    const app = createApp();
+    await app.register(
+      (ctx) => { ctx.decorate('secret', 42); },
+      // encapsulate defaults to true
+    );
+    await app.ready();
+
+    expect((app as any).secret).toBeUndefined();
+  });
+
   // ─── BUG-5/6: onSend hook headers applied to Response ───
 
   it('should apply onSend hook headers to the response', async () => {

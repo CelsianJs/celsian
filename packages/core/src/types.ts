@@ -51,6 +51,17 @@ export interface CelsianReply {
   clearCookie(name: string, options?: import('./cookie.js').CookieOptions): CelsianReply;
   /** Has a response already been sent? */
   sent: boolean;
+
+  // ─── Status Code Helpers ───
+  notFound(message?: string): Response;
+  badRequest(message?: string): Response;
+  unauthorized(message?: string): Response;
+  forbidden(message?: string): Response;
+  conflict(message?: string): Response;
+  gone(message?: string): Response;
+  tooManyRequests(message?: string): Response;
+  internalServerError(message?: string): Response;
+  serviceUnavailable(message?: string): Response;
 }
 
 // ─── Route Handler ───
@@ -79,6 +90,7 @@ export interface RouteOptions {
   onRequest?: HookHandler | HookHandler[];
   preHandler?: HookHandler | HookHandler[];
   preSerialization?: HookHandler | HookHandler[];
+  onSend?: HookHandler | HookHandler[];
 }
 
 export interface RouteMatch {
@@ -100,6 +112,7 @@ export interface RouteHooks {
   onRequest: HookHandler[];
   preHandler: HookHandler[];
   preSerialization: HookHandler[];
+  onSend: HookHandler[];
 }
 
 // ─── Plugin ───

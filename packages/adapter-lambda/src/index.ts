@@ -65,15 +65,14 @@ async function responseToLambdaResult(
   response: Response,
 ): Promise<APIGatewayProxyStructuredResultV2> {
   const headers: Record<string, string> = {};
-  const cookies: string[] = [];
-
   for (const [key, value] of response.headers.entries()) {
-    if (key.toLowerCase() === 'set-cookie') {
-      cookies.push(value);
-    } else {
+    if (key.toLowerCase() !== 'set-cookie') {
       headers[key] = value;
     }
   }
+
+  // Use getSetCookie() for proper multi-cookie extraction (avoids comma-joining)
+  const cookies: string[] = response.headers.getSetCookie?.() ?? [];
 
   const contentType = response.headers.get('content-type') ?? '';
   const isBinary = !contentType.includes('text/') &&

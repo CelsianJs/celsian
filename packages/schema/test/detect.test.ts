@@ -34,15 +34,11 @@ describe('fromSchema (auto-detect)', () => {
   });
 
   it('should detect TypeBox-like schemas (type + properties)', () => {
-    // This would fail because @sinclair/typebox isn't installed in test env
-    // but we can verify detection triggers the right adapter
     const typeboxLike = {
       type: 'object',
       properties: { name: { type: 'string' } },
     };
 
-    // fromTypeBox will try to load @sinclair/typebox/value
-    // In test env, this may throw, which is expected
     const schema = fromSchema(typeboxLike);
     expect(schema).toBeDefined();
     expect(schema.toJsonSchema()).toEqual(typeboxLike);

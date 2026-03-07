@@ -20,6 +20,7 @@ export { TaskRegistry, TaskWorker, createEnqueue } from './task.js';
 export { MemoryQueue, generateQueueId } from './queue.js';
 export { CronScheduler, parseCronExpression, shouldRun } from './cron.js';
 export { WSRegistry, createWSConnection } from './websocket.js';
+export { accepts, acceptsEncoding, acceptsLanguage } from './negotiate.js';
 
 export type { HookStore } from './hooks.js';
 export type { CelsianConfig } from './config.js';

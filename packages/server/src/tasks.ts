@@ -45,6 +45,10 @@ export interface TaskQueueOptions {
   concurrency?: number;
   /** Poll interval in ms for checking new jobs (default: 100) */
   pollIntervalMs?: number;
+  /** How long to retain completed/failed jobs before eviction, in ms (default: 3600000 = 1 hour) */
+  retentionMs?: number;
+  /** Max completed/failed jobs to keep in memory (default: 10000) */
+  maxRetainedJobs?: number;
 }
 
 export interface TaskQueue {
@@ -121,14 +125,21 @@ function generateJobId(): string {
 export function createTaskQueue(options?: TaskQueueOptions): TaskQueue {
   const concurrency = options?.concurrency ?? 1;
   const pollIntervalMs = options?.pollIntervalMs ?? 100;
+  const retentionMs = options?.retentionMs ?? 3_600_000; // 1 hour
+  const maxRetainedJobs = options?.maxRetainedJobs ?? 10_000;
 
   const handlers = new Map<string, TaskDefinition>();
-  const jobs: InternalJob[] = [];
   const jobMap = new Map<string, InternalJob>();
+
+  // Separate queues for O(1) next-job access instead of O(n) scan
+  const pendingJobs: InternalJob[] = [];
+  let completedCount = 0;
+  let failedCount = 0;
 
   let active = 0;
   let running = false;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let evictionTimer: ReturnType<typeof setInterval> | null = null;
   let stopResolve: (() => void) | null = null;
 
   function register<T extends TaskPayload>(definition: TaskDefinition<T>): void {
@@ -138,7 +149,7 @@ export function createTaskQueue(options?: TaskQueueOptions): TaskQueue {
   async function enqueue<T extends TaskPayload>(
     name: string,
     payload: T,
-    options?: { delay?: number },
+    opts?: { delay?: number },
   ): Promise<string> {
     const definition = handlers.get(name);
     if (!definition) {
@@ -154,11 +165,11 @@ export function createTaskQueue(options?: TaskQueueOptions): TaskQueue {
       retryDelayMs: definition.retryDelayMs ?? 1000,
       timeoutMs: definition.timeoutMs ?? 30_000,
       createdAt: Date.now(),
-      scheduledAt: Date.now() + (options?.delay ?? 0),
+      scheduledAt: Date.now() + (opts?.delay ?? 0),
       status: 'pending',
     };
 
-    jobs.push(job);
+    pendingJobs.push(job);
     jobMap.set(job.id, job);
 
     // Trigger processing if running
@@ -181,6 +192,12 @@ export function createTaskQueue(options?: TaskQueueOptions): TaskQueue {
       pollTimer.unref();
     }
 
+    // Periodic eviction of completed/failed jobs to prevent memory leaks
+    evictionTimer = setInterval(evictStaleJobs, 60_000);
+    if (typeof evictionTimer === 'object' && 'unref' in evictionTimer) {
+      evictionTimer.unref();
+    }
+
     // Initial processing
     processNext();
   }
@@ -192,6 +209,10 @@ export function createTaskQueue(options?: TaskQueueOptions): TaskQueue {
       clearInterval(pollTimer);
       pollTimer = null;
     }
+    if (evictionTimer) {
+      clearInterval(evictionTimer);
+      evictionTimer = null;
+    }
 
     // Wait for active jobs to finish
     if (active > 0) {
@@ -201,28 +222,75 @@ export function createTaskQueue(options?: TaskQueueOptions): TaskQueue {
     }
   }
 
+  /** Evict completed/failed jobs older than retentionMs or exceeding maxRetainedJobs */
+  function evictStaleJobs(): void {
+    const now = Date.now();
+    const cutoff = now - retentionMs;
+    let evicted = 0;
+
+    for (const [id, job] of jobMap) {
+      if ((job.status === 'completed' || job.status === 'failed') && job.createdAt < cutoff) {
+        jobMap.delete(id);
+        if (job.status === 'completed') completedCount--;
+        else failedCount--;
+        evicted++;
+      }
+    }
+
+    // If still over limit, evict oldest completed/failed jobs
+    const terminalCount = completedCount + failedCount;
+    if (terminalCount > maxRetainedJobs) {
+      const toEvict: InternalJob[] = [];
+      for (const job of jobMap.values()) {
+        if (job.status === 'completed' || job.status === 'failed') {
+          toEvict.push(job);
+        }
+      }
+      toEvict.sort((a, b) => a.createdAt - b.createdAt);
+      const removeCount = terminalCount - maxRetainedJobs;
+      for (let i = 0; i < removeCount && i < toEvict.length; i++) {
+        const job = toEvict[i]!;
+        jobMap.delete(job.id);
+        if (job.status === 'completed') completedCount--;
+        else failedCount--;
+      }
+    }
+  }
+
   function processNext(): void {
     if (!running || active >= concurrency) return;
 
     const now = Date.now();
-    const nextJob = jobs.find(j => j.status === 'pending' && j.scheduledAt <= now);
-    if (!nextJob) return;
-
-    active++;
-    nextJob.status = 'active';
-    nextJob.attempts++;
-
-    processJob(nextJob).then(() => {
-      active--;
-
-      if (!running && active === 0 && stopResolve) {
-        stopResolve();
-        stopResolve = null;
+    // O(1) — check front of pending queue
+    while (pendingJobs.length > 0) {
+      const nextJob = pendingJobs[0]!;
+      // Skip jobs that were retried and re-added (status might have changed)
+      if (nextJob.status !== 'pending') {
+        pendingJobs.shift();
+        continue;
       }
+      if (nextJob.scheduledAt > now) break; // Not ready yet
 
-      // Try to process more
-      if (running) processNext();
-    });
+      pendingJobs.shift();
+      active++;
+      nextJob.status = 'active';
+      nextJob.attempts++;
+
+      processJob(nextJob).then(() => {
+        active--;
+
+        if (!running && active === 0 && stopResolve) {
+          stopResolve();
+          stopResolve = null;
+        }
+
+        // Try to process more
+        if (running) processNext();
+      });
+
+      // Respect concurrency limit
+      if (active >= concurrency) return;
+    }
   }
 
   async function processJob(job: InternalJob): Promise<void> {
@@ -230,6 +298,7 @@ export function createTaskQueue(options?: TaskQueueOptions): TaskQueue {
     if (!definition) {
       job.status = 'failed';
       job.result = { success: false, error: `No handler for "${job.name}"` };
+      failedCount++;
       return;
     }
 
@@ -242,17 +311,21 @@ export function createTaskQueue(options?: TaskQueueOptions): TaskQueue {
         createdAt: job.createdAt,
       };
 
-      // Execute with timeout
+      // Execute with timeout — properly clear timer to prevent leaks
+      let timeoutId: ReturnType<typeof setTimeout>;
       const result = await Promise.race([
         definition.handler(taskJob),
-        new Promise<TaskResult>((_, reject) =>
-          setTimeout(() => reject(new Error('Task timeout')), job.timeoutMs),
-        ),
-      ]);
+        new Promise<TaskResult>((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error('Task timeout')), job.timeoutMs);
+        }),
+      ]).finally(() => {
+        clearTimeout(timeoutId!);
+      });
 
       if (result.success) {
         job.status = 'completed';
         job.result = result;
+        completedCount++;
       } else {
         throw new Error(result.error ?? 'Task failed');
       }
@@ -260,27 +333,26 @@ export function createTaskQueue(options?: TaskQueueOptions): TaskQueue {
       const errorMessage = error instanceof Error ? error.message : String(error);
 
       if (job.attempts < job.maxRetries) {
-        // Schedule retry with backoff
+        // Schedule retry with backoff — re-add to pending queue
         job.status = 'pending';
         job.scheduledAt = Date.now() + job.retryDelayMs * job.attempts;
+        pendingJobs.push(job);
       } else {
         job.status = 'failed';
         job.result = { success: false, error: errorMessage };
+        failedCount++;
       }
     }
   }
 
   function stats(): QueueStats {
-    let pending = 0, activeCount = 0, completed = 0, failed = 0;
-    for (const job of jobs) {
-      switch (job.status) {
-        case 'pending': pending++; break;
-        case 'active': activeCount++; break;
-        case 'completed': completed++; break;
-        case 'failed': failed++; break;
-      }
-    }
-    return { pending, active: activeCount, completed, failed, total: jobs.length };
+    return {
+      pending: pendingJobs.filter(j => j.status === 'pending').length,
+      active,
+      completed: completedCount,
+      failed: failedCount,
+      total: jobMap.size,
+    };
   }
 
   function getJob(id: string): TaskJob | undefined {

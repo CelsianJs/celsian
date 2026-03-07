@@ -112,7 +112,7 @@ export class Router {
     }
 
     // Full radix tree matching for parametric/wildcard routes
-    const segments = this.splitPath(pathname);
+    const segments = this.splitPathFast(pathname);
     const params: Record<string, string> = {};
 
     const result = this.matchNode(this.root, segments, 0, params);
@@ -125,9 +125,10 @@ export class Router {
     }
     if (!route) return null;
 
+    // params is a fresh object per match() call — safe to return directly
     return {
       handler: route.handler,
-      params: { ...params },
+      params,
       route,
     };
   }
@@ -167,6 +168,22 @@ export class Router {
     }
 
     return null;
+  }
+
+  /** Single-pass path splitting — avoids intermediate filtered array */
+  private splitPathFast(path: string): string[] {
+    const segments: string[] = [];
+    let start = 0;
+    const len = path.length;
+    for (let i = 0; i <= len; i++) {
+      if (i === len || path.charCodeAt(i) === 47 /* '/' */) {
+        if (i > start) {
+          segments.push(path.substring(start, i));
+        }
+        start = i + 1;
+      }
+    }
+    return segments;
   }
 
   private splitPath(path: string): string[] {

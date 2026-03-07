@@ -111,7 +111,51 @@ export function createReply(): CelsianReply {
       setCookies.push(serializeCookie(name, '', { ...options, maxAge: 0 }));
       return reply;
     },
+
+    // ─── Status Code Helpers ───
+
+    notFound(message = 'Not Found') {
+      return errorResponse(reply, 404, 'NOT_FOUND', message);
+    },
+    badRequest(message = 'Bad Request') {
+      return errorResponse(reply, 400, 'BAD_REQUEST', message);
+    },
+    unauthorized(message = 'Unauthorized') {
+      return errorResponse(reply, 401, 'UNAUTHORIZED', message);
+    },
+    forbidden(message = 'Forbidden') {
+      return errorResponse(reply, 403, 'FORBIDDEN', message);
+    },
+    conflict(message = 'Conflict') {
+      return errorResponse(reply, 409, 'CONFLICT', message);
+    },
+    gone(message = 'Gone') {
+      return errorResponse(reply, 410, 'GONE', message);
+    },
+    tooManyRequests(message = 'Too Many Requests') {
+      return errorResponse(reply, 429, 'TOO_MANY_REQUESTS', message);
+    },
+    internalServerError(message?: string) {
+      return errorResponse(reply, 500, 'INTERNAL_SERVER_ERROR', message ?? 'Internal Server Error', true);
+    },
+    serviceUnavailable(message?: string) {
+      return errorResponse(reply, 503, 'SERVICE_UNAVAILABLE', message ?? 'Service Unavailable', true);
+    },
   };
+
+  function errorResponse(
+    r: CelsianReply,
+    status: number,
+    code: string,
+    message: string,
+    sanitizeInProd = false,
+  ): Response {
+    const safeMessage =
+      sanitizeInProd && process.env.NODE_ENV === 'production'
+        ? (status === 500 ? 'Internal Server Error' : 'Service Unavailable')
+        : message;
+    return r.status(status).json({ error: safeMessage, statusCode: status, code });
+  }
 
   function buildHeaders(extra: Record<string, string> = {}): Headers {
     const h = new Headers(extra);
