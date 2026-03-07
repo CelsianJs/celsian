@@ -39,6 +39,10 @@ export class WSRegistry {
     return this.handlers.has(path);
   }
 
+  hasAnyHandlers(): boolean {
+    return this.handlers.size > 0;
+  }
+
   addConnection(path: string, ws: WSConnection): void {
     const set = this.connections.get(path);
     if (set) set.add(ws);

@@ -14,6 +14,7 @@ export { createLogger, generateRequestId } from './logger.js';
 export { cors } from './plugins/cors.js';
 export { security } from './plugins/security.js';
 export { database, withTransaction, transactionLifecycle } from './plugins/database.js';
+export { trackedPool, dbAnalytics, dbTimingHeader, slowQueryLogger } from './plugins/analytics.js';
 export { openapi } from './plugins/openapi.js';
 export { parseCookies, serializeCookie } from './cookie.js';
 export { TaskRegistry, TaskWorker, createEnqueue } from './task.js';
@@ -30,6 +31,7 @@ export type { Logger, LogLevel, LoggerOptions } from './logger.js';
 export type { CORSOptions } from './plugins/cors.js';
 export type { SecurityOptions } from './plugins/security.js';
 export type { DatabaseOptions, DatabasePool, TransactionCapablePool, TransactionClient } from './plugins/database.js';
+export type { QueryMetric, RequestMetrics } from './plugins/analytics.js';
 export type { OpenAPIOptions } from './plugins/openapi.js';
 export type { CookieOptions } from './cookie.js';
 export type { TaskDefinition, TaskContext, TaskWorkerOptions } from './task.js';
@@ -50,6 +52,7 @@ export type {
   RouteMatch,
   InternalRoute,
   RouteHooks,
+  RouteManifestEntry,
   PluginFunction,
   PluginOptions,
   PluginContext,

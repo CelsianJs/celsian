@@ -10,12 +10,17 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -b"
   },
   "dependencies": {
     "@celsian/schema": "workspace:*"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@types/ws": "^8.18.1"
+  }
 }

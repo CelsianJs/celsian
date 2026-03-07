@@ -155,6 +155,61 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
     options.signal.addEventListener('abort', () => handleShutdown());
   }
 
+  // WebSocket upgrade handling (requires 'ws' package)
+  if (app.wsRegistry.hasAnyHandlers()) {
+    try {
+      const wsMod = await import('ws');
+      const { createWSConnection } = await import('./websocket.js');
+      const { buildRequest } = await import('./request.js');
+      const WSS = wsMod.WebSocketServer ?? (wsMod as any).default?.WebSocketServer;
+      const wss = new WSS({ noServer: true });
+
+      server.on('upgrade', (req: IncomingMessage, socket: any, head: Buffer) => {
+        const pathname = new URL(req.url ?? '/', `http://${host}:${port}`).pathname;
+        const handler = app.wsRegistry.getHandler(pathname);
+
+        if (!handler) {
+          socket.destroy();
+          return;
+        }
+
+        wss.handleUpgrade(req, socket, head, (ws: any) => {
+          const conn = createWSConnection({
+            send: (data: string | ArrayBuffer) => ws.send(data),
+            close: (code?: number, reason?: string) => ws.close(code, reason),
+          });
+
+          app.wsRegistry.addConnection(pathname, conn);
+
+          // Build a CelsianRequest for the upgrade
+          const url = new URL(req.url ?? '/', `http://${host}:${port}`);
+          const webReq = nodeToWebRequest(req, url);
+          const celsianReq = buildRequest(webReq, url, {});
+
+          handler.open?.(conn, celsianReq);
+
+          ws.on('error', (err: Error) => {
+            app.log.error('WebSocket error', { path: pathname, connId: conn.id, error: err.message });
+          });
+
+          ws.on('message', (data: Buffer | ArrayBuffer | Buffer[]) => {
+            const msg = Buffer.isBuffer(data) ? data.toString() : data;
+            handler.message?.(conn, msg as string | ArrayBuffer);
+          });
+
+          ws.on('close', (code: number, reason: Buffer) => {
+            handler.close?.(conn, code, reason.toString());
+            app.wsRegistry.removeConnection(pathname, conn);
+          });
+        });
+      });
+
+      app.log.info('WebSocket upgrade handler enabled');
+    } catch {
+      // 'ws' package not installed — WebSocket disabled for Node.js
+    }
+  }
+
   server.listen(port, host, () => {
     app.log.info(`Server running at http://${host}:${port}`);
     console.log(`[celsian] Server running at http://${host}:${port}`);

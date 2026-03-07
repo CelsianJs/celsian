@@ -156,6 +156,12 @@ export interface PluginContext {
 
 // ─── App Config ───
 
+export interface RouteManifestEntry {
+  method: RouteMethod;
+  url: string;
+  kind: 'serverless' | 'hot' | 'task';
+}
+
 export interface CelsianAppOptions {
   /** Base prefix for all routes */
   prefix?: string;

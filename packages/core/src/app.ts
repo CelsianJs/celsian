@@ -27,6 +27,7 @@ import type {
   PluginOptions,
   PluginContext,
   InternalRoute,
+  RouteManifestEntry,
 } from './types.js';
 
 export class CelsianApp {
@@ -351,8 +352,26 @@ export class CelsianApp {
     return this.handle.bind(this);
   }
 
-  getRoutes(): InternalRoute[] {
-    return this.router.getAllRoutes();
+  getRoutes(filter?: { kind?: 'serverless' | 'hot' | 'task' }): InternalRoute[] {
+    const routes = this.router.getAllRoutes();
+    if (filter?.kind) {
+      return routes.filter((r) => r.kind === filter.kind);
+    }
+    return routes;
+  }
+
+  /**
+   * Export route manifest for deployment tooling.
+   * Returns a JSON-serializable array of route metadata grouped by kind.
+   */
+  getRouteManifest(): { serverless: RouteManifestEntry[]; hot: RouteManifestEntry[]; task: RouteManifestEntry[] } {
+    const routes = this.router.getAllRoutes();
+    const manifest = { serverless: [] as RouteManifestEntry[], hot: [] as RouteManifestEntry[], task: [] as RouteManifestEntry[] };
+    for (const r of routes) {
+      const bucket = manifest[r.kind as keyof typeof manifest];
+      if (bucket) bucket.push({ method: r.method, url: r.url, kind: r.kind });
+    }
+    return manifest;
   }
 
   // ─── Internal ───
