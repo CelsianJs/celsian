@@ -56,6 +56,21 @@ export async function runHooks(
   return null;
 }
 
+/**
+ * Run hooks without aborting on reply.sent.
+ * Used for onSend hooks where reply is already sent but
+ * all hooks should still execute (e.g. CORS + timing + logging).
+ */
+export async function runOnSendHooks(
+  hooks: HookHandler[],
+  request: CelsianRequest,
+  reply: CelsianReply,
+): Promise<void> {
+  for (const hook of hooks) {
+    await hook(request, reply);
+  }
+}
+
 export function runHooksFireAndForget(
   hooks: HookHandler[],
   request: CelsianRequest,

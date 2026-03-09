@@ -4,7 +4,7 @@ import { Router } from './router.js';
 import { createReply } from './reply.js';
 import { buildRequest } from './request.js';
 import { EncapsulationContext } from './context.js';
-import { runHooks, runHooksFireAndForget } from './hooks.js';
+import { runHooks, runOnSendHooks, runHooksFireAndForget } from './hooks.js';
 import { HttpError, ValidationError, assertPlugin, wrapNonError } from './errors.js';
 import { fromSchema, type StandardSchema } from '@celsian/schema';
 import { createInject, type InjectOptions } from './inject.js';
@@ -43,6 +43,13 @@ export class CelsianApp {
   private _queue: QueueBackend = new MemoryQueue();
   private taskWorker: TaskWorker | null = null;
   private taskWorkerOptions: TaskWorkerOptions = {};
+
+  // Custom handlers
+  private notFoundHandler: RouteHandler | null = null;
+  private errorHandler: ((error: Error, request: CelsianRequest, reply: CelsianReply) => Response | Promise<Response>) | null = null;
+
+  // Custom content-type parsers
+  private contentTypeParsers = new Map<string, (request: Request) => Promise<unknown>>();
 
   // Cron scheduling
   private cronScheduler = new CronScheduler();
@@ -128,6 +135,24 @@ export class CelsianApp {
 
   decorateRequest(name: string, value: unknown): void {
     this.pluginContext.decorateRequest(name, value);
+  }
+
+  decorateReply(name: string, value: unknown): void {
+    this.rootContext.replyDecorations.set(name, value);
+  }
+
+  setNotFoundHandler(handler: RouteHandler): void {
+    this.notFoundHandler = handler;
+  }
+
+  setErrorHandler(handler: (error: Error, request: CelsianRequest, reply: CelsianReply) => Response | Promise<Response>): void {
+    this.errorHandler = handler;
+  }
+
+  // ─── Content-Type Parsers ───
+
+  addContentTypeParser(contentType: string, parser: (request: Request) => Promise<unknown>): void {
+    this.contentTypeParsers.set(contentType, parser);
   }
 
   // ─── Task System ───
@@ -274,6 +299,25 @@ export class CelsianApp {
           headers: { 'content-type': 'application/json; charset=utf-8' },
         });
       }
+      if (this.notFoundHandler) {
+        const celsianRequest = buildRequest(request, url, {});
+        const reply = createReply();
+        // Apply reply decorations
+        for (const [key, value] of this.rootContext.replyDecorations) {
+          (reply as Record<string, unknown>)[key] = typeof value === 'function' ? value() : value;
+        }
+        try {
+          const result = await this.notFoundHandler(celsianRequest, reply);
+          if (result instanceof Response) return result;
+          if (reply.sent) return new Response(null, { status: reply.statusCode });
+          return new Response(null, { status: 404 });
+        } catch {
+          return new Response(JSON.stringify({ error: 'Not Found', statusCode: 404, code: 'NOT_FOUND' }), {
+            status: 404,
+            headers: { 'content-type': 'application/json; charset=utf-8' },
+          });
+        }
+      }
       return new Response(JSON.stringify({ error: 'Not Found', statusCode: 404, code: 'NOT_FOUND' }), {
         status: 404,
         headers: { 'content-type': 'application/json; charset=utf-8' },
@@ -309,16 +353,24 @@ export class CelsianApp {
 
     const reply = createReply();
 
-    // Wrap lifecycle with optional timeout
+    // Apply reply decorations
+    for (const [key, value] of this.rootContext.replyDecorations) {
+      if (!(key in reply)) {
+        (reply as Record<string, unknown>)[key] = typeof value === 'function' ? value() : value;
+      }
+    }
+
+    // Wrap lifecycle with optional timeout (clear timer after completion to avoid leaks)
     const timeout = this.options.requestTimeout ?? 30_000;
     const runWithTimeout = async (): Promise<Response> => {
       const lifecycle = this.runLifecycle(celsianRequest, reply, match.route);
       if (timeout <= 0) return lifecycle;
+      let timer: ReturnType<typeof setTimeout>;
       return Promise.race([
-        lifecycle,
-        new Promise<Response>((_, reject) =>
-          setTimeout(() => reject(new HttpError(504, 'Gateway Timeout')), timeout)
-        ),
+        lifecycle.finally(() => clearTimeout(timer)),
+        new Promise<Response>((_, reject) => {
+          timer = setTimeout(() => reject(new HttpError(504, 'Gateway Timeout')), timeout);
+        }),
       ]);
     };
 
@@ -430,9 +482,9 @@ export class CelsianApp {
       }
 
       // Route-level onSend (from route options only, not context-baked)
-      await runHooks(route.hooks.onSend, request, reply);
+      await runOnSendHooks(route.hooks.onSend, request, reply);
       // Root-level onSend (includes hooks propagated up from encapsulated plugins)
-      await runHooks(this.rootContext.hooks.onSend, request, reply);
+      await runOnSendHooks(this.rootContext.hooks.onSend, request, reply);
 
       // Merge headers that were added or changed during onSend
       const replyHeaders = reply.headers;
@@ -510,6 +562,14 @@ export class CelsianApp {
       }
     }
 
+    // Check custom content-type parsers (exact match then prefix match)
+    for (const [registeredType, parser] of this.contentTypeParsers) {
+      if (contentType === registeredType || contentType.startsWith(registeredType)) {
+        request.parsedBody = await parser(request);
+        return;
+      }
+    }
+
     try {
       if (contentType.includes('application/json')) {
         const text = await request.text();
@@ -557,6 +617,16 @@ export class CelsianApp {
     request: CelsianRequest,
     reply: CelsianReply,
   ): Promise<Response> {
+    // Try custom error handler first
+    if (this.errorHandler) {
+      try {
+        const result = await this.errorHandler(error, request, reply);
+        if (result instanceof Response) return result;
+      } catch {
+        // Fall through to hooks / default
+      }
+    }
+
     for (const handler of this.rootContext.hooks.onError) {
       try {
         const result = await handler(error, request, reply);

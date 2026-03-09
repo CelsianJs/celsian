@@ -174,7 +174,9 @@ export class Router {
     return null;
   }
 
-  /** Check if any method is registered for this path (for 405 detection). */
+  /** Check if any method is registered for this exact path (for 405 detection).
+   *  Excludes wildcard catch-all matches to avoid CORS OPTIONS routes
+   *  turning all 404s into 405s. */
   hasPath(pathname: string): boolean {
     const key = normalizePathname(pathname);
     if (this.staticRoutes.has(key)) return true;
@@ -191,7 +193,8 @@ export class Router {
     const staticChild = node.children.get(seg);
     if (staticChild && this._hasPath(staticChild, segments, index + 1)) return true;
     if (node.paramChild && this._hasPath(node.paramChild, segments, index + 1)) return true;
-    if (node.wildcardChild && node.wildcardChild.routes.size > 0) return true;
+    // Intentionally exclude wildcardChild — a catch-all like OPTIONS /*path
+    // should not cause non-existent paths to return 405 instead of 404
     return false;
   }
 

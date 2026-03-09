@@ -5,7 +5,7 @@ export { Router } from './router.js';
 export { createReply } from './reply.js';
 export { buildRequest } from './request.js';
 export { EncapsulationContext } from './context.js';
-export { createHookStore, runHooks, runHooksFireAndForget } from './hooks.js';
+export { createHookStore, runHooks, runOnSendHooks, runHooksFireAndForget } from './hooks.js';
 export { CelsianError, HttpError, ValidationError, assertPlugin, assertDecorationUnique, wrapNonError } from './errors.js';
 export { defineConfig, loadConfig } from './config.js';
 export { serve, nodeToWebRequest, writeWebResponse } from './serve.js';

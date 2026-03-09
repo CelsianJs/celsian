@@ -36,6 +36,8 @@ export interface CelsianRequest extends Request {
 }
 
 export interface CelsianReply {
+  /** Allow plugin-added properties */
+  [key: string]: unknown;
   status(code: number): CelsianReply;
   header(key: string, value: string): CelsianReply;
   headers: Record<string, string>;
@@ -49,6 +51,10 @@ export interface CelsianReply {
   cookie(name: string, value: string, options?: import('./cookie.js').CookieOptions): CelsianReply;
   /** Clear a cookie by setting maxAge=0 */
   clearCookie(name: string, options?: import('./cookie.js').CookieOptions): CelsianReply;
+  /** Read a file and send it with the correct MIME type */
+  sendFile(filePath: string): Promise<Response>;
+  /** Send a file as a download with Content-Disposition: attachment */
+  download(filePath: string, filename?: string): Promise<Response>;
   /** Has a response already been sent? */
   sent: boolean;
 
@@ -149,6 +155,7 @@ export interface PluginContext {
 
   decorate(name: string, value: unknown): void;
   decorateRequest(name: string, value: unknown): void;
+  decorateReply(name: string, value: unknown): void;
 
   /** Return all registered routes (collected from the router). */
   getRoutes(): InternalRoute[];

@@ -1,7 +1,31 @@
 // @celsian/core — CelsianReply implementation
 
+import { readFile, stat } from 'node:fs/promises';
+import { extname, basename } from 'node:path';
 import type { CelsianReply } from './types.js';
 import { serializeCookie, type CookieOptions } from './cookie.js';
+
+const MIME_TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.pdf': 'application/pdf',
+  '.zip': 'application/zip',
+  '.csv': 'text/csv; charset=utf-8',
+  '.xml': 'application/xml; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.mp4': 'video/mp4',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon',
+};
 
 export function createReply(): CelsianReply {
   let statusCode = 200;
@@ -42,6 +66,19 @@ export function createReply(): CelsianReply {
       sent = true;
       if (data instanceof Response) {
         return data;
+      }
+      // No-body status codes (204, 304) — ignore data
+      if (statusCode === 204 || statusCode === 304) {
+        return new Response(null, {
+          status: statusCode,
+          headers: buildHeaders(headers),
+        });
+      }
+      if (data === null || data === undefined) {
+        return new Response(null, {
+          status: statusCode,
+          headers: buildHeaders(headers),
+        });
       }
       if (typeof data === 'string') {
         return new Response(data, {
@@ -110,6 +147,49 @@ export function createReply(): CelsianReply {
     clearCookie(name: string, options?: CookieOptions) {
       setCookies.push(serializeCookie(name, '', { ...options, maxAge: 0 }));
       return reply;
+    },
+
+    async sendFile(filePath: string): Promise<Response> {
+      sent = true;
+      try {
+        await stat(filePath);
+        const data = await readFile(filePath);
+        const ext = extname(filePath).toLowerCase();
+        const contentType = MIME_TYPES[ext] ?? 'application/octet-stream';
+        return new Response(data, {
+          status: statusCode,
+          headers: buildHeaders({ 'content-type': contentType, ...headers }),
+        });
+      } catch {
+        return new Response(
+          JSON.stringify({ error: 'Not Found', statusCode: 404, code: 'NOT_FOUND' }),
+          { status: 404, headers: buildHeaders({ 'content-type': 'application/json; charset=utf-8' }) },
+        );
+      }
+    },
+
+    async download(filePath: string, filename?: string): Promise<Response> {
+      sent = true;
+      try {
+        await stat(filePath);
+        const data = await readFile(filePath);
+        const ext = extname(filePath).toLowerCase();
+        const contentType = MIME_TYPES[ext] ?? 'application/octet-stream';
+        const downloadName = filename ?? basename(filePath);
+        return new Response(data, {
+          status: statusCode,
+          headers: buildHeaders({
+            'content-type': contentType,
+            'content-disposition': `attachment; filename="${downloadName}"`,
+            ...headers,
+          }),
+        });
+      } catch {
+        return new Response(
+          JSON.stringify({ error: 'Not Found', statusCode: 404, code: 'NOT_FOUND' }),
+          { status: 404, headers: buildHeaders({ 'content-type': 'application/json; charset=utf-8' }) },
+        );
+      }
     },
 
     // ─── Status Code Helpers ───

@@ -69,11 +69,20 @@ export function createLogger(options: LoggerOptions = {}): Logger {
     fatal(msg, data) { log('fatal', msg, data); },
 
     child(bindings: Record<string, unknown>): Logger {
-      return createLogger({
-        level: options.level ?? 'info',
-        destination: write,
-        bindings: { ...baseBindings, ...bindings },
-      });
+      // Lightweight child — reuse parent's log function and write destination
+      const childBindings = { ...baseBindings, ...bindings };
+      const childLogger: Logger = {
+        get level() { return options.level ?? 'info'; },
+        set level(l: LogLevel) { /* child inherits parent level */ },
+        trace(msg, data) { if (LEVEL_VALUES.trace >= minLevel) { write(JSON.stringify({ level: 'trace', time: Date.now(), ...childBindings, msg, ...data })); } },
+        debug(msg, data) { if (LEVEL_VALUES.debug >= minLevel) { write(JSON.stringify({ level: 'debug', time: Date.now(), ...childBindings, msg, ...data })); } },
+        info(msg, data) { if (LEVEL_VALUES.info >= minLevel) { write(JSON.stringify({ level: 'info', time: Date.now(), ...childBindings, msg, ...data })); } },
+        warn(msg, data) { if (LEVEL_VALUES.warn >= minLevel) { write(JSON.stringify({ level: 'warn', time: Date.now(), ...childBindings, msg, ...data })); } },
+        error(msg, data) { if (LEVEL_VALUES.error >= minLevel) { write(JSON.stringify({ level: 'error', time: Date.now(), ...childBindings, msg, ...data })); } },
+        fatal(msg, data) { if (LEVEL_VALUES.fatal >= minLevel) { write(JSON.stringify({ level: 'fatal', time: Date.now(), ...childBindings, msg, ...data })); } },
+        child(b) { return createLogger({ level: options.level ?? 'info', destination: write, bindings: { ...childBindings, ...b } }); },
+      };
+      return childLogger;
     },
   };
 

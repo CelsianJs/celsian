@@ -303,4 +303,24 @@ describe('CelsianApp', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('x-custom')).toBe('from-hook');
   });
+
+  it('should handle reply.send(null) on 204 without throwing', async () => {
+    const app = createApp();
+    app.delete('/items/:id', (_req, reply) => reply.status(204).send(null));
+
+    const response = await app.handle(new Request('http://localhost/items/1', { method: 'DELETE' }));
+    expect(response.status).toBe(204);
+    const body = await response.text();
+    expect(body).toBe('');
+  });
+
+  it('should return 404 (not 405) for non-existent paths with CORS enabled', async () => {
+    const { cors } = await import('../src/plugins/cors.js');
+    const app = createApp();
+    app.register(cors(), { encapsulate: false });
+    app.get('/exists', (_req, reply) => reply.json({ ok: true }));
+
+    const response = await app.handle(new Request('http://localhost/nope'));
+    expect(response.status).toBe(404);
+  });
 });

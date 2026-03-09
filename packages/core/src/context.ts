@@ -20,6 +20,7 @@ export class EncapsulationContext {
   readonly hooks: HookStore;
   readonly decorations: Map<string, unknown>;
   readonly requestDecorations: Map<string, unknown>;
+  readonly replyDecorations: Map<string, unknown>;
   readonly router: Router;
   private children: EncapsulationContext[] = [];
 
@@ -34,10 +35,12 @@ export class EncapsulationContext {
       this.hooks = cloneHookStore(parent.hooks);
       this.decorations = new Map(parent.decorations);
       this.requestDecorations = new Map(parent.requestDecorations);
+      this.replyDecorations = new Map(parent.replyDecorations);
     } else {
       this.hooks = createHookStore();
       this.decorations = new Map();
       this.requestDecorations = new Map();
+      this.replyDecorations = new Map();
     }
 
     this.router = parentRouter;
@@ -127,6 +130,9 @@ export class EncapsulationContext {
       },
       decorateRequest(name: string, value: unknown) {
         ctx.requestDecorations.set(name, value);
+      },
+      decorateReply(name: string, value: unknown) {
+        ctx.replyDecorations.set(name, value);
       },
       getRoutes() {
         return ctx.router.getAllRoutes();
