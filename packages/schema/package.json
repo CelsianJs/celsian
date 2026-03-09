@@ -10,7 +10,9 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -b"
   },
@@ -20,9 +22,18 @@
     "valibot": ">=0.30.0"
   },
   "peerDependenciesMeta": {
-    "@sinclair/typebox": { "optional": true },
-    "zod": { "optional": true },
-    "valibot": { "optional": true }
+    "@sinclair/typebox": {
+      "optional": true
+    },
+    "zod": {
+      "optional": true
+    },
+    "valibot": {
+      "optional": true
+    }
   },
-  "license": "MIT"
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  }
 }

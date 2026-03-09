@@ -22,5 +22,8 @@
   "license": "MIT",
   "devDependencies": {
     "@types/ws": "^8.18.1"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -20,5 +20,8 @@
   },
   "dependencies": {
     "@celsian/schema": "workspace:*"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
