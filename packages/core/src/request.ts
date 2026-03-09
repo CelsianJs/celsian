@@ -5,13 +5,17 @@ import type { CelsianRequest } from './types.js';
 // Shared empty query object for requests with no query string
 const EMPTY_QUERY: Record<string, string | string[]> = Object.freeze(Object.create(null));
 
+// Keys that must never be set via user input (prototype pollution prevention)
+const BLOCKED_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 export function buildRequest(
   request: Request,
   url: URL,
   params: Record<string, string>,
 ): CelsianRequest {
-  const query: Record<string, string | string[]> = {};
+  const query: Record<string, string | string[]> = Object.create(null);
   for (const [key, value] of url.searchParams) {
+    if (BLOCKED_KEYS.has(key)) continue;
     const existing = query[key];
     if (existing !== undefined) {
       query[key] = Array.isArray(existing) ? [...existing, value] : [existing, value];
@@ -70,10 +74,11 @@ export function buildRequestFast(
   if (!queryString) {
     query = EMPTY_QUERY as Record<string, string | string[]>;
   } else {
-    query = {};
+    query = Object.create(null);
     // Use URLSearchParams for correct parsing (handles encoding, +, etc.)
     const searchParams = new URLSearchParams(queryString);
     for (const [key, value] of searchParams) {
+      if (BLOCKED_KEYS.has(key)) continue;
       const existing = query[key];
       if (existing !== undefined) {
         query[key] = Array.isArray(existing) ? [...existing, value] : [existing, value];

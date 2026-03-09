@@ -74,9 +74,15 @@ export function decode(value: unknown): unknown {
           return new Map(entries);
         }
         case TAG_REGEXP: {
-          const match = v.match(/^\/(.+)\/([gimsuy]*)$/);
-          if (match) {
-            return new RegExp(match[1]!, match[2]);
+          // Use lastIndexOf to avoid ReDoS with crafted patterns
+          const lastSlash = v.lastIndexOf('/');
+          if (lastSlash > 0 && v.charCodeAt(0) === 47 /* '/' */) {
+            const pattern = v.slice(1, lastSlash);
+            const flags = v.slice(lastSlash + 1);
+            // Validate flags contain only valid characters
+            if (/^[gimsuy]*$/.test(flags)) {
+              return new RegExp(pattern, flags);
+            }
           }
           return new RegExp(v);
         }

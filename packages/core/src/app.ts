@@ -674,17 +674,20 @@ export class CelsianApp {
 
     try {
       if (contentType.includes('application/json')) {
-        // Use native request.json() — single pass, avoids text() + JSON.parse() double alloc
+        // Read body as text first to enforce body size limit on actual data
+        // (Content-Length can be omitted in chunked transfer encoding)
         try {
-          request.parsedBody = await request.json();
-        } catch (parseErr) {
-          // request.json() throws on empty body or invalid JSON
-          // Check if body was empty (not an error)
-          if ((parseErr as Error).message?.includes('Unexpected end of JSON input') ||
-              (parseErr as Error).message?.includes('JSON Parse error')) {
-            // Could be empty body — leave as undefined
+          const text = await request.text();
+          if (bodyLimit > 0 && text.length > bodyLimit) {
+            throw new HttpError(413, 'Payload Too Large');
+          }
+          if (!text.trim()) {
+            // Empty body — leave as undefined
             return;
           }
+          request.parsedBody = JSON.parse(text);
+        } catch (parseErr) {
+          if (parseErr instanceof HttpError) throw parseErr;
           throw new HttpError(400, `Invalid JSON (content-type: ${contentType}): ${(parseErr as Error).message}`, {
             code: 'INVALID_JSON',
             cause: parseErr as Error,

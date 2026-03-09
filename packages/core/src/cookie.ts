@@ -10,8 +10,11 @@ export interface CookieOptions {
   secure?: boolean;
 }
 
+// Keys that must never be set via user input (prototype pollution prevention)
+const BLOCKED_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 export function parseCookies(header: string): Record<string, string> {
-  const cookies: Record<string, string> = {};
+  const cookies: Record<string, string> = Object.create(null);
   if (!header) return cookies;
 
   for (const pair of header.split(';')) {
@@ -19,7 +22,7 @@ export function parseCookies(header: string): Record<string, string> {
     if (idx === -1) continue;
     const key = pair.slice(0, idx).trim();
     const value = pair.slice(idx + 1).trim();
-    if (key) {
+    if (key && !BLOCKED_KEYS.has(key)) {
       cookies[key] = decodeURIComponent(value);
     }
   }

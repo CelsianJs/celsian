@@ -94,20 +94,29 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
     // Static files — only parse URL when staticDir is configured
     if (hasStaticDir) {
       const url = new URL(req.url ?? '/', baseUrl);
-      const filePath = join(options.staticDir!, url.pathname);
-      try {
-        const s = await stat(filePath);
-        if (s.isFile()) {
-          const content = await readFile(filePath);
-          const ext = extname(filePath);
-          res.setHeader('content-type', MIME_TYPES[ext] ?? 'application/octet-stream');
-          res.setHeader('cache-control', 'public, max-age=31536000, immutable');
-          res.end(content);
-          inFlight--;
-          return;
+      const { resolve, normalize } = await import('node:path');
+      const staticRoot = resolve(options.staticDir!);
+      // Decode URI and normalize to prevent path traversal (e.g., /../../../etc/passwd)
+      const decodedPath = decodeURIComponent(url.pathname);
+      const filePath = resolve(join(staticRoot, decodedPath));
+      // Ensure the resolved path is within the static directory
+      if (!filePath.startsWith(staticRoot + '/') && filePath !== staticRoot) {
+        // Path traversal attempt — fall through to app handler
+      } else {
+        try {
+          const s = await stat(filePath);
+          if (s.isFile()) {
+            const content = await readFile(filePath);
+            const ext = extname(filePath);
+            res.setHeader('content-type', MIME_TYPES[ext] ?? 'application/octet-stream');
+            res.setHeader('cache-control', 'public, max-age=31536000, immutable');
+            res.end(content);
+            inFlight--;
+            return;
+          }
+        } catch {
+          // Not a static file
         }
-      } catch {
-        // Not a static file
       }
     }
 

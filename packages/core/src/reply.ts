@@ -56,7 +56,8 @@ export function createReply(): CelsianReply {
     },
 
     header(key: string, value: string) {
-      headers[key.toLowerCase()] = value;
+      // Prevent CRLF header injection by stripping \r and \n
+      headers[key.toLowerCase()] = value.replace(/[\r\n]/g, '');
       return reply;
     },
 
@@ -157,10 +158,12 @@ export function createReply(): CelsianReply {
       try {
         // Lazy import — keeps reply.ts edge-compatible when sendFile isn't used
         const { readFile, stat } = await import('node:fs/promises');
-        const { extname } = await import('node:path');
-        await stat(filePath);
-        const data = await readFile(filePath);
-        const ext = extname(filePath).toLowerCase();
+        const { extname, resolve } = await import('node:path');
+        // Resolve to absolute path to prevent path traversal
+        const resolvedPath = resolve(filePath);
+        await stat(resolvedPath);
+        const data = await readFile(resolvedPath);
+        const ext = extname(resolvedPath).toLowerCase();
         const contentType = MIME_TYPES[ext] ?? 'application/octet-stream';
         return new Response(data, {
           status: statusCode,
@@ -179,17 +182,21 @@ export function createReply(): CelsianReply {
       try {
         // Lazy import — keeps reply.ts edge-compatible when download isn't used
         const { readFile, stat } = await import('node:fs/promises');
-        const { extname, basename } = await import('node:path');
-        await stat(filePath);
-        const data = await readFile(filePath);
-        const ext = extname(filePath).toLowerCase();
+        const { extname, basename, resolve } = await import('node:path');
+        // Resolve to absolute path to prevent path traversal
+        const resolvedPath = resolve(filePath);
+        await stat(resolvedPath);
+        const data = await readFile(resolvedPath);
+        const ext = extname(resolvedPath).toLowerCase();
         const contentType = MIME_TYPES[ext] ?? 'application/octet-stream';
-        const downloadName = filename ?? basename(filePath);
+        const downloadName = filename ?? basename(resolvedPath);
+        // Sanitize filename to prevent header injection via Content-Disposition
+        const safeName = downloadName.replace(/["\r\n]/g, '');
         return new Response(data, {
           status: statusCode,
           headers: buildHeaders({
             'content-type': contentType,
-            'content-disposition': `attachment; filename="${downloadName}"`,
+            'content-disposition': `attachment; filename="${safeName}"`,
             ...headers,
           }),
         });

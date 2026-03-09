@@ -171,7 +171,7 @@ export function createSessionManager(options: SessionOptions) {
     },
   ): string {
     const httpOnly = opts?.httpOnly !== false;
-    const secure = opts?.secure ?? false;
+    const secure = opts?.secure !== false; // Default to true for security
     const sameSite = opts?.sameSite ?? 'Lax';
     const path = opts?.path ?? '/';
     const maxAge = opts?.maxAge ?? Math.floor(ttlMs / 1000);
