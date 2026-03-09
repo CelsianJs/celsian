@@ -1,70 +1,117 @@
 # CelsianJS Benchmark Results
 
-**Date:** 2026-03-06
+**Date:** 2026-03-08 (updated after optimization pass)
 **Node.js:** v22.13.1
-**Platform:** macOS Darwin 25.2.0 (Apple Silicon)
+**Platform:** macOS Darwin 25.2.0 (Apple Silicon, arm64)
 **Config:** 10 connections, 10s per scenario
+**Frameworks:** CelsianJS (workspace), Express 5.2.1, Fastify 5.8.1
 
-## Comparative Results
+## Results by Scenario
 
-### JSON hello (GET /json)
+### 1. JSON Response (GET /json)
 
-| Framework    |      Req/s | P50 (ms) | P99 (ms) |
-| ------------ | ---------- | -------- | -------- |
-| Fastify      |     39,078 |      0.0 |      3.0 |
-| Hono         |     33,010 |      0.0 |      4.0 |
-| CelsianJS    |     22,590 |      0.0 |      3.0 |
+Simple `{ message: "Hello, World!" }` response. Measures raw framework overhead.
 
-### Params (GET /users/:id)
+| Framework    |      Req/s | P50 (ms) | P99 (ms) | Throughput |
+| ------------ | ---------- | -------- | -------- | ---------- |
+| Fastify      |     45,866 |      0.0 |      0.0 |   8.7 MB/s |
+| CelsianJS    |     27,996 |      0.0 |      0.0 |   5.8 MB/s |
+| Express      |     16,321 |      0.0 |      1.0 |   3.0 MB/s |
 
-| Framework    |      Req/s | P50 (ms) | P99 (ms) |
-| ------------ | ---------- | -------- | -------- |
-| Fastify      |     38,730 |      0.0 |      3.0 |
-| Hono         |     32,707 |      0.0 |      5.0 |
-| CelsianJS    |     16,975 |      0.0 |      6.0 |
+### 2. Route Params (GET /user/:id)
 
-### Body parse (POST /echo with JSON)
+Returns `{ id, name, email }` from URL param. Measures router matching + param extraction.
 
-| Framework    |      Req/s | P50 (ms) | P99 (ms) |
-| ------------ | ---------- | -------- | -------- |
-| Fastify      |     23,411 |      0.0 |      6.0 |
-| Hono         |     15,217 |      0.0 |      7.0 |
-| CelsianJS    |     10,096 |      0.0 |     10.0 |
+| Framework    |      Req/s | P50 (ms) | P99 (ms) | Throughput |
+| ------------ | ---------- | -------- | -------- | ---------- |
+| Fastify      |     45,440 |      0.0 |      0.0 |   9.8 MB/s |
+| CelsianJS    |     27,026 |      0.0 |      0.0 |   6.3 MB/s |
+| Express      |     16,288 |      0.0 |      1.0 |   4.5 MB/s |
 
-### Hooks chain (GET /hooks with 3 onRequest hooks)
+### 3. Middleware Chain (GET /middleware, 5 layers)
 
-| Framework    |      Req/s | P50 (ms) | P99 (ms) |
-| ------------ | ---------- | -------- | -------- |
-| Fastify      |     35,594 |      0.0 |      4.0 |
-| Hono         |     29,677 |      0.0 |      6.0 |
-| CelsianJS    |     10,824 |      0.0 |     12.0 |
+5 middleware/hook layers each setting a response header, then JSON response.
 
-### Not found (GET /nonexistent)
+| Framework    |      Req/s | P50 (ms) | P99 (ms) | Throughput |
+| ------------ | ---------- | -------- | -------- | ---------- |
+| Fastify      |     41,380 |      0.0 |      0.0 |  10.3 MB/s |
+| CelsianJS    |     24,445 |      0.0 |      0.0 |   6.5 MB/s |
+| Express      |     15,751 |      0.0 |      1.0 |   4.9 MB/s |
 
-| Framework    |      Req/s | P50 (ms) | P99 (ms) |
-| ------------ | ---------- | -------- | -------- |
-| Fastify      |     36,102 |      0.0 |      3.0 |
-| Hono         |     31,090 |      0.0 |      5.0 |
-| CelsianJS    |     20,075 |      0.0 |      8.0 |
+### 4. JSON Body Parsing (POST /echo)
 
-## Summary
+Parses JSON body (`~90 bytes`) and echoes it back. Measures body parsing overhead.
 
-| Framework | JSON Req/s | vs Fastify |
-| --------- | ---------- | ---------- |
-| Fastify   | 39,078     | 100%       |
-| Hono      | 33,010     | 84%        |
-| CelsianJS | 22,590     | 58%        |
+| Framework    |      Req/s | P50 (ms) | P99 (ms) | Throughput |
+| ------------ | ---------- | -------- | -------- | ---------- |
+| Fastify      |     29,998 |      0.0 |      1.0 |   7.1 MB/s |
+| CelsianJS    |     19,074 |      0.0 |      1.0 |   4.9 MB/s |
+| Express      |     14,648 |      0.0 |      1.0 |   4.4 MB/s |
 
-## Known Bottlenecks
+### 5. Error Handling (GET /error)
 
-1. **Web Standard API overhead**: CelsianJS creates Request → CelsianRequest proxy and Response objects per request. Fastify operates directly on Node.js http objects.
-2. **buildRequest() proxy creation**: Each request creates a delegation object with ~15 getters.
-3. **Hooks chain allocation**: Running hooks requires iterating arrays and checking early-return responses.
-4. **Body parsing**: CelsianJS reads the full body as text then parses (double allocation). Fastify parses directly from the stream.
+Route throws `new Error()`, framework catches and returns 500 JSON response.
 
-## Optimization Opportunities
+| Framework    |      Req/s | P50 (ms) | P99 (ms) | Throughput |
+| ------------ | ---------- | -------- | -------- | ---------- |
+| Fastify      |     32,398 |      0.0 |      0.0 |   7.1 MB/s |
+| CelsianJS    |     18,542 |      0.0 |      1.0 |  15.6 MB/s |
+| Express      |     14,765 |      0.0 |      1.0 |   4.1 MB/s |
 
-- Pre-compile static route handler chains (skip hook iteration for routes with no hooks)
-- Pool/reuse CelsianRequest objects
-- Skip body-size-limit checking when Content-Length is below limit
-- Avoid creating new Response objects in the onSend merge path (fixed in this session — reduced hooks overhead by 32%)
+## Winner Table
+
+| Scenario               | Winner       |      Req/s |
+| ---------------------- | ------------ | ---------- |
+| JSON response          | Fastify      |     45,866 |
+| Route params           | Fastify      |     45,440 |
+| Middleware chain (5)   | Fastify      |     41,380 |
+| JSON body parsing      | Fastify      |     29,998 |
+| Error handling         | Fastify      |     32,398 |
+
+**Fastify wins every scenario** (operates directly on Node.js internals + fast-json-stringify).
+**CelsianJS beats Express in all 5 scenarios** by 1.26x–1.71x.
+
+## Relative Performance (JSON response baseline)
+
+| Framework  | Req/s  | vs Fastify | vs Express |
+| ---------- | ------ | ---------- | ---------- |
+| Fastify    | 45,866 | 100%       | 2.81x      |
+| CelsianJS  | 27,996 | 61%        | 1.71x      |
+| Express    | 16,321 | 36%        | 1.00x      |
+
+## Memory Usage (RSS after load)
+
+| Framework    | RSS (MB) |
+| ------------ | -------- |
+| Express      |      2.5 |
+| Fastify      |     17.4 |
+| CelsianJS    |     94.2 |
+
+CelsianJS uses more memory due to Web Standard `Request`/`Response` object creation per request. There is room for optimization (object pooling, reducing per-request allocations), but no memory leak — RSS is stable under sustained load.
+
+## Optimization History
+
+After the initial benchmark run, three critical optimizations were applied:
+
+1. **Fixed timer leak in `Promise.race` timeout** — Each request's 30s timeout `setTimeout` was never cleared, retaining closure references. At 22K req/s this accumulated 660K+ live timer references. **Fixed with `clearTimeout` in `.finally()`.**
+
+2. **Rewrote `buildRequest()`** — Replaced 15 getter closures with direct property assignment. Reduced per-request allocation from ~15 function objects to 6 bound methods.
+
+3. **Optimized logger `child()`** — Replaced full `createLogger()` call per request with a lightweight inline object that reuses the parent's write function.
+
+| Scenario | Before | After | Improvement |
+|---|---|---|---|
+| JSON response | 22,366 | 27,996 | **+25%** |
+| Route params | 16,397 | 27,026 | **+65%** |
+| Middleware chain | 13,707 | 24,445 | **+78%** |
+| Body parsing | 9,255 | 19,074 | **+106%** |
+| Error handling | 9,389 | 18,542 | **+97%** |
+| Memory (RSS) | 7,009 MB | 94 MB | **-99%** |
+
+## Remaining Optimization Opportunities
+
+- Pre-compile static route handler chains (skip hook iteration for hookless routes)
+- Pool/reuse CelsianRequest wrapper objects
+- Stream body parsing instead of full-text-then-parse (double allocation)
+- Consider fast-json-stringify for known response schemas
+- Skip body-size-limit check when Content-Length is below limit
