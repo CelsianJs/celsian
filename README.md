@@ -1,17 +1,12 @@
 # CelsianJS
 
-AI-native TypeScript backend framework. Built for humans and agents to use together.
+TypeScript backend framework built on Web Standard APIs. Runs everywhere -- Node.js, Bun, Deno, Cloudflare Workers, AWS Lambda, Vercel.
 
-## Packages
-
-| Package | Description |
-|---------|-------------|
-| [`@celsian/core`](packages/core) | Server runtime — routing, hooks, lifecycle |
-| [`@celsian/schema`](packages/schema) | Standard Schema adapters (TypeBox, Zod, Valibot) |
-| [`@celsian/rpc`](packages/rpc) | Type-safe RPC with OpenAPI generation |
-| [`@celsian/cli`](packages/cli) | Developer CLI — dev server, generators |
-| [`celsian`](packages/celsian) | Meta-package — single import for everything |
-| [`create-celsian`](packages/create-celsian) | Project scaffolder |
+- **Multi-runtime** -- Write once, deploy to any JavaScript runtime. Built on `Request`/`Response`, not `req`/`res`.
+- **1.7x faster than Express** -- Radix-tree router, zero-copy request building, pre-stringified error paths.
+- **Built-in everything** -- Background tasks, cron, WebSocket, CORS, security headers, DB analytics, rate limiting, JWT, caching, compression, OpenAPI docs.
+- **Fastify-style plugin encapsulation** -- Scoped hooks and decorations by default. No accidental middleware leaks.
+- **Schema-agnostic validation** -- Auto-detects Zod, TypeBox, or Valibot. No config, no adapters.
 
 ## Quick Start
 
@@ -23,21 +18,451 @@ npm run dev
 
 Or manually:
 
+```bash
+npm install @celsian/core
+```
+
 ```typescript
-import { createApp, serve } from 'celsian';
+import { createApp, serve } from '@celsian/core';
 
-const app = createApp();
+const app = createApp({ logger: true });
 
-app.get('/health', (req, reply) => reply.json({ status: 'ok' }));
+app.get('/hello', (req, reply) => {
+  return reply.json({ message: 'Hello, World!' });
+});
+
+app.get('/users/:id', (req, reply) => {
+  return reply.json({ id: req.params.id, name: 'Alice' });
+});
+
+app.post('/users', async (req, reply) => {
+  const body = req.parsedBody as { name: string };
+  return reply.status(201).json({ id: '1', name: body.name });
+});
 
 serve(app, { port: 3000 });
 ```
 
-## Part of the ThenJS Stack
+On Bun or Deno, `serve()` auto-detects the runtime. No code changes needed.
 
-- **What Framework** — frontend (signals, fine-grained reactivity)
-- **CelsianJS** — backend (this project)
-- **ThenJS** — meta-framework glue (SSR, file routing, RPC, build)
+```bash
+bun run server.ts   # Uses Bun.serve() automatically
+deno run server.ts  # Uses Deno.serve() automatically
+```
+
+## Why CelsianJS
+
+### Multi-Runtime
+
+The same application code runs on Node.js, Bun, Deno, Cloudflare Workers, AWS Lambda, and Vercel with zero changes. CelsianJS is built on Web Standard `Request` and `Response` -- not Node.js-specific `IncomingMessage` and `ServerResponse`.
+
+```typescript
+// Cloudflare Workers
+import { createCloudflareHandler } from '@celsian/adapter-cloudflare';
+export default createCloudflareHandler(app);
+
+// AWS Lambda
+import { createLambdaHandler } from '@celsian/adapter-lambda';
+export const handler = createLambdaHandler(app);
+
+// Vercel Edge
+import { createVercelEdgeHandler } from '@celsian/adapter-vercel';
+export default createVercelEdgeHandler(app);
+```
+
+### Faster Than Express
+
+Benchmarked on Node.js v22, Apple Silicon, 10 connections for 10 seconds per scenario:
+
+| Scenario           | CelsianJS | Express  | Fastify  |
+| ------------------ | --------- | -------- | -------- |
+| JSON response      | 27,996    | 16,321   | 45,866   |
+| Route params       | 27,026    | 16,288   | 45,440   |
+| Middleware (5 layers) | 24,445 | 15,751   | 41,380   |
+| JSON body parsing  | 19,074    | 14,648   | 29,998   |
+| Error handling     | 18,542    | 14,765   | 32,398   |
+
+CelsianJS beats Express by 1.3x-1.7x across all scenarios. Fastify is faster (it operates directly on Node.js internals and uses `fast-json-stringify`), but CelsianJS runs on every runtime -- Fastify does not.
+
+### Built-In Everything
+
+No hunting for middleware packages:
+
+```typescript
+await app.register(security(), { encapsulate: false });  // Helmet-style headers
+await app.register(cors({ origin: 'https://myapp.com' }));
+await app.register(rateLimit({ max: 100, window: 60_000 }));
+await app.register(compress());
+await app.register(jwt({ secret: process.env.JWT_SECRET! }));
+await app.register(openapi({ title: 'My API' }));
+
+app.health();                                             // /health + /ready
+app.task({ name: 'email', handler, retries: 3 });        // Background tasks
+app.cron('cleanup', '0 3 * * *', cleanupHandler);        // Cron jobs
+app.ws('/chat', { open, message, close });                // WebSocket
+```
+
+### Plugin Encapsulation
+
+Plugins get isolated scopes by default. Hooks and decorations registered inside a plugin do not leak to sibling plugins or the parent scope.
+
+```typescript
+// Auth plugin -- hooks only apply to routes registered inside
+async function authPlugin(app) {
+  app.addHook('onRequest', async (req, reply) => {
+    const token = req.headers.get('authorization');
+    if (!token) return reply.unauthorized();
+  });
+
+  app.get('/me', (req, reply) => {
+    return reply.json({ user: req.user });
+  });
+}
+
+// Public routes -- no auth required
+app.get('/health', (req, reply) => reply.json({ status: 'ok' }));
+
+// Register auth plugin under /api prefix
+await app.register(authPlugin, { prefix: '/api' });
+```
+
+Use `{ encapsulate: false }` when a plugin should affect all routes (e.g., CORS, database):
+
+```typescript
+await app.register(cors(), { encapsulate: false });
+```
+
+### Type-Safe Schema Validation
+
+Pass any Zod, TypeBox, or Valibot schema. CelsianJS auto-detects the library and validates automatically.
+
+```typescript
+import { z } from 'zod';
+
+app.route({
+  method: 'POST',
+  url: '/users',
+  schema: {
+    body: z.object({
+      name: z.string().min(1),
+      email: z.string().email(),
+    }),
+    querystring: z.object({
+      include: z.string().optional(),
+    }),
+  },
+  handler(req, reply) {
+    // req.parsedBody is validated
+    const { name, email } = req.parsedBody as { name: string; email: string };
+    return reply.status(201).json({ id: '1', name, email });
+  },
+});
+```
+
+Invalid input returns a structured 400 response automatically:
+
+```json
+{
+  "error": "Validation Error",
+  "statusCode": 400,
+  "code": "VALIDATION_ERROR",
+  "issues": [{ "message": "Expected string, received number", "path": ["name"] }]
+}
+```
+
+## Features at a Glance
+
+| Category | Features |
+| -------- | -------- |
+| **Routing** | Radix-tree router, params, wildcards, HEAD fallback, 405, route tagging |
+| **Hooks** | 8-hook lifecycle (onRequest through onResponse), route-level hooks |
+| **Plugins** | Scoped encapsulation, app/request/reply decorators |
+| **Validation** | Zod, TypeBox, Valibot auto-detect; body, querystring, params schemas |
+| **Reply** | json, html, stream, redirect, sendFile, download, cookies, 9 error helpers |
+| **Security** | Helmet-style headers, CORS, JWT, sliding-window rate limiting |
+| **Background** | Task queue with retries, cron scheduling, Redis queue backend |
+| **Real-time** | WebSocket with broadcast and connection management |
+| **Database** | Connection pool plugin, transactions, query analytics, Server-Timing |
+| **Caching** | Response cache, session management (KV store) |
+| **Infra** | Compression, OpenAPI 3.1 + Swagger UI, structured logging, inject() testing |
+| **Deploy** | Node, Bun, Deno, Workers, Lambda, Vercel, Fly.io, Railway, graceful shutdown |
+
+## Core Concepts
+
+### Routes and Handlers
+
+```typescript
+app.get('/users/:id', (req, reply) => {
+  return reply.json({ id: req.params.id, include: req.query.include });
+});
+
+// Full route options with schema, hooks, and deployment tagging
+app.route({
+  method: 'POST',
+  url: '/items',
+  kind: 'serverless',
+  schema: { body: mySchema },
+  preHandler: [authHook],
+  handler(req, reply) { return reply.status(201).json(req.parsedBody); },
+});
+```
+
+### Hooks Lifecycle
+
+8 hooks run in order: `onRequest` > `preParsing` > `preValidation` > `preHandler` > `handler` > `preSerialization` > `onSend` > `onResponse`. Plus `onError` for error handling. Any hook can short-circuit by returning a `Response`.
+
+```typescript
+// Global hook
+app.addHook('onRequest', async (req, reply) => {
+  reply.header('x-request-id', crypto.randomUUID());
+});
+
+// Route-level hook
+app.route({
+  method: 'POST',
+  url: '/admin/users',
+  onRequest: [requireAdmin],
+  handler(req, reply) { return reply.json({ created: true }); },
+});
+```
+
+See [Hooks Lifecycle](docs/hooks.md) for the complete guide.
+
+### Reply Helpers
+
+```typescript
+reply.json({ data: [] });                            // JSON response
+reply.html('<h1>Hello</h1>');                         // HTML response
+reply.stream(readableStream);                         // Streaming
+reply.redirect('/new-path', 301);                     // Redirect
+await reply.sendFile('/path/to/report.pdf');          // Serve file
+await reply.download('/path/to/data.csv', 'export');  // Download
+
+// Structured error responses
+reply.notFound('User not found');     // 404
+reply.badRequest('Missing email');    // 400
+reply.unauthorized('Token expired');  // 401
+reply.forbidden();                    // 403
+reply.conflict();                     // 409
+reply.tooManyRequests();              // 429
+
+// Cookies + chaining
+reply.cookie('session', token, { httpOnly: true, secure: true });
+return reply.status(201).header('x-custom', 'value').json({ id: '1' });
+```
+
+### Error Handling
+
+Thrown errors are caught automatically and returned as structured JSON:
+
+```typescript
+import { HttpError } from '@celsian/core';
+
+app.get('/protected', (req, reply) => {
+  throw new HttpError(403, 'Forbidden');
+  // Returns: { "error": "Forbidden", "statusCode": 403, "code": "FORBIDDEN" }
+});
+
+// Custom error handler
+app.setErrorHandler((error, req, reply) => {
+  if (error.message.includes('UNIQUE constraint')) {
+    return reply.conflict('Resource already exists');
+  }
+  return reply.internalServerError();
+});
+
+// Error hooks
+app.addHook('onError', async (error, req, reply) => {
+  console.error('Request failed:', error.message);
+});
+```
+
+In production (`NODE_ENV=production`), stack traces are stripped from 500 responses.
+
+### Type-Safe RPC
+
+`@celsian/rpc` provides tRPC-style procedures with type inference, middleware, and OpenAPI generation.
+
+```typescript
+// server.ts
+import { procedure, router, RPCHandler } from '@celsian/rpc';
+
+const appRouter = router({
+  users: {
+    list: procedure
+      .input(z.object({ limit: z.number().optional() }))
+      .query(async ({ input }) => [{ id: '1', name: 'Alice' }]),
+    create: procedure
+      .input(z.object({ name: z.string(), email: z.string().email() }))
+      .mutation(async ({ input }) => ({ id: '2', ...input })),
+  },
+});
+
+const rpc = new RPCHandler(appRouter);
+app.all('/_rpc/*path', (req) => rpc.handle(req));
+export type AppRouter = typeof appRouter;
+
+// client.ts
+const client = createRPCClient<AppRouter>({ baseUrl: 'http://localhost:3000/_rpc' });
+const users = await client.users.list.query({ limit: 10 });
+const newUser = await client.users.create.mutate({ name: 'Bob', email: 'bob@example.com' });
+```
+
+## Ecosystem
+
+### Core Packages
+
+| Package | Description |
+| ------- | ----------- |
+| `@celsian/core` | Server runtime, routing, hooks, plugins, task queue, cron, WebSocket, CORS, security, database, OpenAPI |
+| `@celsian/schema` | Standard Schema adapters -- auto-detects Zod, TypeBox, Valibot |
+| `@celsian/rpc` | Type-safe RPC procedures, middleware, OpenAPI generation, typed client |
+| `@celsian/jwt` | JWT sign/verify plugin with route guard helper |
+| `@celsian/cache` | KV store, response caching, session management |
+| `@celsian/rate-limit` | Sliding-window rate limiter with pluggable store |
+| `@celsian/compress` | Response compression (gzip/deflate via CompressionStream) |
+| `@celsian/queue-redis` | Redis-backed task queue for production |
+
+### Deployment Adapters
+
+| Package | Target |
+| ------- | ------ |
+| `@celsian/adapter-cloudflare` | Cloudflare Workers (env bindings, execution context) |
+| `@celsian/adapter-lambda` | AWS Lambda + API Gateway v2 |
+| `@celsian/adapter-vercel` | Vercel Serverless + Edge Functions |
+| `@celsian/adapter-node` | Standalone Node.js server |
+| `@celsian/adapter-fly` | Fly.io (generates fly.toml, Dockerfile, multi-region) |
+| `@celsian/adapter-railway` | Railway (generates railway.json, Procfile) |
+
+### Tooling
+
+| Package | Description |
+| ------- | ----------- |
+| `create-celsian` | Project scaffolder (`npx create-celsian my-api`) |
+| `@celsian/cli` | Dev server, route listing, code generation |
+| `celsian` | Meta-package for single-import convenience |
+
+## Production Features
+
+### Graceful Shutdown
+
+```typescript
+serve(app, {
+  port: 3000,
+  shutdownTimeout: 15_000,  // Wait up to 15s for in-flight requests
+  async onShutdown() {
+    await db.close();
+    await cache.disconnect();
+  },
+});
+```
+
+On SIGTERM/SIGINT, CelsianJS stops accepting new connections, drains in-flight requests, stops the task worker and cron scheduler, then runs your cleanup hook.
+
+### Health Checks
+
+```typescript
+app.health({
+  path: '/health',
+  readyPath: '/ready',
+  check: async () => {
+    const dbOk = await pool.isHealthy?.();
+    return dbOk !== false;
+  },
+});
+```
+
+### Route Manifest
+
+Tag routes for deployment tooling. The route manifest tells your build system which routes should be serverless functions, which need long-running servers, and which are background tasks.
+
+```typescript
+app.route({ method: 'GET', url: '/api/users', kind: 'serverless', handler });
+app.route({ method: 'GET', url: '/ws', kind: 'hot', handler });
+app.route({ method: 'POST', url: '/tasks/email', kind: 'task', handler });
+
+const manifest = app.getRouteManifest();
+// { serverless: [...], hot: [...], task: [...] }
+```
+
+### Database Analytics
+
+Wrap your pool with `trackedPool()` for per-request query metrics, `Server-Timing` headers, and slow query logging -- zero handler changes. See [Database Plugin](docs/database.md).
+
+```typescript
+const pool = trackedPool(pgPool);
+await app.register(database({ createPool: () => pool }), { encapsulate: false });
+await app.register(dbAnalytics({ slowThreshold: 100 }), { encapsulate: false });
+// Response: Server-Timing: db;dur=12.5;desc="3 queries"
+```
+
+### Testing Without a Server
+
+```typescript
+const response = await app.inject({ method: 'GET', url: '/hello' });
+const body = await response.json();  // { hello: 'world' }
+```
+
+## Deployment
+
+Swap the entry point to deploy anywhere. See [Deployment Guide](docs/deployment.md) for full instructions.
+
+```typescript
+serve(app, { port: 3000 });                              // Node / Bun / Deno
+
+export default createCloudflareHandler(app);              // Cloudflare Workers
+export const handler = createLambdaHandler(app);          // AWS Lambda
+export default createVercelHandler(app);                  // Vercel Serverless
+export default createVercelEdgeHandler(app);              // Vercel Edge
+```
+
+Fly.io and Railway adapters auto-generate deployment configs (fly.toml, Dockerfile, railway.json).
+
+## Benchmark Results
+
+Node.js v22.13.1, macOS Darwin (Apple Silicon), 10 connections, 10s per scenario.
+
+| Scenario            | CelsianJS (req/s) | Express (req/s) | Fastify (req/s) |
+| ------------------- | -----------------: | --------------: | --------------: |
+| JSON response       |             27,996 |          16,321 |          45,866 |
+| Route params        |             27,026 |          16,288 |          45,440 |
+| Middleware (5)      |             24,445 |          15,751 |          41,380 |
+| JSON body parsing   |             19,074 |          14,648 |          29,998 |
+| Error handling      |             18,542 |          14,765 |          32,398 |
+
+CelsianJS is 1.3x-1.7x faster than Express across all scenarios. Fastify is faster on Node.js (it uses Node.js-specific optimizations), but CelsianJS runs on every JavaScript runtime.
+
+## Configuration
+
+CelsianJS loads `celsian.config.ts` (or `.js`/`.mjs`) automatically:
+
+```typescript
+import { defineConfig } from '@celsian/core';
+
+export default defineConfig({
+  server: { port: 3000, host: 'localhost', trustProxy: true },
+  schema: { provider: 'auto' },  // or 'zod' | 'typebox' | 'valibot'
+});
+```
+
+## Documentation
+
+- [Quick Start Guide](docs/quickstart.md)
+- [Hooks Lifecycle](docs/hooks.md)
+- [Plugins and Encapsulation](docs/plugins.md)
+- [Deployment Guide](docs/deployment.md)
+- [Database Plugin](docs/database.md)
+
+## Contributing
+
+```bash
+git clone https://github.com/CelsianJs/celsian.git
+cd celsian
+pnpm install
+pnpm test
+```
+
+The project uses pnpm workspaces. All packages are in `packages/`. Tests use Vitest.
 
 ## License
 
