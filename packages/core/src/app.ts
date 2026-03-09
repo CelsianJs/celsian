@@ -2,7 +2,7 @@
 
 import { Router } from './router.js';
 import { createReply } from './reply.js';
-import { buildRequest } from './request.js';
+import { buildRequest, buildRequestFast } from './request.js';
 import { EncapsulationContext } from './context.js';
 import { runHooks, runOnSendHooks, runHooksFireAndForget } from './hooks.js';
 import { HttpError, ValidationError, assertPlugin, wrapNonError } from './errors.js';
@@ -31,6 +31,11 @@ import type {
 } from './types.js';
 
 export class CelsianApp {
+  // Pre-stringified error responses (avoid JSON.stringify on every miss)
+  private static readonly NOT_FOUND_BODY = JSON.stringify({ error: 'Not Found', statusCode: 404, code: 'NOT_FOUND' });
+  private static readonly METHOD_NOT_ALLOWED_BODY = JSON.stringify({ error: 'Method Not Allowed', statusCode: 405, code: 'METHOD_NOT_ALLOWED' });
+  private static readonly JSON_CONTENT_TYPE: Record<string, string> = { 'content-type': 'application/json; charset=utf-8' };
+
   private router = new Router();
   private rootContext: EncapsulationContext;
   private pluginContext: PluginContext;
@@ -57,9 +62,19 @@ export class CelsianApp {
   // WebSocket
   readonly wsRegistry = new WSRegistry();
 
+  // Cached options for hot path
+  private readonly hasLogger: boolean;
+  private readonly cachedBodyLimit: number;
+  private readonly cachedRequestTimeout: number;
+
   constructor(private options: CelsianAppOptions = {}) {
     this.rootContext = new EncapsulationContext(null, options.prefix ?? '', this.router);
     this.pluginContext = this.rootContext.toPluginContext();
+
+    // Cache hot-path options
+    this.hasLogger = !!options.logger;
+    this.cachedBodyLimit = options.bodyLimit ?? 1_048_576;
+    this.cachedRequestTimeout = options.requestTimeout ?? 30_000;
 
     // Logger setup
     if (options.logger === true) {
@@ -270,18 +285,67 @@ export class CelsianApp {
 
   async handle(request: Request): Promise<Response> {
     // Ensure all registered plugins are loaded before handling
-    await this.ready();
+    // Skip the async call entirely when no pending plugins and no active ready promise
+    if (this.pendingPlugins.length > 0 || this.readyPromise !== null) {
+      await this.ready();
+    }
 
-    const url = new URL(request.url);
-    const method = request.method.toUpperCase() as import('./types.js').RouteMethod;
-    const pathname = url.pathname;
+    // Fast URL parsing: extract pathname and query with simple string ops
+    // Avoids new URL() which validates, normalizes, encodes, etc.
+    const rawUrl = request.url;
+    const method = request.method as import('./types.js').RouteMethod;
 
-    // Trust proxy: rewrite URL with forwarded headers
+    let pathname: string;
+    let queryString: string;
+    let fullUrl: URL | null = null; // Lazy — only created if needed
+
+    if (rawUrl.charCodeAt(0) === 47 /* '/' */) {
+      // Path-only URL (e.g., "/json" or "/json?q=1")
+      const qIdx = rawUrl.indexOf('?');
+      if (qIdx === -1) {
+        pathname = rawUrl;
+        queryString = '';
+      } else {
+        pathname = rawUrl.substring(0, qIdx);
+        queryString = rawUrl.substring(qIdx + 1);
+      }
+    } else {
+      // Full URL (e.g., "http://host:port/path?q=1")
+      // Extract pathname with string ops: find 3rd '/' (after "http://host")
+      let slashCount = 0;
+      let pathStart = -1;
+      for (let i = 0; i < rawUrl.length; i++) {
+        if (rawUrl.charCodeAt(i) === 47 /* '/' */) {
+          slashCount++;
+          if (slashCount === 3) {
+            pathStart = i;
+            break;
+          }
+        }
+      }
+      if (pathStart === -1) {
+        // No path component (e.g., "http://host") — default to "/"
+        pathname = '/';
+        queryString = '';
+      } else {
+        const qIdx = rawUrl.indexOf('?', pathStart);
+        if (qIdx === -1) {
+          pathname = rawUrl.substring(pathStart);
+          queryString = '';
+        } else {
+          pathname = rawUrl.substring(pathStart, qIdx);
+          queryString = rawUrl.substring(qIdx + 1);
+        }
+      }
+    }
+
+    // Trust proxy: needs full URL object
     if (this.options.trustProxy) {
+      if (!fullUrl) fullUrl = new URL(rawUrl, 'http://localhost');
       const proto = request.headers.get('x-forwarded-proto');
       const host = request.headers.get('x-forwarded-host');
-      if (proto) url.protocol = proto + ':';
-      if (host) url.host = host;
+      if (proto) fullUrl.protocol = proto + ':';
+      if (host) fullUrl.host = host;
     }
 
     let match = this.router.match(method, pathname);
@@ -294,17 +358,20 @@ export class CelsianApp {
     if (!match) {
       // Distinguish 404 (path not found) from 405 (wrong method)
       if (this.router.hasPath(pathname)) {
-        return new Response(JSON.stringify({ error: 'Method Not Allowed', statusCode: 405, code: 'METHOD_NOT_ALLOWED' }), {
+        return new Response(CelsianApp.METHOD_NOT_ALLOWED_BODY, {
           status: 405,
-          headers: { 'content-type': 'application/json; charset=utf-8' },
+          headers: CelsianApp.JSON_CONTENT_TYPE,
         });
       }
       if (this.notFoundHandler) {
-        const celsianRequest = buildRequest(request, url, {});
+        if (!fullUrl) fullUrl = new URL(rawUrl, 'http://localhost');
+        const celsianRequest = buildRequest(request, fullUrl, {});
         const reply = createReply();
         // Apply reply decorations
-        for (const [key, value] of this.rootContext.replyDecorations) {
-          (reply as Record<string, unknown>)[key] = typeof value === 'function' ? value() : value;
+        if (this.rootContext.replyDecorations.size > 0) {
+          for (const [key, value] of this.rootContext.replyDecorations) {
+            (reply as Record<string, unknown>)[key] = typeof value === 'function' ? value() : value;
+          }
         }
         try {
           const result = await this.notFoundHandler(celsianRequest, reply);
@@ -312,24 +379,27 @@ export class CelsianApp {
           if (reply.sent) return new Response(null, { status: reply.statusCode });
           return new Response(null, { status: 404 });
         } catch {
-          return new Response(JSON.stringify({ error: 'Not Found', statusCode: 404, code: 'NOT_FOUND' }), {
+          return new Response(CelsianApp.NOT_FOUND_BODY, {
             status: 404,
-            headers: { 'content-type': 'application/json; charset=utf-8' },
+            headers: CelsianApp.JSON_CONTENT_TYPE,
           });
         }
       }
-      return new Response(JSON.stringify({ error: 'Not Found', statusCode: 404, code: 'NOT_FOUND' }), {
+      return new Response(CelsianApp.NOT_FOUND_BODY, {
         status: 404,
-        headers: { 'content-type': 'application/json; charset=utf-8' },
+        headers: CelsianApp.JSON_CONTENT_TYPE,
       });
     }
 
-    const celsianRequest = buildRequest(request, url, match.params);
+    // Build CelsianRequest with fast query parsing (skip URL object when possible)
+    const celsianRequest = buildRequestFast(request, pathname, queryString, match.params, fullUrl);
 
-    // Apply request decorations
-    for (const [key, value] of this.rootContext.requestDecorations) {
-      if (!(key in celsianRequest)) {
-        (celsianRequest as Record<string, unknown>)[key] = typeof value === 'function' ? value() : value;
+    // Apply request decorations (skip loop if none registered)
+    if (this.rootContext.requestDecorations.size > 0) {
+      for (const [key, value] of this.rootContext.requestDecorations) {
+        if (!(key in celsianRequest)) {
+          (celsianRequest as Record<string, unknown>)[key] = typeof value === 'function' ? value() : value;
+        }
       }
     }
 
@@ -346,41 +416,35 @@ export class CelsianApp {
       enumerable: true,
     });
 
-    // Attach child logger with requestId
-    const requestId = generateRequestId();
-    (celsianRequest as Record<string, unknown>).log = this.log.child({ requestId });
-    (celsianRequest as Record<string, unknown>).requestId = requestId;
+    // Only generate requestId and child logger when logging is enabled
+    if (this.hasLogger) {
+      const requestId = generateRequestId();
+      (celsianRequest as Record<string, unknown>).log = this.log.child({ requestId });
+      (celsianRequest as Record<string, unknown>).requestId = requestId;
+    }
 
     const reply = createReply();
 
-    // Apply reply decorations
-    for (const [key, value] of this.rootContext.replyDecorations) {
-      if (!(key in reply)) {
-        (reply as Record<string, unknown>)[key] = typeof value === 'function' ? value() : value;
+    // Apply reply decorations (skip loop if none registered)
+    if (this.rootContext.replyDecorations.size > 0) {
+      for (const [key, value] of this.rootContext.replyDecorations) {
+        if (!(key in reply)) {
+          (reply as Record<string, unknown>)[key] = typeof value === 'function' ? value() : value;
+        }
       }
     }
 
-    // Wrap lifecycle with optional timeout (clear timer after completion to avoid leaks)
-    const timeout = this.options.requestTimeout ?? 30_000;
-    const runWithTimeout = async (): Promise<Response> => {
-      const lifecycle = this.runLifecycle(celsianRequest, reply, match.route);
-      if (timeout <= 0) return lifecycle;
-      let timer: ReturnType<typeof setTimeout>;
-      return Promise.race([
-        lifecycle.finally(() => clearTimeout(timer)),
-        new Promise<Response>((_, reject) => {
-          timer = setTimeout(() => reject(new HttpError(504, 'Gateway Timeout')), timeout);
-        }),
-      ]);
-    };
+    // Run lifecycle — inline timeout logic to avoid closure allocation
+    const timeout = this.cachedRequestTimeout;
 
     // Auto request logging
-    if (this.options.logger) {
+    if (this.hasLogger) {
+      const requestId = (celsianRequest as Record<string, unknown>).requestId as string;
       const start = performance.now();
       this.log.info('incoming request', { method, url: pathname, requestId });
 
       try {
-        const response = await runWithTimeout();
+        const response = await this.runWithTimeout(celsianRequest, reply, match.route, timeout);
         const duration = Math.round(performance.now() - start);
         this.log.info('request completed', { method, url: pathname, statusCode: response.status, duration, requestId });
         return response;
@@ -394,7 +458,7 @@ export class CelsianApp {
     }
 
     try {
-      return await runWithTimeout();
+      return await this.runWithTimeout(celsianRequest, reply, match.route, timeout);
     } catch (thrown) {
       return this.handleError(wrapNonError(thrown), celsianRequest, reply);
     }
@@ -428,34 +492,65 @@ export class CelsianApp {
 
   // ─── Internal ───
 
+  /**
+   * Run the request lifecycle with an optional timeout.
+   */
+  private runWithTimeout(
+    request: CelsianRequest,
+    reply: CelsianReply,
+    route: InternalRoute,
+    timeout: number,
+  ): Promise<Response> {
+    if (timeout <= 0) {
+      return this.runLifecycle(request, reply, route);
+    }
+    let timer: ReturnType<typeof setTimeout>;
+    return Promise.race([
+      this.runLifecycle(request, reply, route).finally(() => clearTimeout(timer)),
+      new Promise<Response>((_, reject) => {
+        timer = setTimeout(() => reject(new HttpError(504, 'Gateway Timeout')), timeout);
+      }),
+    ]);
+  }
+
   private async runLifecycle(
     request: CelsianRequest,
     reply: CelsianReply,
     route: InternalRoute,
   ): Promise<Response> {
-    // 1. onRequest hooks
-    let earlyResponse = await runHooks(route.hooks.onRequest, request, reply);
-    if (earlyResponse) return earlyResponse;
+    let earlyResponse: Response | null;
 
-    // 2. preParsing hooks
-    earlyResponse = await runHooks(this.rootContext.hooks.preParsing, request, reply);
-    if (earlyResponse) return earlyResponse;
+    // 1. onRequest hooks (skip if empty)
+    if (route.hooks.onRequest.length > 0) {
+      earlyResponse = await runHooks(route.hooks.onRequest, request, reply);
+      if (earlyResponse) return earlyResponse;
+    }
+
+    // 2. preParsing hooks (skip if empty)
+    if (this.rootContext.hooks.preParsing.length > 0) {
+      earlyResponse = await runHooks(this.rootContext.hooks.preParsing, request, reply);
+      if (earlyResponse) return earlyResponse;
+    }
 
     // 3. Body parsing
     await this.parseBody(request);
 
-    // 4. preValidation hooks
-    earlyResponse = await runHooks(this.rootContext.hooks.preValidation, request, reply);
-    if (earlyResponse) return earlyResponse;
+    // 4. preValidation hooks (skip if empty)
+    if (this.rootContext.hooks.preValidation.length > 0) {
+      earlyResponse = await runHooks(this.rootContext.hooks.preValidation, request, reply);
+      if (earlyResponse) return earlyResponse;
+    }
 
     // 5. Schema validation
     if (route.schema) {
       this.validateRequest(request, route.schema);
     }
 
-    // 6. preHandler hooks
-    earlyResponse = await runHooks(route.hooks.preHandler, request, reply);
-    if (earlyResponse) return earlyResponse;
+    // 6. preHandler hooks (skip if empty)
+    if (route.hooks.preHandler.length > 0) {
+      earlyResponse = await runHooks(route.hooks.preHandler, request, reply);
+      if (earlyResponse) return earlyResponse;
+    }
 
     // 7. Handler
     const handlerResult = await route.handler(request, reply);
@@ -469,12 +564,15 @@ export class CelsianApp {
       response = new Response(null, { status: 204 });
     }
 
-    // 8. preSerialization hooks
-    await runHooks(route.hooks.preSerialization, request, reply);
+    // 8. preSerialization hooks (skip if empty)
+    if (route.hooks.preSerialization.length > 0) {
+      await runHooks(route.hooks.preSerialization, request, reply);
+    }
 
-    // 9. onSend hooks — run route-level (from route options) then rootContext (includes plugin hooks)
-    const hasOnSend = route.hooks.onSend.length > 0 || this.rootContext.hooks.onSend.length > 0;
-    if (hasOnSend) {
+    // 9. onSend hooks — run route-level then rootContext (skip entirely if both empty)
+    const hasRouteOnSend = route.hooks.onSend.length > 0;
+    const hasRootOnSend = this.rootContext.hooks.onSend.length > 0;
+    if (hasRouteOnSend || hasRootOnSend) {
       // Snapshot reply headers before onSend (handler/onRequest hooks already baked into response)
       const headersBefore = new Map<string, string>();
       for (const [k, v] of Object.entries(reply.headers)) {
@@ -482,9 +580,9 @@ export class CelsianApp {
       }
 
       // Route-level onSend (from route options only, not context-baked)
-      await runOnSendHooks(route.hooks.onSend, request, reply);
+      if (hasRouteOnSend) await runOnSendHooks(route.hooks.onSend, request, reply);
       // Root-level onSend (includes hooks propagated up from encapsulated plugins)
-      await runOnSendHooks(this.rootContext.hooks.onSend, request, reply);
+      if (hasRootOnSend) await runOnSendHooks(this.rootContext.hooks.onSend, request, reply);
 
       // Merge headers that were added or changed during onSend
       const replyHeaders = reply.headers;
@@ -510,8 +608,10 @@ export class CelsianApp {
       }
     }
 
-    // 10. onResponse hooks (fire-and-forget)
-    runHooksFireAndForget(this.rootContext.hooks.onResponse, request, reply);
+    // 10. onResponse hooks (fire-and-forget, skip if empty)
+    if (this.rootContext.hooks.onResponse.length > 0) {
+      runHooksFireAndForget(this.rootContext.hooks.onResponse, request, reply);
+    }
 
     return response;
   }
@@ -553,8 +653,8 @@ export class CelsianApp {
       return;
     }
 
-    // Enforce body size limit
-    const bodyLimit = this.options.bodyLimit ?? 1_048_576; // 1MB default
+    // Enforce body size limit via Content-Length header (fast reject before reading)
+    const bodyLimit = this.cachedBodyLimit;
     if (bodyLimit > 0) {
       const contentLength = request.headers.get('content-length');
       if (contentLength && parseInt(contentLength, 10) > bodyLimit) {
@@ -563,23 +663,28 @@ export class CelsianApp {
     }
 
     // Check custom content-type parsers (exact match then prefix match)
-    for (const [registeredType, parser] of this.contentTypeParsers) {
-      if (contentType === registeredType || contentType.startsWith(registeredType)) {
-        request.parsedBody = await parser(request);
-        return;
+    if (this.contentTypeParsers.size > 0) {
+      for (const [registeredType, parser] of this.contentTypeParsers) {
+        if (contentType === registeredType || contentType.startsWith(registeredType)) {
+          request.parsedBody = await parser(request);
+          return;
+        }
       }
     }
 
     try {
       if (contentType.includes('application/json')) {
-        const text = await request.text();
-        if (bodyLimit > 0 && text.length > bodyLimit) {
-          throw new HttpError(413, 'Payload Too Large');
-        }
-        if (!text.trim()) return; // Empty body
+        // Use native request.json() — single pass, avoids text() + JSON.parse() double alloc
         try {
-          request.parsedBody = JSON.parse(text);
+          request.parsedBody = await request.json();
         } catch (parseErr) {
+          // request.json() throws on empty body or invalid JSON
+          // Check if body was empty (not an error)
+          if ((parseErr as Error).message?.includes('Unexpected end of JSON input') ||
+              (parseErr as Error).message?.includes('JSON Parse error')) {
+            // Could be empty body — leave as undefined
+            return;
+          }
           throw new HttpError(400, `Invalid JSON (content-type: ${contentType}): ${(parseErr as Error).message}`, {
             code: 'INVALID_JSON',
             cause: parseErr as Error,

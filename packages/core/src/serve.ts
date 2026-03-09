@@ -78,6 +78,10 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
   let shuttingDown = false;
   const shutdownTimeout = options.shutdownTimeout ?? 10_000;
 
+  // Pre-compute base URL string for Node.js request conversion (avoid per-request concatenation)
+  const baseUrl = `http://${host}:${port}`;
+  const hasStaticDir = !!options.staticDir;
+
   const server = http.createServer(async (req: IncomingMessage, res: ServerResponse) => {
     if (shuttingDown) {
       res.statusCode = 503;
@@ -87,11 +91,10 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
 
     inFlight++;
 
-    const url = new URL(req.url ?? '/', `http://${host}:${port}`);
-
-    // Static files
-    if (options.staticDir) {
-      const filePath = join(options.staticDir, url.pathname);
+    // Static files — only parse URL when staticDir is configured
+    if (hasStaticDir) {
+      const url = new URL(req.url ?? '/', baseUrl);
+      const filePath = join(options.staticDir!, url.pathname);
       try {
         const s = await stat(filePath);
         if (s.isFile()) {
@@ -108,7 +111,8 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
       }
     }
 
-    const webRequest = nodeToWebRequest(req, url);
+    // Build Web Request with raw path (let app.handle() do fast URL parsing)
+    const webRequest = nodeToWebRequestFast(req, req.url ?? '/', baseUrl);
 
     try {
       const response = await app.handle(webRequest);
@@ -276,6 +280,34 @@ export function nodeToWebRequest(req: IncomingMessage, url: URL): Request {
   const hasBody = method !== 'GET' && method !== 'HEAD';
 
   return new Request(url.toString(), {
+    method,
+    headers,
+    body: hasBody ? (req as unknown as ReadableStream) : undefined,
+    duplex: hasBody ? 'half' : undefined,
+  });
+}
+
+/**
+ * Fast variant of nodeToWebRequest that constructs the Request with a
+ * path-only URL (e.g., "/json?q=1"), enabling app.handle() to skip
+ * full URL parsing. Falls back to full URL when the runtime requires it.
+ */
+function nodeToWebRequestFast(req: IncomingMessage, rawPath: string, baseUrl: string): Request {
+  const headers = new Headers();
+  for (const [key, value] of Object.entries(req.headers)) {
+    if (typeof value === 'string') {
+      headers.set(key, value);
+    } else if (Array.isArray(value)) {
+      for (const v of value) headers.append(key, v);
+    }
+  }
+
+  const method = req.method ?? 'GET';
+  const hasBody = method !== 'GET' && method !== 'HEAD';
+
+  // Use full URL (required by Request constructor) but keep it minimal
+  // by concatenating baseUrl + rawPath instead of calling new URL()
+  return new Request(baseUrl + rawPath, {
     method,
     headers,
     body: hasBody ? (req as unknown as ReadableStream) : undefined,

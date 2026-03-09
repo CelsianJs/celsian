@@ -1,7 +1,5 @@
 // @celsian/core — CelsianReply implementation
 
-import { readFile, stat } from 'node:fs/promises';
-import { extname, basename } from 'node:path';
 import type { CelsianReply } from './types.js';
 import { serializeCookie, type CookieOptions } from './cookie.js';
 
@@ -71,47 +69,52 @@ export function createReply(): CelsianReply {
       if (statusCode === 204 || statusCode === 304) {
         return new Response(null, {
           status: statusCode,
-          headers: buildHeaders(headers),
+          headers: setCookies.length === 0 ? headers : buildHeaders(headers),
         });
       }
       if (data === null || data === undefined) {
         return new Response(null, {
           status: statusCode,
-          headers: buildHeaders(headers),
+          headers: setCookies.length === 0 ? headers : buildHeaders(headers),
         });
       }
       if (typeof data === 'string') {
+        const h = { 'content-type': 'text/plain; charset=utf-8', ...headers };
         return new Response(data, {
           status: statusCode,
-          headers: buildHeaders({
-            'content-type': 'text/plain; charset=utf-8',
-            ...headers,
-          }),
+          headers: setCookies.length === 0 ? h : buildHeaders(h),
         });
       }
+      const h = { 'content-type': 'application/json; charset=utf-8', ...headers };
       return new Response(JSON.stringify(data), {
         status: statusCode,
-        headers: buildHeaders({
-          'content-type': 'application/json; charset=utf-8',
-          ...headers,
-        }),
+        headers: setCookies.length === 0 ? h : buildHeaders(h),
       });
     },
 
     html(content: string): Response {
       sent = true;
+      const h = { 'content-type': 'text/html; charset=utf-8', ...headers };
       return new Response(content, {
         status: statusCode,
-        headers: buildHeaders({
-          'content-type': 'text/html; charset=utf-8',
-          ...headers,
-        }),
+        headers: setCookies.length === 0 ? h : buildHeaders(h),
       });
     },
 
     json(data: unknown): Response {
       sent = true;
-      return new Response(JSON.stringify(data), {
+      const body = JSON.stringify(data);
+      // Fast path: no cookies set — use plain object headers (avoids new Headers())
+      if (setCookies.length === 0) {
+        return new Response(body, {
+          status: statusCode,
+          headers: {
+            'content-type': 'application/json; charset=utf-8',
+            ...headers,
+          },
+        });
+      }
+      return new Response(body, {
         status: statusCode,
         headers: buildHeaders({
           'content-type': 'application/json; charset=utf-8',
@@ -152,6 +155,9 @@ export function createReply(): CelsianReply {
     async sendFile(filePath: string): Promise<Response> {
       sent = true;
       try {
+        // Lazy import — keeps reply.ts edge-compatible when sendFile isn't used
+        const { readFile, stat } = await import('node:fs/promises');
+        const { extname } = await import('node:path');
         await stat(filePath);
         const data = await readFile(filePath);
         const ext = extname(filePath).toLowerCase();
@@ -171,6 +177,9 @@ export function createReply(): CelsianReply {
     async download(filePath: string, filename?: string): Promise<Response> {
       sent = true;
       try {
+        // Lazy import — keeps reply.ts edge-compatible when download isn't used
+        const { readFile, stat } = await import('node:fs/promises');
+        const { extname, basename } = await import('node:path');
         await stat(filePath);
         const data = await readFile(filePath);
         const ext = extname(filePath).toLowerCase();
