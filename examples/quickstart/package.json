@@ -1,0 +1,23 @@
+{
+  "name": "celsian-quickstart",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@celsian/core": "workspace:*",
+    "@celsian/jwt": "workspace:*",
+    "@celsian/rate-limit": "workspace:*",
+    "@celsian/schema": "workspace:*",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0",
+    "vitest": "^3.0.0"
+  }
+}
