@@ -4,7 +4,9 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { readFile, stat } from 'node:fs/promises';
 import { join, extname } from 'node:path';
 import type { CelsianApp } from '@celsian/server';
-import type { RouteManifest, TaskManifest } from '@celsian/build';
+// Inline types — will be imported from @celsian/build when ThenJS ships
+type RouteManifest = Record<string, { kind: string; method: string; path: string }>;
+type TaskManifest = Record<string, { name: string; handler: string }>;
 
 // ─── Adapter Interface ───
 
@@ -222,7 +224,6 @@ export function nodeToWebRequest(req: IncomingMessage, url: URL): Request {
     method,
     headers,
     body: hasBody ? (req as unknown as ReadableStream) : undefined,
-    // @ts-expect-error Node.js specific duplex option
     duplex: hasBody ? 'half' : undefined,
   });
 }
