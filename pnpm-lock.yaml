@@ -165,6 +165,31 @@ importers:
         specifier: workspace:*
         version: link:../../packages/celsian
 
+  examples/quickstart:
+    dependencies:
+      '@celsian/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@celsian/jwt':
+        specifier: workspace:*
+        version: link:../../packages/jwt
+      '@celsian/rate-limit':
+        specifier: workspace:*
+        version: link:../../packages/rate-limit
+      '@celsian/schema':
+        specifier: workspace:*
+        version: link:../../packages/schema
+      zod:
+        specifier: ^3.23.0
+        version: 3.25.76
+    devDependencies:
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/node@25.2.3)(tsx@4.21.0)
+
   examples/rest-api:
     dependencies:
       '@sinclair/typebox':

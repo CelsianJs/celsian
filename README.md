@@ -54,20 +54,12 @@ deno run server.ts  # Uses Deno.serve() automatically
 
 ### Multi-Runtime
 
-The same application code runs on Node.js, Bun, Deno, Cloudflare Workers, AWS Lambda, and Vercel with zero changes. CelsianJS is built on Web Standard `Request` and `Response` -- not Node.js-specific `IncomingMessage` and `ServerResponse`.
+Built on Web Standard `Request`/`Response` -- not Node.js `IncomingMessage`/`ServerResponse`. One adapter line deploys anywhere:
 
 ```typescript
-// Cloudflare Workers
-import { createCloudflareHandler } from '@celsian/adapter-cloudflare';
-export default createCloudflareHandler(app);
-
-// AWS Lambda
-import { createLambdaHandler } from '@celsian/adapter-lambda';
-export const handler = createLambdaHandler(app);
-
-// Vercel Edge
-import { createVercelEdgeHandler } from '@celsian/adapter-vercel';
-export default createVercelEdgeHandler(app);
+export default createCloudflareHandler(app);          // Cloudflare Workers
+export const handler = createLambdaHandler(app);      // AWS Lambda
+export default createVercelEdgeHandler(app);           // Vercel Edge
 ```
 
 ### Faster Than Express
@@ -134,40 +126,21 @@ await app.register(cors(), { encapsulate: false });
 
 ### Type-Safe Schema Validation
 
-Pass any Zod, TypeBox, or Valibot schema. CelsianJS auto-detects the library and validates automatically.
+Pass any Zod, TypeBox, or Valibot schema. CelsianJS auto-detects the library.
 
 ```typescript
-import { z } from 'zod';
-
 app.route({
   method: 'POST',
   url: '/users',
   schema: {
-    body: z.object({
-      name: z.string().min(1),
-      email: z.string().email(),
-    }),
-    querystring: z.object({
-      include: z.string().optional(),
-    }),
+    body: z.object({ name: z.string().min(1), email: z.string().email() }),
   },
   handler(req, reply) {
-    // req.parsedBody is validated
     const { name, email } = req.parsedBody as { name: string; email: string };
     return reply.status(201).json({ id: '1', name, email });
   },
 });
-```
-
-Invalid input returns a structured 400 response automatically:
-
-```json
-{
-  "error": "Validation Error",
-  "statusCode": 400,
-  "code": "VALIDATION_ERROR",
-  "issues": [{ "message": "Expected string, received number", "path": ["name"] }]
-}
+// Invalid input returns 400 with structured issues automatically
 ```
 
 ## Features at a Glance
@@ -253,31 +226,21 @@ return reply.status(201).header('x-custom', 'value').json({ id: '1' });
 
 ### Error Handling
 
-Thrown errors are caught automatically and returned as structured JSON:
+Thrown errors are caught and returned as structured JSON. Stack traces are stripped in production.
 
 ```typescript
 import { HttpError } from '@celsian/core';
 
-app.get('/protected', (req, reply) => {
-  throw new HttpError(403, 'Forbidden');
-  // Returns: { "error": "Forbidden", "statusCode": 403, "code": "FORBIDDEN" }
-});
+// Throw HTTP errors anywhere
+throw new HttpError(403, 'Forbidden');
+// { "error": "Forbidden", "statusCode": 403, "code": "FORBIDDEN" }
 
 // Custom error handler
 app.setErrorHandler((error, req, reply) => {
-  if (error.message.includes('UNIQUE constraint')) {
-    return reply.conflict('Resource already exists');
-  }
+  if (error.message.includes('UNIQUE constraint')) return reply.conflict();
   return reply.internalServerError();
 });
-
-// Error hooks
-app.addHook('onError', async (error, req, reply) => {
-  console.error('Request failed:', error.message);
-});
 ```
-
-In production (`NODE_ENV=production`), stack traces are stripped from 500 responses.
 
 ### Type-Safe RPC
 
@@ -346,43 +309,24 @@ const newUser = await client.users.create.mutate({ name: 'Bob', email: 'bob@exam
 
 ### Graceful Shutdown
 
+On SIGTERM/SIGINT: stops accepting connections, drains in-flight requests, stops workers and cron, runs cleanup.
+
 ```typescript
 serve(app, {
-  port: 3000,
-  shutdownTimeout: 15_000,  // Wait up to 15s for in-flight requests
-  async onShutdown() {
-    await db.close();
-    await cache.disconnect();
-  },
+  shutdownTimeout: 15_000,
+  onShutdown: () => db.close(),
 });
 ```
 
-On SIGTERM/SIGINT, CelsianJS stops accepting new connections, drains in-flight requests, stops the task worker and cron scheduler, then runs your cleanup hook.
-
-### Health Checks
+### Health Checks and Route Manifest
 
 ```typescript
-app.health({
-  path: '/health',
-  readyPath: '/ready',
-  check: async () => {
-    const dbOk = await pool.isHealthy?.();
-    return dbOk !== false;
-  },
-});
-```
+app.health({ check: () => pool.isHealthy() });  // /health + /ready
 
-### Route Manifest
-
-Tag routes for deployment tooling. The route manifest tells your build system which routes should be serverless functions, which need long-running servers, and which are background tasks.
-
-```typescript
+// Tag routes for deployment tooling
 app.route({ method: 'GET', url: '/api/users', kind: 'serverless', handler });
 app.route({ method: 'GET', url: '/ws', kind: 'hot', handler });
-app.route({ method: 'POST', url: '/tasks/email', kind: 'task', handler });
-
-const manifest = app.getRouteManifest();
-// { serverless: [...], hot: [...], task: [...] }
+const manifest = app.getRouteManifest(); // { serverless: [...], hot: [...], task: [...] }
 ```
 
 ### Database Analytics
