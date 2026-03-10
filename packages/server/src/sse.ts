@@ -93,7 +93,7 @@ export function createSSEStream(
   let isOpen = true;
   let pingTimer: ReturnType<typeof setInterval> | null = null;
 
-  const stream = new TransformStream<string, Uint8Array>();
+  const stream = new TransformStream<Uint8Array, Uint8Array>();
   const writer = stream.writable.getWriter();
 
   // Keep-alive ping
@@ -133,7 +133,7 @@ export function createSSEStream(
   // Check for Last-Event-ID (for reconnection)
   const lastEventId = request.headers.get('last-event-id');
 
-  const response = new Response(stream.readable as unknown as BodyInit, {
+  const response = new Response(stream.readable as ReadableStream<Uint8Array>, {
     status: 200,
     headers,
   });

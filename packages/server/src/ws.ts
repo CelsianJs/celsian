@@ -167,7 +167,7 @@ export function wrapWebSocket(rawWs: {
  * Parse a WebSocket message into our WSMessage format.
  */
 export function parseWSMessage(data: string | ArrayBuffer | Uint8Array): WSMessage {
-  const msg: WSMessage = { data: data instanceof Uint8Array ? data.buffer : data };
+  const msg: WSMessage = { data: data instanceof Uint8Array ? data.buffer as ArrayBuffer : data as string | ArrayBuffer };
 
   if (typeof data === 'string') {
     try {
