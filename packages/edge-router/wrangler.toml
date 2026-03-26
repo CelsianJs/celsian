@@ -1,0 +1,7 @@
+name = "celsian-edge-router"
+main = "src/router.ts"
+compatibility_date = "2025-03-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+ENVIRONMENT = "production"
