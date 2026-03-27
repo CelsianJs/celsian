@@ -1,6 +1,6 @@
 // @celsian/core — Radix tree router with URL pattern matching
 
-import type { RouteMethod, InternalRoute, RouteMatch, RouteHandler, RouteHooks } from './types.js';
+import type { InternalRoute, RouteHandler, RouteHooks, RouteMatch, RouteMethod } from "./types.js";
 
 interface RadixNode {
   segment: string;
@@ -12,7 +12,7 @@ interface RadixNode {
   routes: Map<RouteMethod, InternalRoute>;
 }
 
-function createNode(segment = ''): RadixNode {
+function createNode(segment = ""): RadixNode {
   return {
     segment,
     children: new Map(),
@@ -37,8 +37,8 @@ export class Router {
     method: RouteMethod,
     url: string,
     handler: RouteHandler,
-    kind: 'serverless' | 'hot' | 'task' = 'serverless',
-    schema?: InternalRoute['schema'],
+    kind: "serverless" | "hot" | "task" = "serverless",
+    schema?: InternalRoute["schema"],
     hooks?: Partial<RouteHooks>,
   ): void {
     const segments = splitPath(url);
@@ -46,18 +46,18 @@ export class Router {
     let isStatic = true;
 
     for (const seg of segments) {
-      if (seg.startsWith(':')) {
+      if (seg.startsWith(":")) {
         isStatic = false;
         if (!node.paramChild) {
           node.paramChild = createNode(seg);
           node.paramName = seg.slice(1);
         }
         node = node.paramChild;
-      } else if (seg.startsWith('*')) {
+      } else if (seg.startsWith("*")) {
         isStatic = false;
         if (!node.wildcardChild) {
           node.wildcardChild = createNode(seg);
-          node.wildcardName = seg.slice(1) || 'wild';
+          node.wildcardName = seg.slice(1) || "wild";
         }
         node = node.wildcardChild;
         break;
@@ -166,7 +166,7 @@ export class Router {
     // 3. Wildcard match (lowest priority, consumes rest)
     if (node.wildcardChild && node.wildcardName) {
       if (node.wildcardChild.routes.has(method)) {
-        params[node.wildcardName] = decodeURIComponent(segments.slice(index).join('/'));
+        params[node.wildcardName] = decodeURIComponent(segments.slice(index).join("/"));
         return node.wildcardChild;
       }
     }
@@ -224,12 +224,12 @@ export class Router {
 
 /** Split a URL path into segments, filtering out empty strings. */
 function splitPath(path: string): string[] {
-  return path.split('/').filter(Boolean);
+  return path.split("/").filter(Boolean);
 }
 
 /** Normalize a pathname for static-map keys: '/' for root, otherwise strip trailing slash. */
 function normalizePathname(p: string): string {
-  if (p === '/' || p === '') return '/';
+  if (p === "/" || p === "") return "/";
   // Strip trailing slash for consistency (e.g. '/users/' -> '/users')
-  return p.endsWith('/') ? p.slice(0, -1) : p;
+  return p.endsWith("/") ? p.slice(0, -1) : p;
 }

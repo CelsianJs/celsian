@@ -12,13 +12,13 @@
 // Run:  pnpm dev        (hot-reload via tsx)
 // Test: pnpm test       (vitest with app.inject — no server needed)
 
-import { createApp, serve, cors, security } from '@celsian/core';
-import { rateLimit } from '@celsian/rate-limit';
-import { jwt } from '@celsian/jwt';
-import type { JWTNamespace } from '@celsian/jwt';
-import { JWT_SECRET, setJwtInstance } from './middleware/auth.js';
-import { todoRoutes } from './routes/todos.js';
-import { authRoutes } from './routes/auth.js';
+import { cors, createApp, security, serve } from "@celsian/core";
+import type { JWTNamespace } from "@celsian/jwt";
+import { jwt } from "@celsian/jwt";
+import { rateLimit } from "@celsian/rate-limit";
+import { JWT_SECRET, setJwtInstance } from "./middleware/auth.js";
+import { authRoutes } from "./routes/auth.js";
+import { todoRoutes } from "./routes/todos.js";
 
 export function buildApp() {
   const app = createApp({ logger: true });
@@ -34,7 +34,7 @@ export function buildApp() {
   // Register JWT plugin at the app level — decorates app with `jwt.sign()` and `jwt.verify()`
   app.register(jwt({ secret: JWT_SECRET }), { encapsulate: false }).then(() => {
     // Store the JWT instance so auth routes can use it
-    const jwtNs = app.getDecoration('jwt') as JWTNamespace;
+    const jwtNs = app.getDecoration("jwt") as JWTNamespace;
     setJwtInstance(jwtNs);
   });
 
@@ -55,18 +55,18 @@ export function buildApp() {
 
 // ─── Start Server (only when run directly, not during tests) ───
 
-const isMainModule = process.argv[1]?.endsWith('index.ts') || process.argv[1]?.endsWith('index.js');
+const isMainModule = process.argv[1]?.endsWith("index.ts") || process.argv[1]?.endsWith("index.js");
 if (isMainModule) {
   const app = buildApp();
   await app.ready();
 
   serve(app, {
-    port: parseInt(process.env.PORT ?? '3000', 10),
+    port: parseInt(process.env.PORT ?? "3000", 10),
     onReady({ port, host }) {
       console.log(`Quickstart API ready at http://${host}:${port}`);
     },
     async onShutdown() {
-      console.log('Cleanup complete');
+      console.log("Cleanup complete");
     },
   });
 }

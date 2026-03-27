@@ -1,6 +1,6 @@
 // @celsian/schema — Valibot adapter
 
-import type { StandardSchema, SchemaResult } from '../standard.js';
+import type { SchemaResult, StandardSchema } from "../standard.js";
 
 export function fromValibot<T>(valibotSchema: any): StandardSchema<T, T> {
   return {
@@ -8,7 +8,7 @@ export function fromValibot<T>(valibotSchema: any): StandardSchema<T, T> {
       try {
         const result = valibotSchema._parse?.(input) ?? valibotSchema.safeParse?.(input);
         if (!result) {
-          return { success: false, issues: [{ message: 'Unknown valibot schema format' }] };
+          return { success: false, issues: [{ message: "Unknown valibot schema format" }] };
         }
         if (result.success !== false && !result.issues) {
           return { success: true, data: result.output ?? result.data };
@@ -25,7 +25,7 @@ export function fromValibot<T>(valibotSchema: any): StandardSchema<T, T> {
       }
     },
     toJsonSchema(): Record<string, unknown> {
-      return { type: 'object' };
+      return { type: "object" };
     },
     _input: undefined as unknown as T,
     _output: undefined as unknown as T,

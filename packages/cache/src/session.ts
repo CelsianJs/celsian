@@ -1,6 +1,6 @@
 // @celsian/cache — Session middleware
 
-import type { KVStore } from './store.js';
+import type { KVStore } from "./store.js";
 
 export interface SessionData {
   [key: string]: unknown;
@@ -46,7 +46,7 @@ const DEFAULT_TTL = 24 * 60 * 60 * 1000; // 24 hours
 function defaultGenerateId(): string {
   const bytes = new Uint8Array(24);
   crypto.getRandomValues(bytes);
-  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 /**
@@ -78,8 +78,8 @@ function defaultGenerateId(): string {
 export function createSessionManager(options: SessionOptions) {
   const store = options.store;
   const ttlMs = options.ttlMs ?? DEFAULT_TTL;
-  const cookieName = options.cookieName ?? 'sid';
-  const prefix = options.prefix ?? 'sess:';
+  const cookieName = options.cookieName ?? "sid";
+  const prefix = options.prefix ?? "sess:";
   const generateId = options.generateId ?? defaultGenerateId;
 
   function makeSession(id: string, data: SessionData): Session {
@@ -146,7 +146,7 @@ export function createSessionManager(options: SessionOptions) {
    * Returns existing session or creates a new one.
    */
   async function fromRequest(request: Request): Promise<Session> {
-    const cookieHeader = request.headers.get('cookie') ?? '';
+    const cookieHeader = request.headers.get("cookie") ?? "";
     const sid = parseCookie(cookieHeader, cookieName);
 
     if (sid) {
@@ -165,20 +165,20 @@ export function createSessionManager(options: SessionOptions) {
     opts?: {
       httpOnly?: boolean;
       secure?: boolean;
-      sameSite?: 'Strict' | 'Lax' | 'None';
+      sameSite?: "Strict" | "Lax" | "None";
       path?: string;
       maxAge?: number;
     },
   ): string {
     const httpOnly = opts?.httpOnly !== false;
     const secure = opts?.secure !== false; // Default to true for security
-    const sameSite = opts?.sameSite ?? 'Lax';
-    const path = opts?.path ?? '/';
+    const sameSite = opts?.sameSite ?? "Lax";
+    const path = opts?.path ?? "/";
     const maxAge = opts?.maxAge ?? Math.floor(ttlMs / 1000);
 
     let cookieStr = `${cookieName}=${sessionId}; Path=${path}; Max-Age=${maxAge}; SameSite=${sameSite}`;
-    if (httpOnly) cookieStr += '; HttpOnly';
-    if (secure) cookieStr += '; Secure';
+    if (httpOnly) cookieStr += "; HttpOnly";
+    if (secure) cookieStr += "; Secure";
     return cookieStr;
   }
 
@@ -196,11 +196,11 @@ export function createSessionManager(options: SessionOptions) {
  * Parse a cookie header to get a specific cookie value.
  */
 function parseCookie(header: string, name: string): string | null {
-  const cookies = header.split(';');
+  const cookies = header.split(";");
   for (const cookie of cookies) {
-    const [key, ...rest] = cookie.trim().split('=');
+    const [key, ...rest] = cookie.trim().split("=");
     if (key === name) {
-      return rest.join('='); // Handle values with = in them
+      return rest.join("="); // Handle values with = in them
     }
   }
   return null;

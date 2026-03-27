@@ -1,25 +1,25 @@
 // @celsian/rpc — Wire protocol: tagged encoding for native types
 
-import type { TaggedValue } from './types.js';
+import type { TaggedValue } from "./types.js";
 
-const TAG_DATE = 'Date';
-const TAG_BIGINT = 'BigInt';
-const TAG_UNDEFINED = 'Undefined';
-const TAG_SET = 'Set';
-const TAG_MAP = 'Map';
-const TAG_REGEXP = 'RegExp';
+const TAG_DATE = "Date";
+const TAG_BIGINT = "BigInt";
+const TAG_UNDEFINED = "Undefined";
+const TAG_SET = "Set";
+const TAG_MAP = "Map";
+const TAG_REGEXP = "RegExp";
 
 export function encode(value: unknown): unknown {
   if (value === undefined) {
-    return { __t: TAG_UNDEFINED, v: '' };
+    return { __t: TAG_UNDEFINED, v: "" };
   }
-  if (value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
+  if (value === null || typeof value === "boolean" || typeof value === "number" || typeof value === "string") {
     return value;
   }
   if (value instanceof Date) {
     return { __t: TAG_DATE, v: value.toISOString() } satisfies TaggedValue;
   }
-  if (typeof value === 'bigint') {
+  if (typeof value === "bigint") {
     return { __t: TAG_BIGINT, v: value.toString() } satisfies TaggedValue;
   }
   if (value instanceof Set) {
@@ -34,7 +34,7 @@ export function encode(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(encode);
   }
-  if (typeof value === 'object') {
+  if (typeof value === "object") {
     const result: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
       result[k] = encode(v);
@@ -45,16 +45,16 @@ export function encode(value: unknown): unknown {
 }
 
 export function decode(value: unknown): unknown {
-  if (value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
+  if (value === null || typeof value === "boolean" || typeof value === "number" || typeof value === "string") {
     return value;
   }
   if (Array.isArray(value)) {
     return value.map(decode);
   }
-  if (typeof value === 'object' && value !== null) {
+  if (typeof value === "object" && value !== null) {
     const obj = value as Record<string, unknown>;
 
-    if ('__t' in obj && 'v' in obj) {
+    if ("__t" in obj && "v" in obj) {
       const tag = obj.__t as string;
       const v = obj.v as string;
 
@@ -75,7 +75,7 @@ export function decode(value: unknown): unknown {
         }
         case TAG_REGEXP: {
           // Use lastIndexOf to avoid ReDoS with crafted patterns
-          const lastSlash = v.lastIndexOf('/');
+          const lastSlash = v.lastIndexOf("/");
           if (lastSlash > 0 && v.charCodeAt(0) === 47 /* '/' */) {
             const pattern = v.slice(1, lastSlash);
             const flags = v.slice(lastSlash + 1);

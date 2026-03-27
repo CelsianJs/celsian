@@ -1,37 +1,37 @@
 // @celsian/cache — Performance Micro-benchmarks
 // Measures KV store throughput, TTL overhead, response cache hit/miss, and session management.
 
-import { describe, it, expect, afterEach } from 'vitest';
-import { MemoryKVStore } from '../src/store.js';
-import { createResponseCache } from '../src/response-cache.js';
-import { createSessionManager } from '../src/session.js';
+import { afterEach, describe, expect, it } from "vitest";
+import { createResponseCache } from "../src/response-cache.js";
+import { createSessionManager } from "../src/session.js";
+import { MemoryKVStore } from "../src/store.js";
 
 function percentile(sorted: number[], p: number): number {
   const index = Math.ceil((p / 100) * sorted.length) - 1;
   return sorted[Math.max(0, index)]!;
 }
 
-function makeRequest(url: string, method = 'GET'): Request {
+function makeRequest(url: string, method = "GET"): Request {
   return new Request(`http://localhost${url}`, { method });
 }
 
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'content-type': 'application/json' },
+    headers: { "content-type": "application/json" },
   });
 }
 
 // ─── MemoryKVStore Get/Set Throughput ───
 
-describe('Bench: MemoryKVStore get/set', () => {
+describe("Bench: MemoryKVStore get/set", () => {
   let store: MemoryKVStore;
 
   afterEach(() => {
     store.destroy();
   });
 
-  it('should measure set throughput (10000 ops)', async () => {
+  it("should measure set throughput (10000 ops)", async () => {
     store = new MemoryKVStore({ cleanupIntervalMs: 0 });
     const iterations = 10000;
 
@@ -67,7 +67,7 @@ describe('Bench: MemoryKVStore get/set', () => {
     expect(avg).toBeLessThan(0.1);
   });
 
-  it('should measure get throughput (10000 ops)', async () => {
+  it("should measure get throughput (10000 ops)", async () => {
     store = new MemoryKVStore({ cleanupIntervalMs: 0 });
     const iterations = 10000;
 
@@ -108,7 +108,7 @@ describe('Bench: MemoryKVStore get/set', () => {
     expect(avg).toBeLessThan(0.1);
   });
 
-  it('should measure mixed get/set throughput (10000 ops)', async () => {
+  it("should measure mixed get/set throughput (10000 ops)", async () => {
     store = new MemoryKVStore({ cleanupIntervalMs: 0 });
     const iterations = 10000;
 
@@ -140,14 +140,14 @@ describe('Bench: MemoryKVStore get/set', () => {
 
 // ─── MemoryKVStore with TTL Throughput ───
 
-describe('Bench: MemoryKVStore with TTL', () => {
+describe("Bench: MemoryKVStore with TTL", () => {
   let store: MemoryKVStore;
 
   afterEach(() => {
     store.destroy();
   });
 
-  it('should measure set-with-TTL throughput (10000 ops)', async () => {
+  it("should measure set-with-TTL throughput (10000 ops)", async () => {
     store = new MemoryKVStore({ cleanupIntervalMs: 0 });
     const iterations = 10000;
 
@@ -173,7 +173,7 @@ describe('Bench: MemoryKVStore with TTL', () => {
     expect(opsPerSec).toBeGreaterThan(100000);
   });
 
-  it('should measure get-with-TTL-check throughput (10000 ops)', async () => {
+  it("should measure get-with-TTL-check throughput (10000 ops)", async () => {
     store = new MemoryKVStore({ cleanupIntervalMs: 0 });
     const iterations = 10000;
 
@@ -203,7 +203,7 @@ describe('Bench: MemoryKVStore with TTL', () => {
     expect(opsPerSec).toBeGreaterThan(100000);
   });
 
-  it('should measure TTL expiration check overhead', async () => {
+  it("should measure TTL expiration check overhead", async () => {
     store = new MemoryKVStore({ cleanupIntervalMs: 0 });
     const iterations = 10000;
 
@@ -245,8 +245,8 @@ describe('Bench: MemoryKVStore with TTL', () => {
 
 // ─── Response Cache Hit/Miss Throughput ───
 
-describe('Bench: Response Cache hit/miss', () => {
-  it('should measure cache miss throughput', async () => {
+describe("Bench: Response Cache hit/miss", () => {
+  it("should measure cache miss throughput", async () => {
     const store = new MemoryKVStore({ cleanupIntervalMs: 0 });
     const cache = createResponseCache({ store });
     const iterations = 5000;
@@ -278,7 +278,7 @@ describe('Bench: Response Cache hit/miss', () => {
     store.destroy();
   });
 
-  it('should measure cache hit throughput', async () => {
+  it("should measure cache hit throughput", async () => {
     const store = new MemoryKVStore({ cleanupIntervalMs: 0 });
     const cache = createResponseCache({ store });
     const iterations = 10000;
@@ -286,21 +286,21 @@ describe('Bench: Response Cache hit/miss', () => {
     const handler = () => jsonResponse({ ok: true });
 
     // Pre-populate cache
-    await cache.cached(makeRequest('/data'), handler);
+    await cache.cached(makeRequest("/data"), handler);
 
     // Warm up
     for (let i = 0; i < 100; i++) {
-      await cache.cached(makeRequest('/data'), handler);
+      await cache.cached(makeRequest("/data"), handler);
     }
 
     const timings: number[] = [];
 
     for (let i = 0; i < iterations; i++) {
       const start = performance.now();
-      const res = await cache.cached(makeRequest('/data'), handler);
+      const res = await cache.cached(makeRequest("/data"), handler);
       const end = performance.now();
       timings.push(end - start);
-      expect(res.headers.get('x-cache')).toBe('HIT');
+      expect(res.headers.get("x-cache")).toBe("HIT");
     }
 
     timings.sort((a, b) => a - b);
@@ -322,7 +322,7 @@ describe('Bench: Response Cache hit/miss', () => {
     store.destroy();
   });
 
-  it('should measure wrap() handler throughput (mixed hit/miss)', async () => {
+  it("should measure wrap() handler throughput (mixed hit/miss)", async () => {
     const store = new MemoryKVStore({ cleanupIntervalMs: 0 });
     const cache = createResponseCache({ store });
     const iterations = 5000;
@@ -349,7 +349,7 @@ describe('Bench: Response Cache hit/miss', () => {
     const elapsed = performance.now() - start;
 
     const reqPerSec = Math.round((iterations / elapsed) * 1000);
-    const hitRate = ((iterations - handlerCalls) / iterations * 100).toFixed(1);
+    const hitRate = (((iterations - handlerCalls) / iterations) * 100).toFixed(1);
 
     console.log(`[Response cache wrap() mixed] ${iterations} requests`);
     console.log(`  ${iterations} requests in ${elapsed.toFixed(1)} ms`);
@@ -367,8 +367,8 @@ describe('Bench: Response Cache hit/miss', () => {
 
 // ─── Session Create/Load Throughput ───
 
-describe('Bench: Session create/load', () => {
-  it('should measure session create throughput', async () => {
+describe("Bench: Session create/load", () => {
+  it("should measure session create throughput", async () => {
     const store = new MemoryKVStore({ cleanupIntervalMs: 0 });
     const sessions = createSessionManager({ store });
     const iterations = 5000;
@@ -382,7 +382,7 @@ describe('Bench: Session create/load', () => {
     const start = performance.now();
     const sessionIds: string[] = [];
     for (let i = 0; i < iterations; i++) {
-      const session = await sessions.create({ userId: i, role: 'user' });
+      const session = await sessions.create({ userId: i, role: "user" });
       sessionIds.push(session.id);
     }
     const elapsed = performance.now() - start;
@@ -401,7 +401,7 @@ describe('Bench: Session create/load', () => {
     store.destroy();
   });
 
-  it('should measure session load throughput', async () => {
+  it("should measure session load throughput", async () => {
     const store = new MemoryKVStore({ cleanupIntervalMs: 0 });
     const sessions = createSessionManager({ store });
     const iterations = 5000;
@@ -409,7 +409,7 @@ describe('Bench: Session create/load', () => {
     // Pre-create sessions
     const sessionIds: string[] = [];
     for (let i = 0; i < iterations; i++) {
-      const session = await sessions.create({ userId: i, role: 'user' });
+      const session = await sessions.create({ userId: i, role: "user" });
       sessionIds.push(session.id);
     }
 
@@ -426,7 +426,7 @@ describe('Bench: Session create/load', () => {
       const end = performance.now();
       timings.push(end - start);
       expect(session).toBeDefined();
-      expect(session!.get('userId')).toBe(i);
+      expect(session?.get("userId")).toBe(i);
     }
 
     timings.sort((a, b) => a - b);
@@ -448,7 +448,7 @@ describe('Bench: Session create/load', () => {
     store.destroy();
   });
 
-  it('should measure session create + set + save + load round-trip', async () => {
+  it("should measure session create + set + save + load round-trip", async () => {
     const store = new MemoryKVStore({ cleanupIntervalMs: 0 });
     const sessions = createSessionManager({ store });
     const iterations = 2000;
@@ -456,7 +456,7 @@ describe('Bench: Session create/load', () => {
     // Warm up
     for (let i = 0; i < 20; i++) {
       const s = await sessions.create();
-      s.set('data', i);
+      s.set("data", i);
       await s.save();
       await sessions.load(s.id);
     }
@@ -465,14 +465,14 @@ describe('Bench: Session create/load', () => {
     const start = performance.now();
     for (let i = 0; i < iterations; i++) {
       const session = await sessions.create();
-      session.set('userId', i);
-      session.set('role', 'admin');
-      session.set('preferences', { theme: 'dark', lang: 'en' });
+      session.set("userId", i);
+      session.set("role", "admin");
+      session.set("preferences", { theme: "dark", lang: "en" });
       await session.save();
 
       const loaded = await sessions.load(session.id);
       expect(loaded).toBeDefined();
-      expect(loaded!.get('userId')).toBe(i);
+      expect(loaded?.get("userId")).toBe(i);
     }
     const elapsed = performance.now() - start;
 
@@ -488,7 +488,7 @@ describe('Bench: Session create/load', () => {
     store.destroy();
   });
 
-  it('should measure fromRequest throughput (cookie parsing + load)', async () => {
+  it("should measure fromRequest throughput (cookie parsing + load)", async () => {
     const store = new MemoryKVStore({ cleanupIntervalMs: 0 });
     const sessions = createSessionManager({ store });
     const iterations = 5000;
@@ -502,7 +502,7 @@ describe('Bench: Session create/load', () => {
 
     // Warm up
     for (let i = 0; i < 50; i++) {
-      const request = new Request('http://localhost/profile', {
+      const request = new Request("http://localhost/profile", {
         headers: { cookie: `sid=${sessionIds[i % 100]}; other=value` },
       });
       await sessions.fromRequest(request);
@@ -510,7 +510,7 @@ describe('Bench: Session create/load', () => {
 
     const start = performance.now();
     for (let i = 0; i < iterations; i++) {
-      const request = new Request('http://localhost/profile', {
+      const request = new Request("http://localhost/profile", {
         headers: { cookie: `sid=${sessionIds[i % 100]}; theme=dark; lang=en` },
       });
       await sessions.fromRequest(request);

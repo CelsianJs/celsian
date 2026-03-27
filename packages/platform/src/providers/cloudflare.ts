@@ -1,3 +1,5 @@
+import { PlatformError } from "../errors.js";
+
 /**
  * Cloudflare Workers deployment provider.
  *
@@ -23,5 +25,5 @@ export interface CfDeployOptions {
  */
 export async function deployCfWorker(_opts: CfDeployOptions): Promise<{ url: string }> {
   // TODO: Implement — upload via CF API, enable workers.dev subdomain
-  throw new Error('@celsian/platform: Cloudflare deployment not yet implemented');
+  throw new PlatformError("@celsian/platform: Cloudflare deployment not yet implemented");
 }

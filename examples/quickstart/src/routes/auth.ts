@@ -6,11 +6,11 @@
 //   - HttpError for structured error responses
 //   - Password hashing with Node's built-in scrypt
 
-import { HttpError } from '@celsian/core';
-import type { PluginFunction } from '@celsian/core';
-import { scrypt, randomBytes, timingSafeEqual } from 'node:crypto';
-import { promisify } from 'node:util';
-import { authGuard, getJwt } from '../middleware/auth.js';
+import { randomBytes, scrypt, timingSafeEqual } from "node:crypto";
+import { promisify } from "node:util";
+import type { PluginFunction } from "@celsian/core";
+import { HttpError } from "@celsian/core";
+import { authGuard, getJwt } from "../middleware/auth.js";
 
 const scryptAsync = promisify(scrypt);
 
@@ -34,14 +34,14 @@ export function resetUsers() {
 // ─── Helpers ───
 
 async function hashPassword(password: string): Promise<string> {
-  const salt = randomBytes(16).toString('hex');
+  const salt = randomBytes(16).toString("hex");
   const hash = (await scryptAsync(password, salt, 64)) as Buffer;
-  return `${salt}:${hash.toString('hex')}`;
+  return `${salt}:${hash.toString("hex")}`;
 }
 
 async function verifyPassword(password: string, stored: string): Promise<boolean> {
-  const [salt, hash] = stored.split(':');
-  const hashBuffer = Buffer.from(hash!, 'hex');
+  const [salt, hash] = stored.split(":");
+  const hashBuffer = Buffer.from(hash!, "hex");
   const derived = (await scryptAsync(password, salt!, 64)) as Buffer;
   return timingSafeEqual(hashBuffer, derived);
 }
@@ -56,17 +56,17 @@ function findUserByEmail(email: string): User | undefined {
 
 export const authRoutes: PluginFunction = (app) => {
   // POST /auth/register — Create a new account and return a JWT
-  app.post('/auth/register', async (req, reply) => {
+  app.post("/auth/register", async (req, reply) => {
     const { email, password } = req.parsedBody as { email: string; password: string };
 
     if (!email || !password) {
-      throw new HttpError(400, 'Email and password are required');
+      throw new HttpError(400, "Email and password are required");
     }
     if (password.length < 8) {
-      throw new HttpError(400, 'Password must be at least 8 characters');
+      throw new HttpError(400, "Password must be at least 8 characters");
     }
     if (findUserByEmail(email)) {
-      throw new HttpError(409, 'Email already registered');
+      throw new HttpError(409, "Email already registered");
     }
 
     const user: User = {
@@ -77,7 +77,7 @@ export const authRoutes: PluginFunction = (app) => {
     };
     users.set(user.id, user);
 
-    const token = await getJwt().sign({ sub: user.id, email }, { expiresIn: '1h' });
+    const token = await getJwt().sign({ sub: user.id, email }, { expiresIn: "1h" });
 
     return reply.status(201).json({
       user: { id: user.id, email: user.email },
@@ -86,15 +86,15 @@ export const authRoutes: PluginFunction = (app) => {
   });
 
   // POST /auth/login — Authenticate and return a JWT
-  app.post('/auth/login', async (req, reply) => {
+  app.post("/auth/login", async (req, reply) => {
     const { email, password } = req.parsedBody as { email: string; password: string };
 
     const user = findUserByEmail(email);
     if (!user || !(await verifyPassword(password, user.passwordHash))) {
-      throw new HttpError(401, 'Invalid email or password');
+      throw new HttpError(401, "Invalid email or password");
     }
 
-    const token = await getJwt().sign({ sub: user.id, email }, { expiresIn: '1h' });
+    const token = await getJwt().sign({ sub: user.id, email }, { expiresIn: "1h" });
 
     return reply.json({
       user: { id: user.id, email: user.email },
@@ -104,13 +104,13 @@ export const authRoutes: PluginFunction = (app) => {
 
   // GET /auth/me — Protected route: returns the authenticated user's profile
   app.route({
-    method: 'GET',
-    url: '/auth/me',
+    method: "GET",
+    url: "/auth/me",
     preHandler: authGuard,
     handler(req, reply) {
       const payload = (req as Record<string, unknown>).user as { sub: string; email: string };
       const user = users.get(payload.sub);
-      if (!user) throw new HttpError(404, 'User not found');
+      if (!user) throw new HttpError(404, "User not found");
 
       return reply.json({
         id: user.id,

@@ -1,129 +1,144 @@
-import { describe, it, expect } from 'vitest';
-import { createApp } from '@celsian/core';
-import { rateLimit, MemoryRateLimitStore } from '../src/index.js';
+import { createApp } from "@celsian/core";
+import { describe, expect, it } from "vitest";
+import { MemoryRateLimitStore, rateLimit } from "../src/index.js";
 
-describe('@celsian/rate-limit', () => {
-  it('should allow requests within limit', async () => {
+describe("@celsian/rate-limit", () => {
+  it("should allow requests within limit", async () => {
     const app = createApp();
-    await app.register(rateLimit({
-      max: 5,
-      window: 60_000,
-      keyGenerator: () => 'test-key',
-    }), { encapsulate: false });
+    await app.register(
+      rateLimit({
+        max: 5,
+        window: 60_000,
+        keyGenerator: () => "test-key",
+      }),
+      { encapsulate: false },
+    );
 
-    app.get('/api', (_req, reply) => reply.json({ ok: true }));
+    app.get("/api", (_req, reply) => reply.json({ ok: true }));
 
-    const response = await app.inject({ url: '/api' });
+    const response = await app.inject({ url: "/api" });
     expect(response.status).toBe(200);
-    expect(response.headers.get('x-ratelimit-limit')).toBe('5');
-    expect(response.headers.get('x-ratelimit-remaining')).toBe('4');
+    expect(response.headers.get("x-ratelimit-limit")).toBe("5");
+    expect(response.headers.get("x-ratelimit-remaining")).toBe("4");
   });
 
-  it('should block requests exceeding limit', async () => {
+  it("should block requests exceeding limit", async () => {
     const app = createApp();
-    await app.register(rateLimit({
-      max: 3,
-      window: 60_000,
-      keyGenerator: () => 'test-key',
-    }), { encapsulate: false });
+    await app.register(
+      rateLimit({
+        max: 3,
+        window: 60_000,
+        keyGenerator: () => "test-key",
+      }),
+      { encapsulate: false },
+    );
 
-    app.get('/api', (_req, reply) => reply.json({ ok: true }));
+    app.get("/api", (_req, reply) => reply.json({ ok: true }));
 
     // 3 requests should be fine
     for (let i = 0; i < 3; i++) {
-      const response = await app.inject({ url: '/api' });
+      const response = await app.inject({ url: "/api" });
       expect(response.status).toBe(200);
     }
 
     // 4th should be blocked
-    const response = await app.inject({ url: '/api' });
+    const response = await app.inject({ url: "/api" });
     expect(response.status).toBe(429);
     const body = await response.json();
-    expect(body.error).toBe('Too Many Requests');
+    expect(body.error).toBe("Too Many Requests");
   });
 
-  it('should set rate limit headers', async () => {
+  it("should set rate limit headers", async () => {
     const app = createApp();
-    await app.register(rateLimit({
-      max: 10,
-      window: 60_000,
-      keyGenerator: () => 'test-key',
-    }), { encapsulate: false });
+    await app.register(
+      rateLimit({
+        max: 10,
+        window: 60_000,
+        keyGenerator: () => "test-key",
+      }),
+      { encapsulate: false },
+    );
 
-    app.get('/api', (_req, reply) => reply.json({ ok: true }));
+    app.get("/api", (_req, reply) => reply.json({ ok: true }));
 
-    const r1 = await app.inject({ url: '/api' });
-    expect(r1.headers.get('x-ratelimit-limit')).toBe('10');
-    expect(r1.headers.get('x-ratelimit-remaining')).toBe('9');
-    expect(r1.headers.get('x-ratelimit-reset')).toBeTruthy();
+    const r1 = await app.inject({ url: "/api" });
+    expect(r1.headers.get("x-ratelimit-limit")).toBe("10");
+    expect(r1.headers.get("x-ratelimit-remaining")).toBe("9");
+    expect(r1.headers.get("x-ratelimit-reset")).toBeTruthy();
 
-    const r2 = await app.inject({ url: '/api' });
-    expect(r2.headers.get('x-ratelimit-remaining')).toBe('8');
+    const r2 = await app.inject({ url: "/api" });
+    expect(r2.headers.get("x-ratelimit-remaining")).toBe("8");
   });
 
-  it('should use custom key generator', async () => {
+  it("should use custom key generator", async () => {
     const app = createApp();
-    await app.register(rateLimit({
-      max: 2,
-      window: 60_000,
-      keyGenerator: (req) => req.headers.get('x-api-key') ?? 'unknown',
-    }), { encapsulate: false });
+    await app.register(
+      rateLimit({
+        max: 2,
+        window: 60_000,
+        keyGenerator: (req) => req.headers.get("x-api-key") ?? "unknown",
+      }),
+      { encapsulate: false },
+    );
 
-    app.get('/api', (_req, reply) => reply.json({ ok: true }));
+    app.get("/api", (_req, reply) => reply.json({ ok: true }));
 
     // Different keys should have separate counters
-    const r1 = await app.inject({ url: '/api', headers: { 'x-api-key': 'key-a' } });
+    const r1 = await app.inject({ url: "/api", headers: { "x-api-key": "key-a" } });
     expect(r1.status).toBe(200);
 
-    const r2 = await app.inject({ url: '/api', headers: { 'x-api-key': 'key-b' } });
+    const r2 = await app.inject({ url: "/api", headers: { "x-api-key": "key-b" } });
     expect(r2.status).toBe(200);
 
-    const r3 = await app.inject({ url: '/api', headers: { 'x-api-key': 'key-a' } });
+    const r3 = await app.inject({ url: "/api", headers: { "x-api-key": "key-a" } });
     expect(r3.status).toBe(200);
 
     // Third request from key-a should be blocked
-    const r4 = await app.inject({ url: '/api', headers: { 'x-api-key': 'key-a' } });
+    const r4 = await app.inject({ url: "/api", headers: { "x-api-key": "key-a" } });
     expect(r4.status).toBe(429);
   });
 
-  it('should include retry-after on 429', async () => {
+  it("should include retry-after on 429", async () => {
     const app = createApp();
-    await app.register(rateLimit({
-      max: 1,
-      window: 60_000,
-      keyGenerator: () => 'test',
-    }), { encapsulate: false });
+    await app.register(
+      rateLimit({
+        max: 1,
+        window: 60_000,
+        keyGenerator: () => "test",
+      }),
+      { encapsulate: false },
+    );
 
-    app.get('/api', (_req, reply) => reply.json({ ok: true }));
+    app.get("/api", (_req, reply) => reply.json({ ok: true }));
 
-    await app.inject({ url: '/api' });
-    const blocked = await app.inject({ url: '/api' });
+    await app.inject({ url: "/api" });
+    const blocked = await app.inject({ url: "/api" });
 
     expect(blocked.status).toBe(429);
-    expect(blocked.headers.get('retry-after')).toBeTruthy();
+    expect(blocked.headers.get("retry-after")).toBeTruthy();
   });
 });
 
-describe('MemoryRateLimitStore', () => {
-  it('should increment within window', async () => {
+describe("MemoryRateLimitStore", () => {
+  it("should increment within window", async () => {
     const store = new MemoryRateLimitStore();
-    const r1 = await store.increment('key', 60_000);
+    const r1 = await store.increment("key", 60_000);
     expect(r1.count).toBe(1);
 
-    const r2 = await store.increment('key', 60_000);
+    const r2 = await store.increment("key", 60_000);
     expect(r2.count).toBe(2);
 
     store.destroy();
   });
 
-  it('should reset after window expires', async () => {
+  it("should reset after window expires", async () => {
     const store = new MemoryRateLimitStore();
-    const r1 = await store.increment('key', 1); // 1ms window
+    const _r1 = await store.increment("key", 1); // 1ms window
 
     // Wait for window to expire
-    await new Promise(r => setTimeout(r, 10));
+    await new Promise((r) => setTimeout(r, 10));
 
-    const r2 = await store.increment('key', 60_000);
+    const r2 = await store.increment("key", 60_000);
     expect(r2.count).toBe(1); // Reset
 
     store.destroy();

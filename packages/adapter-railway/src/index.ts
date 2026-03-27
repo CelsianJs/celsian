@@ -9,8 +9,8 @@
 //
 // This adapter generates the deployment-specific files that Railway needs.
 
-import { writeFile, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 
 export interface RailwayAdapterOptions {
   /** Node.js version (default: '20') */
@@ -27,12 +27,7 @@ export interface RailwayAdapterOptions {
 
 export interface DeployAdapter {
   name: string;
-  buildEnd(options: {
-    serverEntry: string;
-    clientDir: string;
-    staticDir: string;
-    outDir: string;
-  }): Promise<void>;
+  buildEnd(options: { serverEntry: string; clientDir: string; staticDir: string; outDir: string }): Promise<void>;
 }
 
 /**
@@ -50,75 +45,74 @@ export interface DeployAdapter {
  * ```
  */
 export function railwayAdapter(options: RailwayAdapterOptions = {}): DeployAdapter {
-  const nodeVersion = options.nodeVersion ?? '20';
-  const healthCheckPath = options.healthCheckPath ?? '/api/health';
+  const nodeVersion = options.nodeVersion ?? "20";
+  const healthCheckPath = options.healthCheckPath ?? "/api/health";
   const generateDockerfile = options.dockerfile ?? false;
 
   return {
-    name: 'railway',
+    name: "railway",
 
     async buildEnd({ outDir }) {
       // 1. Generate Procfile — Railway uses this to start the app
       const procfile = `web: node dist/server/entry.js\n`;
-      await writeFile(join(outDir, 'Procfile'), procfile);
+      await writeFile(join(outDir, "Procfile"), procfile);
 
       // 2. Generate railway.json — deployment config
       const railwayConfig = {
-        $schema: 'https://railway.app/railway.schema.json',
+        $schema: "https://railway.app/railway.schema.json",
         build: {
-          builder: generateDockerfile ? 'DOCKERFILE' : 'NIXPACKS',
-          nixpacksPlan: generateDockerfile ? undefined : {
-            providers: ['node'],
-            phases: {
-              setup: { nixPkgs: [`nodejs_${nodeVersion}`] },
-              install: { cmds: ['npm ci --production'] },
-            },
-          },
+          builder: generateDockerfile ? "DOCKERFILE" : "NIXPACKS",
+          nixpacksPlan: generateDockerfile
+            ? undefined
+            : {
+                providers: ["node"],
+                phases: {
+                  setup: { nixPkgs: [`nodejs_${nodeVersion}`] },
+                  install: { cmds: ["npm ci --production"] },
+                },
+              },
         },
         deploy: {
-          startCommand: 'node dist/server/entry.js',
+          startCommand: "node dist/server/entry.js",
           healthcheckPath: healthCheckPath,
           healthcheckTimeout: 10,
-          restartPolicyType: options.restartPolicy !== false ? 'ON_FAILURE' : 'NEVER',
+          restartPolicyType: options.restartPolicy !== false ? "ON_FAILURE" : "NEVER",
           restartPolicyMaxRetries: 3,
         },
       };
 
-      await writeFile(
-        join(outDir, 'railway.json'),
-        JSON.stringify(railwayConfig, null, 2) + '\n',
-      );
+      await writeFile(join(outDir, "railway.json"), `${JSON.stringify(railwayConfig, null, 2)}\n`);
 
       // 3. Optionally generate Dockerfile
       if (generateDockerfile) {
         const dockerfile = generateRailwayDockerfile(nodeVersion);
-        await writeFile(join(outDir, 'Dockerfile'), dockerfile);
+        await writeFile(join(outDir, "Dockerfile"), dockerfile);
       }
 
       // 4. Generate .env.example for Railway env vars
       const envExample = [
-        '# CelsianJS — Railway Environment Variables',
-        '# These are automatically injected by Railway',
-        '',
-        '# Server',
-        'PORT=3000',
-        'HOST=0.0.0.0',
-        'NODE_ENV=production',
-        '',
-        '# Railway provides these automatically:',
-        '# RAILWAY_ENVIRONMENT',
-        '# RAILWAY_GIT_COMMIT_SHA',
-        '# RAILWAY_SERVICE_NAME',
-        '',
-      ].join('\n');
+        "# CelsianJS — Railway Environment Variables",
+        "# These are automatically injected by Railway",
+        "",
+        "# Server",
+        "PORT=3000",
+        "HOST=0.0.0.0",
+        "NODE_ENV=production",
+        "",
+        "# Railway provides these automatically:",
+        "# RAILWAY_ENVIRONMENT",
+        "# RAILWAY_GIT_COMMIT_SHA",
+        "# RAILWAY_SERVICE_NAME",
+        "",
+      ].join("\n");
 
-      await writeFile(join(outDir, '.env.example'), envExample);
+      await writeFile(join(outDir, ".env.example"), envExample);
 
-      console.log('[celsian:adapter-railway] Generated deployment files:');
-      console.log('  → Procfile');
-      console.log('  → railway.json');
-      if (generateDockerfile) console.log('  → Dockerfile');
-      console.log('  → .env.example');
+      console.log("[celsian:adapter-railway] Generated deployment files:");
+      console.log("  → Procfile");
+      console.log("  → railway.json");
+      if (generateDockerfile) console.log("  → Dockerfile");
+      console.log("  → .env.example");
     },
   };
 }

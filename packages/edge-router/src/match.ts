@@ -1,4 +1,4 @@
-import type { RouteEntry, CompiledRoute, RouteMatch } from './types.js';
+import type { CompiledRoute, RouteEntry, RouteMatch } from "./types.js";
 
 /**
  * Compile a route pattern into a regex for fast matching.
@@ -10,15 +10,15 @@ export function compileRoute(entry: RouteEntry): CompiledRoute {
   const regexStr = entry.pattern
     .replace(/:([^/]+)/g, (_, name) => {
       paramNames.push(name);
-      return '([^/]+)';
+      return "([^/]+)";
     })
-    .replace(/\*/g, '(.*)');
+    .replace(/\*/g, "(.*)");
 
   return {
     entry,
-    regex: new RegExp('^' + regexStr + '$'),
+    regex: new RegExp(`^${regexStr}$`),
     paramNames,
-    methods: new Set(entry.methods.map(m => m.toUpperCase())),
+    methods: new Set(entry.methods.map((m) => m.toUpperCase())),
   };
 }
 
@@ -33,15 +33,11 @@ export function compileRoutes(entries: RouteEntry[]): CompiledRoute[] {
  * Match a pathname + method against compiled routes.
  * Returns the first matching route and extracted params, or null.
  */
-export function matchRoute(
-  routes: CompiledRoute[],
-  pathname: string,
-  method: string,
-): RouteMatch | null {
+export function matchRoute(routes: CompiledRoute[], pathname: string, method: string): RouteMatch | null {
   const upperMethod = method.toUpperCase();
 
   for (const route of routes) {
-    if (!route.methods.has(upperMethod) && !route.methods.has('*')) continue;
+    if (!route.methods.has(upperMethod) && !route.methods.has("*")) continue;
 
     const match = pathname.match(route.regex);
     if (!match) continue;
@@ -60,9 +56,6 @@ export function matchRoute(
 /**
  * Apply a rewrite pattern, substituting :param references with matched values.
  */
-export function applyRewrite(
-  rewrite: string,
-  params: Record<string, string>,
-): string {
-  return rewrite.replace(/:([^/]+)/g, (_, name) => params[name] ?? '');
+export function applyRewrite(rewrite: string, params: Record<string, string>): string {
+  return rewrite.replace(/:([^/]+)/g, (_, name) => params[name] ?? "");
 }

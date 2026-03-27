@@ -1,23 +1,23 @@
-import { describe, it, expect } from 'vitest';
-import { fromSchema } from '../src/detect.js';
+import { describe, expect, it } from "vitest";
+import { fromSchema } from "../src/detect.js";
 
-describe('fromSchema (auto-detect)', () => {
-  it('should detect a StandardSchema-compatible schema', () => {
+describe("fromSchema (auto-detect)", () => {
+  it("should detect a StandardSchema-compatible schema", () => {
     const custom = {
       validate(input: unknown) {
         return { success: true, data: input };
       },
       toJsonSchema() {
-        return { type: 'object' };
+        return { type: "object" };
       },
     };
 
     const schema = fromSchema(custom);
-    const result = schema.validate({ foo: 'bar' });
+    const result = schema.validate({ foo: "bar" });
     expect(result.success).toBe(true);
   });
 
-  it('should detect Zod-like schemas (safeParse + parse)', () => {
+  it("should detect Zod-like schemas (safeParse + parse)", () => {
     const zodLike = {
       safeParse(input: unknown) {
         return { success: true, data: input };
@@ -28,15 +28,15 @@ describe('fromSchema (auto-detect)', () => {
     };
 
     const schema = fromSchema(zodLike);
-    const result = schema.validate('test');
+    const result = schema.validate("test");
     expect(result.success).toBe(true);
-    expect(result.data).toBe('test');
+    expect(result.data).toBe("test");
   });
 
-  it('should detect TypeBox-like schemas (type + properties)', () => {
+  it("should detect TypeBox-like schemas (type + properties)", () => {
     const typeboxLike = {
-      type: 'object',
-      properties: { name: { type: 'string' } },
+      type: "object",
+      properties: { name: { type: "string" } },
     };
 
     const schema = fromSchema(typeboxLike);
@@ -44,7 +44,7 @@ describe('fromSchema (auto-detect)', () => {
     expect(schema.toJsonSchema()).toEqual(typeboxLike);
   });
 
-  it('should detect Valibot-like schemas (_parse)', () => {
+  it("should detect Valibot-like schemas (_parse)", () => {
     const valibotLike = {
       _parse(input: unknown) {
         return { success: true, output: input };
@@ -52,13 +52,13 @@ describe('fromSchema (auto-detect)', () => {
     };
 
     const schema = fromSchema(valibotLike);
-    const result = schema.validate('test');
+    const result = schema.validate("test");
     expect(result.success).toBe(true);
   });
 
-  it('should throw for unsupported schema types', () => {
-    expect(() => fromSchema(42)).toThrow('Unsupported schema library');
-    expect(() => fromSchema(null)).toThrow('Unsupported schema library');
-    expect(() => fromSchema({})).toThrow('Unsupported schema library');
+  it("should throw for unsupported schema types", () => {
+    expect(() => fromSchema(42)).toThrow("Unsupported schema library");
+    expect(() => fromSchema(null)).toThrow("Unsupported schema library");
+    expect(() => fromSchema({})).toThrow("Unsupported schema library");
   });
 });

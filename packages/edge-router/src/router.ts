@@ -1,14 +1,14 @@
-import type { EdgeRouterConfig, CompiledRoute } from './types.js';
-import { compileRoutes, matchRoute } from './match.js';
-import { corsHeaders, preflightResponse } from './cors.js';
-import { proxyRequest } from './proxy.js';
-import { handleUpdateRoutes } from './update-routes.js';
+import { corsHeaders, preflightResponse } from "./cors.js";
+import { compileRoutes, matchRoute } from "./match.js";
+import { proxyRequest } from "./proxy.js";
+import type { CompiledRoute, EdgeRouterConfig } from "./types.js";
+import { handleUpdateRoutes } from "./update-routes.js";
 
-export type { EdgeRouterConfig, CompiledRoute } from './types.js';
-export { compileRoute, compileRoutes, matchRoute, applyRewrite } from './match.js';
-export { corsHeaders, preflightResponse, isOriginAllowed } from './cors.js';
-export { proxyRequest } from './proxy.js';
-export { handleUpdateRoutes } from './update-routes.js';
+export { corsHeaders, isOriginAllowed, preflightResponse } from "./cors.js";
+export { applyRewrite, compileRoute, compileRoutes, matchRoute } from "./match.js";
+export { proxyRequest } from "./proxy.js";
+export type { CompiledRoute, EdgeRouterConfig } from "./types.js";
+export { handleUpdateRoutes } from "./update-routes.js";
 
 const MAX_CACHE_SIZE = 100;
 
@@ -80,16 +80,16 @@ export function createEdgeRouter(config: EdgeRouterConfig) {
       const url = new URL(request.url);
 
       // Health check
-      if (url.pathname === '/__health') {
+      if (url.pathname === "/__health") {
         return Response.json({
           ok: true,
-          platform: 'celsian',
+          platform: "celsian",
           routes: routes.length,
         });
       }
 
       // Route update endpoint
-      if (url.pathname === '/__routes' && request.method === 'POST') {
+      if (url.pathname === "/__routes" && request.method === "POST") {
         const apiKey = env?.ROUTER_API_KEY;
         const result = await handleUpdateRoutes(request, routes, apiKey);
         if (result.routes) {
@@ -100,9 +100,9 @@ export function createEdgeRouter(config: EdgeRouterConfig) {
       }
 
       // Route listing
-      if (url.pathname === '/__routes' && request.method === 'GET') {
+      if (url.pathname === "/__routes" && request.method === "GET") {
         return Response.json({
-          routes: routes.map(r => ({
+          routes: routes.map((r) => ({
             pattern: r.entry.pattern,
             methods: Array.from(r.methods),
             origin: r.entry.origin,
@@ -111,8 +111,8 @@ export function createEdgeRouter(config: EdgeRouterConfig) {
       }
 
       // CORS preflight
-      if (config.cors && request.method === 'OPTIONS') {
-        const origin = request.headers.get('Origin') ?? '';
+      if (config.cors && request.method === "OPTIONS") {
+        const origin = request.headers.get("Origin") ?? "";
         return preflightResponse(origin, config.cors);
       }
 
@@ -125,10 +125,7 @@ export function createEdgeRouter(config: EdgeRouterConfig) {
       }
 
       if (!match) {
-        return Response.json(
-          { error: 'Not Found', path: url.pathname },
-          { status: 404 },
-        );
+        return Response.json({ error: "Not Found", path: url.pathname }, { status: 404 });
       }
 
       // Proxy to backend
@@ -136,7 +133,7 @@ export function createEdgeRouter(config: EdgeRouterConfig) {
 
       // Add CORS headers if configured
       if (config.cors) {
-        const origin = request.headers.get('Origin') ?? '';
+        const origin = request.headers.get("Origin") ?? "";
         const cors = corsHeaders(origin, config.cors);
         if (Object.keys(cors).length > 0) {
           const newHeaders = new Headers(response.headers);

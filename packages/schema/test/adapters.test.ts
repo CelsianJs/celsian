@@ -1,39 +1,39 @@
-import { describe, it, expect } from 'vitest';
-import { fromZod } from '../src/adapters/zod.js';
-import { fromValibot } from '../src/adapters/valibot.js';
-import { fromTypeBox } from '../src/adapters/typebox.js';
+import { describe, expect, it } from "vitest";
+import { fromTypeBox } from "../src/adapters/typebox.js";
+import { fromValibot } from "../src/adapters/valibot.js";
+import { fromZod } from "../src/adapters/zod.js";
 
-describe('fromZod', () => {
-  it('should validate successfully with Zod-like schema', () => {
+describe("fromZod", () => {
+  it("should validate successfully with Zod-like schema", () => {
     const zodLike = {
       safeParse(input: unknown) {
-        if (typeof input === 'string') {
+        if (typeof input === "string") {
           return { success: true, data: input };
         }
         return {
           success: false,
           error: {
-            issues: [{ message: 'Expected string', path: [] }],
+            issues: [{ message: "Expected string", path: [] }],
           },
         };
       },
     };
 
     const schema = fromZod<string>(zodLike);
-    const result = schema.validate('hello');
+    const result = schema.validate("hello");
     expect(result.success).toBe(true);
-    expect(result.data).toBe('hello');
+    expect(result.data).toBe("hello");
   });
 
-  it('should return issues on Zod validation failure', () => {
+  it("should return issues on Zod validation failure", () => {
     const zodLike = {
       safeParse() {
         return {
           success: false,
           error: {
             issues: [
-              { message: 'Required', path: ['name'] },
-              { message: 'Invalid email', path: ['email'] },
+              { message: "Required", path: ["name"] },
+              { message: "Invalid email", path: ["email"] },
             ],
           },
         };
@@ -44,33 +44,33 @@ describe('fromZod', () => {
     const result = schema.validate({});
     expect(result.success).toBe(false);
     expect(result.issues).toHaveLength(2);
-    expect(result.issues![0].message).toBe('Required');
-    expect(result.issues![1].path).toEqual(['email']);
+    expect(result.issues?.[0].message).toBe("Required");
+    expect(result.issues?.[1].path).toEqual(["email"]);
   });
 
-  it('should return fallback JSON Schema', () => {
+  it("should return fallback JSON Schema", () => {
     const zodLike = { safeParse: () => ({ success: true, data: null }) };
     const schema = fromZod(zodLike);
-    expect(schema.toJsonSchema()).toEqual({ type: 'object' });
+    expect(schema.toJsonSchema()).toEqual({ type: "object" });
   });
 
-  it('should use toJsonSchema if available', () => {
+  it("should use toJsonSchema if available", () => {
     const zodLike = {
       safeParse: () => ({ success: true, data: null }),
-      toJsonSchema: () => ({ type: 'string', minLength: 1 }),
+      toJsonSchema: () => ({ type: "string", minLength: 1 }),
     };
     const schema = fromZod(zodLike);
-    expect(schema.toJsonSchema()).toEqual({ type: 'string', minLength: 1 });
+    expect(schema.toJsonSchema()).toEqual({ type: "string", minLength: 1 });
   });
 });
 
-describe('fromTypeBox', () => {
-  it('should validate successfully with TypeBox schema', () => {
+describe("fromTypeBox", () => {
+  it("should validate successfully with TypeBox schema", () => {
     // TypeBox schemas are plain JSON Schema objects; validation uses @sinclair/typebox/value
     const typeboxLike = {
-      type: 'object',
-      properties: { name: { type: 'string' } },
-      required: ['name'],
+      type: "object",
+      properties: { name: { type: "string" } },
+      required: ["name"],
     };
 
     const schema = fromTypeBox(typeboxLike);
@@ -78,24 +78,24 @@ describe('fromTypeBox', () => {
     expect(schema.toJsonSchema()).toEqual(typeboxLike);
   });
 
-  it('should validate input when @sinclair/typebox is available', () => {
+  it("should validate input when @sinclair/typebox is available", () => {
     const typeboxLike = {
-      type: 'object',
-      properties: { name: { type: 'string' } },
-      required: ['name'],
+      type: "object",
+      properties: { name: { type: "string" } },
+      required: ["name"],
     };
 
     const schema = fromTypeBox(typeboxLike);
-    const result = schema.validate({ name: 'Alice' });
+    const result = schema.validate({ name: "Alice" });
     // If @sinclair/typebox is installed, this succeeds; if not, it throws
     // Either way, validate() is exercised
     expect(result).toBeDefined();
-    expect(typeof result.success).toBe('boolean');
+    expect(typeof result.success).toBe("boolean");
   });
 });
 
-describe('fromValibot', () => {
-  it('should validate with _parse', () => {
+describe("fromValibot", () => {
+  it("should validate with _parse", () => {
     const valibotLike = {
       _parse(input: unknown) {
         return { success: true, output: input };
@@ -103,12 +103,12 @@ describe('fromValibot', () => {
     };
 
     const schema = fromValibot(valibotLike);
-    const result = schema.validate({ foo: 'bar' });
+    const result = schema.validate({ foo: "bar" });
     expect(result.success).toBe(true);
-    expect(result.data).toEqual({ foo: 'bar' });
+    expect(result.data).toEqual({ foo: "bar" });
   });
 
-  it('should validate with safeParse', () => {
+  it("should validate with safeParse", () => {
     const valibotLike = {
       safeParse(input: unknown) {
         return { success: true, data: input };
@@ -116,16 +116,16 @@ describe('fromValibot', () => {
     };
 
     const schema = fromValibot(valibotLike);
-    const result = schema.validate('test');
+    const result = schema.validate("test");
     expect(result.success).toBe(true);
   });
 
-  it('should handle validation errors', () => {
+  it("should handle validation errors", () => {
     const valibotLike = {
       _parse() {
         return {
           success: false,
-          issues: [{ message: 'Invalid', path: [{ key: 'name' }] }],
+          issues: [{ message: "Invalid", path: [{ key: "name" }] }],
         };
       },
     };
@@ -134,12 +134,12 @@ describe('fromValibot', () => {
     const result = schema.validate(null);
     expect(result.success).toBe(false);
     expect(result.issues).toHaveLength(1);
-    expect(result.issues![0].path).toEqual(['name']);
+    expect(result.issues?.[0].path).toEqual(["name"]);
   });
 
-  it('should handle unknown schema format', () => {
+  it("should handle unknown schema format", () => {
     const schema = fromValibot({});
-    const result = schema.validate('test');
+    const result = schema.validate("test");
     expect(result.success).toBe(false);
   });
 });

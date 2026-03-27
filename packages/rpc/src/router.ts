@@ -1,15 +1,15 @@
 // @celsian/rpc — Router + handler execution
 
+import { generateOpenAPI } from "./openapi.js";
 import type {
+  ContextFactory,
   ProcedureDefinition,
   RouterDefinition,
   RPCContext,
-  RPCResponse,
   RPCManifest,
-  ContextFactory,
-} from './types.js';
-import { encode, decode } from './wire.js';
-import { generateOpenAPI } from './openapi.js';
+  RPCResponse,
+} from "./types.js";
+import { decode, encode } from "./wire.js";
 
 export function router<T extends RouterDefinition>(routes: T): T {
   return routes;
@@ -28,8 +28,8 @@ export class RPCHandler {
     },
   ) {
     this.contextFactory = options?.contextFactory ?? ((request) => ({ request }));
-    this.basePath = options?.basePath ?? '/_rpc';
-    this.flattenRoutes(routes, '');
+    this.basePath = options?.basePath ?? "/_rpc";
+    this.flattenRoutes(routes, "");
   }
 
   private flattenRoutes(routes: RouterDefinition, prefix: string): void {
@@ -45,63 +45,63 @@ export class RPCHandler {
 
   private isProcedure(value: unknown): value is ProcedureDefinition {
     return (
-      typeof value === 'object' &&
+      typeof value === "object" &&
       value !== null &&
-      'type' in value &&
-      'handler' in value &&
-      ((value as ProcedureDefinition).type === 'query' || (value as ProcedureDefinition).type === 'mutation')
+      "type" in value &&
+      "handler" in value &&
+      ((value as ProcedureDefinition).type === "query" || (value as ProcedureDefinition).type === "mutation")
     );
   }
 
   async handle(request: Request): Promise<Response> {
     const url = new URL(request.url);
-    const rpcPathRegex = new RegExp(`^${this.basePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/`);
-    const rpcPath = url.pathname.replace(rpcPathRegex, '');
+    const rpcPathRegex = new RegExp(`^${this.basePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`);
+    const rpcPath = url.pathname.replace(rpcPathRegex, "");
 
-    if (rpcPath === 'openapi.json') {
+    if (rpcPath === "openapi.json") {
       return new Response(JSON.stringify(this.generateOpenAPI()), {
-        headers: { 'content-type': 'application/json' },
+        headers: { "content-type": "application/json" },
       });
     }
 
-    if (rpcPath === 'manifest.json') {
+    if (rpcPath === "manifest.json") {
       return new Response(JSON.stringify(this.getManifest()), {
-        headers: { 'content-type': 'application/json' },
+        headers: { "content-type": "application/json" },
       });
     }
 
     const proc = this.flatRoutes.get(rpcPath);
     if (!proc) {
-      return this.errorResponse(404, 'NOT_FOUND', `Procedure "${rpcPath}" not found`);
+      return this.errorResponse(404, "NOT_FOUND", `Procedure "${rpcPath}" not found`);
     }
 
-    if (proc.type === 'mutation' && request.method !== 'POST') {
-      return this.errorResponse(405, 'METHOD_NOT_ALLOWED', 'Mutations require POST');
+    if (proc.type === "mutation" && request.method !== "POST") {
+      return this.errorResponse(405, "METHOD_NOT_ALLOWED", "Mutations require POST");
     }
 
     // Parse input
     let rawInput: unknown;
-    if (request.method === 'GET') {
-      const inputParam = url.searchParams.get('input');
+    if (request.method === "GET") {
+      const inputParam = url.searchParams.get("input");
       if (inputParam) {
         try {
           rawInput = decode(JSON.parse(inputParam));
         } catch {
-          return this.errorResponse(400, 'PARSE_ERROR', 'Invalid input parameter');
+          return this.errorResponse(400, "PARSE_ERROR", "Invalid input parameter");
         }
       }
     } else {
       // Prefer pre-parsed body from CelsianApp (body stream already consumed)
       const preParsed = (request as unknown as Record<string, unknown>).parsedBody;
-      const contentType = request.headers.get('content-type') ?? '';
-      if (contentType.includes('multipart/form-data')) {
+      const contentType = request.headers.get("content-type") ?? "";
+      if (contentType.includes("multipart/form-data")) {
         rawInput = preParsed instanceof FormData ? preParsed : await request.formData();
       } else {
         try {
           const body = preParsed !== undefined ? preParsed : await request.json();
           rawInput = decode(body);
         } catch {
-          return this.errorResponse(400, 'PARSE_ERROR', 'Invalid JSON body');
+          return this.errorResponse(400, "PARSE_ERROR", "Invalid JSON body");
         }
       }
     }
@@ -110,7 +110,7 @@ export class RPCHandler {
     if (proc.inputSchema) {
       const result = proc.inputSchema.validate(rawInput);
       if (!result.success) {
-        return this.errorResponse(400, 'VALIDATION_ERROR', 'Input validation failed', result.issues);
+        return this.errorResponse(400, "VALIDATION_ERROR", "Input validation failed", result.issues);
       }
       rawInput = result.data;
     }
@@ -125,28 +125,24 @@ export class RPCHandler {
       if (proc.outputSchema) {
         const result = proc.outputSchema.validate(output);
         if (!result.success) {
-          return this.errorResponse(500, 'OUTPUT_VALIDATION_ERROR', 'Output validation failed');
+          return this.errorResponse(500, "OUTPUT_VALIDATION_ERROR", "Output validation failed");
         }
       }
 
       const response: RPCResponse = { result: encode(output) };
       return new Response(JSON.stringify(response), {
         status: 200,
-        headers: { 'content-type': 'application/json' },
+        headers: { "content-type": "application/json" },
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Internal error';
-      const code = (error as { code?: string }).code ?? 'INTERNAL_ERROR';
+      const message = error instanceof Error ? error.message : "Internal error";
+      const code = (error as { code?: string }).code ?? "INTERNAL_ERROR";
       const status = (error as { statusCode?: number }).statusCode ?? 500;
       return this.errorResponse(status, code, message);
     }
   }
 
-  private async runProcedure(
-    proc: ProcedureDefinition,
-    input: unknown,
-    ctx: RPCContext,
-  ): Promise<unknown> {
+  private async runProcedure(proc: ProcedureDefinition, input: unknown, ctx: RPCContext): Promise<unknown> {
     const middlewares = proc.middlewares;
     let index = 0;
 
@@ -172,12 +168,12 @@ export class RPCHandler {
     };
     return new Response(JSON.stringify(response), {
       status,
-      headers: { 'content-type': 'application/json' },
+      headers: { "content-type": "application/json" },
     });
   }
 
   getManifest(): RPCManifest {
-    const procedures: RPCManifest['procedures'] = {};
+    const procedures: RPCManifest["procedures"] = {};
     for (const [path, proc] of this.flatRoutes) {
       procedures[path] = {
         type: proc.type,

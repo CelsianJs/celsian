@@ -1,9 +1,10 @@
 // @celsian/adapter-node — Standalone Node.js server adapter
 
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { readFile, stat } from 'node:fs/promises';
-import { join, extname, resolve } from 'node:path';
-import type { CelsianApp } from '@celsian/core';
+import { readFile, stat } from "node:fs/promises";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { extname, join, resolve } from "node:path";
+import type { CelsianApp } from "@celsian/core";
+
 // Inline types — will be imported from @celsian/build when ThenJS ships
 type RouteManifest = Record<string, { kind: string; method: string; path: string }>;
 type TaskManifest = Record<string, { name: string; handler: string }>;
@@ -33,7 +34,7 @@ export interface ThenAdapter {
 
 /** Node adapter for build output */
 const nodeAdapter: ThenAdapter = {
-  name: 'node',
+  name: "node",
 
   async buildEnd({ serverEntry, clientDir, staticDir }) {
     // Generate a standalone server entry that:
@@ -41,7 +42,7 @@ const nodeAdapter: ThenAdapter = {
     // 2. Sets up static file serving
     // 3. Starts node:http server
 
-    const entryCode = `
+    const _entryCode = `
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { join, extname } from 'node:path';
@@ -146,10 +147,10 @@ server.listen(PORT, HOST, () => {
 `;
 
     // In a real implementation, write this to disk
-    console.log('[celsian:adapter-node] Generated server entry');
+    console.log("[celsian:adapter-node] Generated server entry");
   },
 
-  entryTemplate: 'node-server',
+  entryTemplate: "node-server",
 };
 
 export default nodeAdapter;
@@ -157,25 +158,25 @@ export default nodeAdapter;
 // ─── Runtime: Start a Node server from a CelsianApp ───
 
 export function serve(app: CelsianApp, options: NodeAdapterOptions = {}): void {
-  const port = options.port ?? parseInt(process.env.PORT ?? '3000', 10);
-  const host = options.host ?? '0.0.0.0';
+  const port = options.port ?? parseInt(process.env.PORT ?? "3000", 10);
+  const host = options.host ?? "0.0.0.0";
   const staticDir = options.staticDir;
 
   const MIME_TYPES: Record<string, string> = {
-    '.html': 'text/html',
-    '.js': 'application/javascript',
-    '.css': 'text/css',
-    '.json': 'application/json',
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.svg': 'image/svg+xml',
-    '.ico': 'image/x-icon',
-    '.woff': 'font/woff',
-    '.woff2': 'font/woff2',
+    ".html": "text/html",
+    ".js": "application/javascript",
+    ".css": "text/css",
+    ".json": "application/json",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2",
   };
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
-    const url = new URL(req.url ?? '/', `http://${host}:${port}`);
+    const url = new URL(req.url ?? "/", `http://${host}:${port}`);
 
     // Try static files
     if (staticDir) {
@@ -184,14 +185,14 @@ export function serve(app: CelsianApp, options: NodeAdapterOptions = {}): void {
       const resolvedRoot = resolve(staticDir);
       const filePath = resolve(join(staticDir, decodedPath));
       // Ensure the resolved path is within the static directory
-      if (filePath.startsWith(resolvedRoot + '/') || filePath === resolvedRoot) {
+      if (filePath.startsWith(`${resolvedRoot}/`) || filePath === resolvedRoot) {
         try {
           const s = await stat(filePath);
           if (s.isFile()) {
             const content = await readFile(filePath);
             const ext = extname(filePath);
-            res.setHeader('content-type', MIME_TYPES[ext] ?? 'application/octet-stream');
-            res.setHeader('cache-control', 'public, max-age=31536000, immutable');
+            res.setHeader("content-type", MIME_TYPES[ext] ?? "application/octet-stream");
+            res.setHeader("cache-control", "public, max-age=31536000, immutable");
             res.end(content);
             return;
           }
@@ -208,9 +209,9 @@ export function serve(app: CelsianApp, options: NodeAdapterOptions = {}): void {
       const response = await app.handle(webRequest);
       await writeWebResponse(res, response);
     } catch (error) {
-      console.error('[celsian] Unhandled error:', error);
+      console.error("[celsian] Unhandled error:", error);
       res.statusCode = 500;
-      res.end('Internal Server Error');
+      res.end("Internal Server Error");
     }
   });
 
@@ -224,28 +225,25 @@ export function serve(app: CelsianApp, options: NodeAdapterOptions = {}): void {
 export function nodeToWebRequest(req: IncomingMessage, url: URL): Request {
   const headers = new Headers();
   for (const [key, value] of Object.entries(req.headers)) {
-    if (typeof value === 'string') {
+    if (typeof value === "string") {
       headers.set(key, value);
     } else if (Array.isArray(value)) {
       for (const v of value) headers.append(key, v);
     }
   }
 
-  const method = req.method ?? 'GET';
-  const hasBody = method !== 'GET' && method !== 'HEAD';
+  const method = req.method ?? "GET";
+  const hasBody = method !== "GET" && method !== "HEAD";
 
   return new Request(url.toString(), {
     method,
     headers,
     body: hasBody ? (req as unknown as ReadableStream) : undefined,
-    duplex: hasBody ? 'half' : undefined,
+    duplex: hasBody ? "half" : undefined,
   });
 }
 
-export async function writeWebResponse(
-  res: ServerResponse,
-  response: Response,
-): Promise<void> {
+export async function writeWebResponse(res: ServerResponse, response: Response): Promise<void> {
   res.statusCode = response.status;
 
   for (const [key, value] of response.headers.entries()) {

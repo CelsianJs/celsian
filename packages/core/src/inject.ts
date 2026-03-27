@@ -1,7 +1,7 @@
 // @celsian/core — Test injection utility (no server needed)
 
-import type { CelsianApp } from './app.js';
-import type { RouteMethod } from './types.js';
+import type { CelsianApp } from "./app.js";
+import type { RouteMethod } from "./types.js";
 
 export interface InjectOptions {
   method?: RouteMethod;
@@ -18,23 +18,23 @@ export function createInject(app: CelsianApp) {
     // Append query params
     if (options.query) {
       const params = new URLSearchParams(options.query);
-      const separator = url.includes('?') ? '&' : '?';
+      const separator = url.includes("?") ? "&" : "?";
       url = url + separator + params.toString();
     }
 
     // Ensure absolute URL
-    if (!url.startsWith('http')) {
-      url = 'http://localhost' + (url.startsWith('/') ? '' : '/') + url;
+    if (!url.startsWith("http")) {
+      url = `http://localhost${url.startsWith("/") ? "" : "/"}${url}`;
     }
 
-    const method = options.method ?? 'GET';
+    const method = options.method ?? "GET";
     const headers = new Headers(options.headers);
 
     let body: string | undefined;
     if (options.payload !== undefined) {
       body = JSON.stringify(options.payload);
-      if (!headers.has('content-type')) {
-        headers.set('content-type', 'application/json');
+      if (!headers.has("content-type")) {
+        headers.set("content-type", "application/json");
       }
     }
 

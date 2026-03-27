@@ -1,7 +1,7 @@
 // @celsian/core — CSRF protection plugin (double-submit cookie pattern)
 
-import type { PluginFunction, HookHandler, CelsianRequest, CelsianReply } from '../types.js';
-import { parseCookies, serializeCookie } from '../cookie.js';
+import { parseCookies, serializeCookie } from "../cookie.js";
+import type { CelsianReply, CelsianRequest, HookHandler, PluginFunction } from "../types.js";
 
 export interface CSRFOptions {
   /** Cookie name for the CSRF token (default: '_csrf') */
@@ -14,7 +14,7 @@ export interface CSRFOptions {
   cookie?: {
     path?: string;
     secure?: boolean;
-    sameSite?: 'strict' | 'lax' | 'none';
+    sameSite?: "strict" | "lax" | "none";
     domain?: string;
   };
   /** Methods that require CSRF validation (default: POST, PUT, PATCH, DELETE) */
@@ -23,7 +23,7 @@ export interface CSRFOptions {
   excludePaths?: string[];
 }
 
-const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 /**
  * Generate a cryptographically random token using crypto.getRandomValues().
@@ -31,7 +31,9 @@ const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 function generateToken(byteLength: number): string {
   const bytes = new Uint8Array(byteLength);
   crypto.getRandomValues(bytes);
-  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 /**
@@ -50,8 +52,8 @@ function timingSafeEqual(a: string, b: string): boolean {
 }
 
 export function csrf(options: CSRFOptions = {}): PluginFunction {
-  const cookieName = options.cookieName ?? '_csrf';
-  const headerName = options.headerName ?? 'x-csrf-token';
+  const cookieName = options.cookieName ?? "_csrf";
+  const headerName = options.headerName ?? "x-csrf-token";
   const tokenLength = options.tokenLength ?? 32;
   const cookieOpts = options.cookie ?? {};
   const protectedMethods = new Set(options.protectedMethods ?? [...MUTATING_METHODS]);
@@ -68,34 +70,34 @@ export function csrf(options: CSRFOptions = {}): PluginFunction {
 
       // On safe methods (GET, HEAD, OPTIONS), set the CSRF cookie if not present
       if (!protectedMethods.has(method)) {
-        const cookies = parseCookies(request.headers.get('cookie') ?? '');
+        const cookies = parseCookies(request.headers.get("cookie") ?? "");
         if (!cookies[cookieName]) {
           const token = generateToken(tokenLength);
           const cookieStr = serializeCookie(cookieName, token, {
-            path: cookieOpts.path ?? '/',
+            path: cookieOpts.path ?? "/",
             secure: cookieOpts.secure,
-            sameSite: cookieOpts.sameSite ?? 'lax',
+            sameSite: cookieOpts.sameSite ?? "lax",
             domain: cookieOpts.domain,
             httpOnly: false, // Must be readable by JS to send in header
           });
-          reply.header('set-cookie', cookieStr);
+          reply.header("set-cookie", cookieStr);
         }
         return;
       }
 
       // On mutating methods, validate X-CSRF-Token header matches the cookie
-      const cookies = parseCookies(request.headers.get('cookie') ?? '');
+      const cookies = parseCookies(request.headers.get("cookie") ?? "");
       const cookieToken = cookies[cookieName];
       const headerToken = request.headers.get(headerName);
 
       if (!cookieToken || !headerToken || !timingSafeEqual(cookieToken, headerToken)) {
         return reply.status(403).json({
-          error: 'CSRF token mismatch',
+          error: "CSRF token mismatch",
           statusCode: 403,
         });
       }
     };
 
-    app.addHook('onRequest', hook);
+    app.addHook("onRequest", hook);
   };
 }

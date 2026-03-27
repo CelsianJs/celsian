@@ -11,31 +11,27 @@
  *   ExtractRouteParams<'/static/*'>             → { '*': string }
  *   ExtractRouteParams<'/no-params'>            → {}
  */
-export type ExtractRouteParams<T extends string> =
-  T extends `${string}:${infer Param}/${infer Rest}`
-    ? { [K in Param | keyof ExtractRouteParams<`/${Rest}`>]: string }
-    : T extends `${string}:${infer Param}`
-      ? { [K in Param]: string }
-      : T extends `${string}*`
-        ? { '*': string }
-        : {};
+export type ExtractRouteParams<T extends string> = T extends `${string}:${infer Param}/${infer Rest}`
+  ? { [K in Param | keyof ExtractRouteParams<`/${Rest}`>]: string }
+  : T extends `${string}:${infer Param}`
+    ? { [K in Param]: string }
+    : T extends `${string}*`
+      ? { "*": string }
+      : {};
 
 // ─── Hook Types ───
 
 export type HookName =
-  | 'onRequest'
-  | 'preParsing'
-  | 'preValidation'
-  | 'preHandler'
-  | 'preSerialization'
-  | 'onSend'
-  | 'onResponse'
-  | 'onError';
+  | "onRequest"
+  | "preParsing"
+  | "preValidation"
+  | "preHandler"
+  | "preSerialization"
+  | "onSend"
+  | "onResponse"
+  | "onError";
 
-export type HookHandler<T = void | Response> = (
-  request: CelsianRequest,
-  reply: CelsianReply,
-) => T | Promise<T>;
+export type HookHandler<T = void | Response> = (request: CelsianRequest, reply: CelsianReply) => T | Promise<T>;
 
 export type OnErrorHandler = (
   error: Error,
@@ -68,9 +64,9 @@ export interface CelsianReply {
   stream(readable: ReadableStream): Response;
   redirect(url: string, code?: number): Response;
   /** Set a cookie on the response */
-  cookie(name: string, value: string, options?: import('./cookie.js').CookieOptions): CelsianReply;
+  cookie(name: string, value: string, options?: import("./cookie.js").CookieOptions): CelsianReply;
   /** Clear a cookie by setting maxAge=0 */
-  clearCookie(name: string, options?: import('./cookie.js').CookieOptions): CelsianReply;
+  clearCookie(name: string, options?: import("./cookie.js").CookieOptions): CelsianReply;
   /** Read a file and send it with the correct MIME type */
   sendFile(filePath: string): Promise<Response>;
   /** Send a file as a download with Content-Disposition: attachment */
@@ -92,7 +88,7 @@ export interface CelsianReply {
 
 // ─── Route Handler ───
 
-export type RouteMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
+export type RouteMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
 
 export type RouteHandler = (
   request: CelsianRequest,
@@ -110,7 +106,7 @@ export interface RouteOptions {
   url: string;
   handler: RouteHandler;
   /** Endpoint type */
-  kind?: 'serverless' | 'hot' | 'task';
+  kind?: "serverless" | "hot" | "task";
   /** Schema for validation */
   schema?: {
     body?: unknown;
@@ -135,8 +131,8 @@ export interface InternalRoute {
   method: RouteMethod;
   url: string;
   handler: RouteHandler;
-  kind: 'serverless' | 'hot' | 'task';
-  schema?: RouteOptions['schema'];
+  kind: "serverless" | "hot" | "task";
+  schema?: RouteOptions["schema"];
   hooks: RouteHooks;
 }
 
@@ -149,10 +145,7 @@ export interface RouteHooks {
 
 // ─── Plugin ───
 
-export type PluginFunction = (
-  app: PluginContext,
-  options: Record<string, unknown>,
-) => void | Promise<void>;
+export type PluginFunction = (app: PluginContext, options: Record<string, unknown>) => void | Promise<void>;
 
 export interface PluginOptions {
   prefix?: string;
@@ -169,14 +162,14 @@ export interface PluginContext {
   patch<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void;
   delete<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void;
 
-  addHook(name: 'onRequest', handler: HookHandler): void;
-  addHook(name: 'preParsing', handler: HookHandler): void;
-  addHook(name: 'preValidation', handler: HookHandler): void;
-  addHook(name: 'preHandler', handler: HookHandler): void;
-  addHook(name: 'preSerialization', handler: HookHandler): void;
-  addHook(name: 'onSend', handler: HookHandler): void;
-  addHook(name: 'onResponse', handler: HookHandler): void;
-  addHook(name: 'onError', handler: OnErrorHandler): void;
+  addHook(name: "onRequest", handler: HookHandler): void;
+  addHook(name: "preParsing", handler: HookHandler): void;
+  addHook(name: "preValidation", handler: HookHandler): void;
+  addHook(name: "preHandler", handler: HookHandler): void;
+  addHook(name: "preSerialization", handler: HookHandler): void;
+  addHook(name: "onSend", handler: HookHandler): void;
+  addHook(name: "onResponse", handler: HookHandler): void;
+  addHook(name: "onError", handler: OnErrorHandler): void;
   addHook(name: HookName, handler: HookHandler | OnErrorHandler): void;
 
   decorate(name: string, value: unknown): void;
@@ -192,7 +185,7 @@ export interface PluginContext {
 export interface RouteManifestEntry {
   method: RouteMethod;
   url: string;
-  kind: 'serverless' | 'hot' | 'task';
+  kind: "serverless" | "hot" | "task";
 }
 
 export interface CelsianAppOptions {
@@ -201,7 +194,7 @@ export interface CelsianAppOptions {
   /** Trust proxy headers */
   trustProxy?: boolean;
   /** Enable structured logging. true = default logger, or pass Logger instance */
-  logger?: boolean | import('./logger.js').Logger;
+  logger?: boolean | import("./logger.js").Logger;
   /** Max request body size in bytes (default: 1MB). Set to 0 to disable. */
   bodyLimit?: number;
   /** Per-request timeout in ms (default: 30000). Set to 0 to disable. */

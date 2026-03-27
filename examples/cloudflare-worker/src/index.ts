@@ -6,9 +6,9 @@
 //  - CORS and security plugins
 //  - Health check, JSON API, and KV routes
 
-import { createApp, cors, security } from '@celsian/core';
-import { createCloudflareHandler } from '@celsian/adapter-cloudflare';
-import type { CloudflareEnv } from '@celsian/adapter-cloudflare';
+import type { CloudflareEnv } from "@celsian/adapter-cloudflare";
+import { createCloudflareHandler } from "@celsian/adapter-cloudflare";
+import { cors, createApp, security } from "@celsian/core";
 
 // ─── Env Bindings ───────────────────────────────────────────────
 
@@ -22,51 +22,55 @@ interface Env extends CloudflareEnv {
 const app = createApp();
 
 // Plugins
-app.register(cors({
-  origin: '*',
-  methods: ['GET', 'HEAD', 'POST', 'PUT', 'DELETE'],
-  maxAge: 86400,
-}));
+app.register(
+  cors({
+    origin: "*",
+    methods: ["GET", "HEAD", "POST", "PUT", "DELETE"],
+    maxAge: 86400,
+  }),
+);
 
-app.register(security({
-  hsts: { maxAge: 31536000, includeSubDomains: true },
-  contentSecurityPolicy: "default-src 'none'",
-}));
+app.register(
+  security({
+    hsts: { maxAge: 31536000, includeSubDomains: true },
+    contentSecurityPolicy: "default-src 'none'",
+  }),
+);
 
 // ─── Health Check ───────────────────────────────────────────────
 
-app.get('/health', (_req, reply) => {
+app.get("/health", (_req, reply) => {
   return reply.json({
-    status: 'ok',
-    runtime: 'cloudflare-workers',
+    status: "ok",
+    runtime: "cloudflare-workers",
     timestamp: new Date().toISOString(),
   });
 });
 
 // ─── JSON API ───────────────────────────────────────────────────
 
-app.get('/api/info', (req, reply) => {
+app.get("/api/info", (req, reply) => {
   const env = (req as unknown as Record<string, unknown>).env as Env;
 
   return reply.json({
-    name: 'celsian-worker',
-    version: '1.0.0',
-    environment: env.ENVIRONMENT ?? 'unknown',
-    region: (req.headers.get('cf-ipcountry') ?? 'unknown'),
+    name: "celsian-worker",
+    version: "1.0.0",
+    environment: env.ENVIRONMENT ?? "unknown",
+    region: req.headers.get("cf-ipcountry") ?? "unknown",
   });
 });
 
 // ─── KV Read / Write ────────────────────────────────────────────
 
 // GET /kv/:key — read a value from CACHE KV
-app.get('/kv/:key', async (req, reply) => {
+app.get("/kv/:key", async (req, reply) => {
   const env = (req as unknown as Record<string, unknown>).env as Env;
   const { key } = req.params as { key: string };
 
   const value = await env.CACHE.get(key);
   if (value === null) {
     return reply.status(404).json({
-      error: 'Not Found',
+      error: "Not Found",
       message: `Key "${key}" does not exist in CACHE`,
     });
   }
@@ -80,7 +84,7 @@ app.get('/kv/:key', async (req, reply) => {
 });
 
 // PUT /kv/:key — write a value to CACHE KV
-app.put('/kv/:key', async (req, reply) => {
+app.put("/kv/:key", async (req, reply) => {
   const env = (req as unknown as Record<string, unknown>).env as Env;
   const ctx = (req as unknown as Record<string, unknown>).ctx as {
     waitUntil(p: Promise<unknown>): void;
@@ -90,14 +94,12 @@ app.put('/kv/:key', async (req, reply) => {
 
   if (!body || body.value === undefined) {
     return reply.status(400).json({
-      error: 'Bad Request',
+      error: "Bad Request",
       message: 'Request body must include a "value" field',
     });
   }
 
-  const serialized = typeof body.value === 'string'
-    ? body.value
-    : JSON.stringify(body.value);
+  const serialized = typeof body.value === "string" ? body.value : JSON.stringify(body.value);
 
   const kvOptions: KVNamespacePutOptions = {};
   if (body.ttl && body.ttl > 0) {
@@ -115,7 +117,7 @@ app.put('/kv/:key', async (req, reply) => {
 });
 
 // DELETE /kv/:key — delete a value from CACHE KV
-app.delete('/kv/:key', async (req, reply) => {
+app.delete("/kv/:key", async (req, reply) => {
   const env = (req as unknown as Record<string, unknown>).env as Env;
   const ctx = (req as unknown as Record<string, unknown>).ctx as {
     waitUntil(p: Promise<unknown>): void;

@@ -59,7 +59,7 @@ export class MemoryKVStore implements KVStore {
     if (interval > 0) {
       this.cleanupInterval = setInterval(() => this.cleanup(), interval);
       // Allow process to exit even if interval is still running
-      if (typeof this.cleanupInterval === 'object' && 'unref' in this.cleanupInterval) {
+      if (typeof this.cleanupInterval === "object" && "unref" in this.cleanupInterval) {
         this.cleanupInterval.unref();
       }
     }
@@ -137,7 +137,7 @@ export class MemoryKVStore implements KVStore {
   }
 
   async getMany<T = unknown>(keys: string[]): Promise<(T | undefined)[]> {
-    return Promise.all(keys.map(k => this.get<T>(k)));
+    return Promise.all(keys.map((k) => this.get<T>(k)));
   }
 
   async setMany<T = unknown>(entries: Array<{ key: string; value: T; ttlMs?: number }>): Promise<void> {
@@ -181,9 +181,9 @@ export class MemoryKVStore implements KVStore {
 
   private globToRegex(pattern: string): RegExp {
     const escaped = pattern
-      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-      .replace(/\*/g, '.*')
-      .replace(/\?/g, '.');
+      .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+      .replace(/\*/g, ".*")
+      .replace(/\?/g, ".");
     return new RegExp(`^${escaped}$`);
   }
 }

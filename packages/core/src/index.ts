@@ -1,67 +1,73 @@
 // @celsian/core — Server runtime
 
-export { CelsianApp, createApp } from './app.js';
-export { Router } from './router.js';
-export { createReply } from './reply.js';
-export { buildRequest } from './request.js';
-export { EncapsulationContext } from './context.js';
-export { createHookStore, runHooks, runOnSendHooks, runHooksFireAndForget } from './hooks.js';
-export { CelsianError, HttpError, ValidationError, assertPlugin, assertDecorationUnique, wrapNonError } from './errors.js';
-export { defineConfig, loadConfig } from './config.js';
-export { serve, nodeToWebRequest, writeWebResponse } from './serve.js';
-export { createInject } from './inject.js';
-export { createLogger, generateRequestId } from './logger.js';
-export { cors } from './plugins/cors.js';
-export { security } from './plugins/security.js';
-export { database, withTransaction, transactionLifecycle } from './plugins/database.js';
-export { trackedPool, dbAnalytics, dbTimingHeader, slowQueryLogger } from './plugins/analytics.js';
-export { openapi } from './plugins/openapi.js';
-export { withETag } from './plugins/etag.js';
-export { csrf } from './plugins/csrf.js';
-export { parseCookies, serializeCookie } from './cookie.js';
-export { TaskRegistry, TaskWorker, createEnqueue } from './task.js';
-export { MemoryQueue, generateQueueId } from './queue.js';
-export { CronScheduler, parseCronExpression, shouldRun } from './cron.js';
-export { WSRegistry, createWSConnection } from './websocket.js';
-export { createSSEStream, createSSEHub } from './sse.js';
-export { accepts, acceptsEncoding, acceptsLanguage } from './negotiate.js';
-
-export type { HookStore } from './hooks.js';
-export type { CelsianConfig } from './config.js';
-export type { ServeOptions, ServeResult } from './serve.js';
-export type { InjectOptions } from './inject.js';
-export type { Logger, LogLevel, LoggerOptions } from './logger.js';
-export type { CORSOptions } from './plugins/cors.js';
-export type { SecurityOptions } from './plugins/security.js';
-export type { DatabaseOptions, DatabasePool, TransactionCapablePool, TransactionClient } from './plugins/database.js';
-export type { QueryMetric, RequestMetrics } from './plugins/analytics.js';
-export type { OpenAPIOptions } from './plugins/openapi.js';
-export type { ETagOptions } from './plugins/etag.js';
-export type { CSRFOptions } from './plugins/csrf.js';
-export type { CookieOptions } from './cookie.js';
-export type { TaskDefinition, TaskContext, TaskWorkerOptions } from './task.js';
-export type { QueueBackend, QueueMessage } from './queue.js';
-export type { CronJob } from './cron.js';
-export type { WSHandler, WSConnection } from './websocket.js';
-export type { SSEEvent, SSEStreamOptions, SSEChannel, SSEHub } from './sse.js';
+export { CelsianApp, createApp } from "./app.js";
+export type { CelsianConfig } from "./config.js";
+export { defineConfig, loadConfig } from "./config.js";
+export { EncapsulationContext } from "./context.js";
+export type { CookieOptions } from "./cookie.js";
+export { parseCookies, serializeCookie } from "./cookie.js";
+export type { CronJob } from "./cron.js";
+export { CronScheduler, parseCronExpression, shouldRun } from "./cron.js";
+export {
+  assertDecorationUnique,
+  assertPlugin,
+  CelsianError,
+  HttpError,
+  ValidationError,
+  wrapNonError,
+} from "./errors.js";
+export type { HookStore } from "./hooks.js";
+export { createHookStore, runHooks, runHooksFireAndForget, runOnSendHooks } from "./hooks.js";
+export type { InjectOptions } from "./inject.js";
+export { createInject } from "./inject.js";
+export type { Logger, LoggerOptions, LogLevel } from "./logger.js";
+export { createLogger, generateRequestId } from "./logger.js";
+export { accepts, acceptsEncoding, acceptsLanguage } from "./negotiate.js";
+export type { QueryMetric, RequestMetrics } from "./plugins/analytics.js";
+export { dbAnalytics, dbTimingHeader, slowQueryLogger, trackedPool } from "./plugins/analytics.js";
+export type { CORSOptions } from "./plugins/cors.js";
+export { cors } from "./plugins/cors.js";
+export type { CSRFOptions } from "./plugins/csrf.js";
+export { csrf } from "./plugins/csrf.js";
+export type { DatabaseOptions, DatabasePool, TransactionCapablePool, TransactionClient } from "./plugins/database.js";
+export { database, transactionLifecycle, withTransaction } from "./plugins/database.js";
+export type { ETagOptions } from "./plugins/etag.js";
+export { withETag } from "./plugins/etag.js";
+export type { OpenAPIOptions } from "./plugins/openapi.js";
+export { openapi } from "./plugins/openapi.js";
+export type { SecurityOptions } from "./plugins/security.js";
+export { security } from "./plugins/security.js";
+export type { QueueBackend, QueueMessage } from "./queue.js";
+export { generateQueueId, MemoryQueue } from "./queue.js";
+export { createReply } from "./reply.js";
+export { buildRequest } from "./request.js";
+export { Router } from "./router.js";
+export type { ServeOptions, ServeResult } from "./serve.js";
+export { nodeToWebRequest, serve, writeWebResponse } from "./serve.js";
+export type { SSEChannel, SSEEvent, SSEHub, SSEStreamOptions } from "./sse.js";
+export { createSSEHub, createSSEStream } from "./sse.js";
+export type { TaskContext, TaskDefinition, TaskWorkerOptions } from "./task.js";
+export { createEnqueue, TaskRegistry, TaskWorker } from "./task.js";
 export type {
   CelsianAppOptions,
-  CelsianRequest,
   CelsianReply,
-  HookName,
-  HookHandler,
-  OnErrorHandler,
+  CelsianRequest,
+  ExtractRouteParams,
   HookFunction,
-  RouteMethod,
-  RouteHandler,
-  TypedRouteHandler,
-  RouteOptions,
-  RouteMatch,
+  HookHandler,
+  HookName,
   InternalRoute,
-  RouteHooks,
-  RouteManifestEntry,
+  OnErrorHandler,
+  PluginContext,
   PluginFunction,
   PluginOptions,
-  PluginContext,
-  ExtractRouteParams,
-} from './types.js';
+  RouteHandler,
+  RouteHooks,
+  RouteManifestEntry,
+  RouteMatch,
+  RouteMethod,
+  RouteOptions,
+  TypedRouteHandler,
+} from "./types.js";
+export type { WSConnection, WSHandler } from "./websocket.js";
+export { createWSConnection, WSRegistry } from "./websocket.js";

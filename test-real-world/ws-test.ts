@@ -1,37 +1,38 @@
 // Real-world test: WebSocket registration and broadcasting
 // Note: Actual WS connections require a real server (Bun/Node),
 // so we test the registry + handler setup API surface here.
-import { createApp } from '../packages/core/src/app.js';
-import { WSRegistry, createWSConnection } from '../packages/core/src/websocket.js';
-import type { CelsianApp } from '../packages/core/src/app.js';
-import type { WSHandler, WSConnection } from '../packages/core/src/websocket.js';
+
+import type { CelsianApp } from "../packages/core/src/app.js";
+import { createApp } from "../packages/core/src/app.js";
+import type { WSConnection } from "../packages/core/src/websocket.js";
+import { createWSConnection, WSRegistry } from "../packages/core/src/websocket.js";
 
 export function buildWSApp(): CelsianApp {
   const app = createApp();
 
   // Echo handler
-  app.ws('/echo', {
+  app.ws("/echo", {
     open(ws) {
-      ws.send('connected');
+      ws.send("connected");
     },
     message(ws, data) {
       // Echo back whatever was sent
-      ws.send(typeof data === 'string' ? `echo: ${data}` : data);
+      ws.send(typeof data === "string" ? `echo: ${data}` : data);
     },
-    close(_ws, code, reason) {
+    close(_ws, _code, _reason) {
       // Clean up
     },
   });
 
   // Chat/broadcast handler
-  app.ws('/chat', {
+  app.ws("/chat", {
     open(ws) {
       ws.metadata.joinedAt = Date.now();
     },
     message(ws, data) {
       // Broadcast to all other connected clients on /chat
-      if (typeof data === 'string') {
-        app.wsBroadcast('/chat', data, ws.id);
+      if (typeof data === "string") {
+        app.wsBroadcast("/chat", data, ws.id);
       }
     },
   });

@@ -1,5 +1,7 @@
 // @celsian/core — Cron scheduling (5-field unix cron, no deps)
 
+import { CelsianError } from "./errors.js";
+
 export interface CronJob {
   name: string;
   schedule: string;
@@ -18,7 +20,7 @@ interface ParsedCron {
 export function parseCronExpression(expr: string): ParsedCron {
   const parts = expr.trim().split(/\s+/);
   if (parts.length !== 5) {
-    throw new Error(`Invalid cron expression: "${expr}" (expected 5 fields)`);
+    throw new CelsianError(`Invalid cron expression: "${expr}" (expected 5 fields)`);
   }
 
   return {
@@ -33,16 +35,16 @@ export function parseCronExpression(expr: string): ParsedCron {
 function parseField(field: string, min: number, max: number): Set<number> {
   const values = new Set<number>();
 
-  for (const part of field.split(',')) {
-    if (part === '*') {
+  for (const part of field.split(",")) {
+    if (part === "*") {
       for (let i = min; i <= max; i++) values.add(i);
-    } else if (part.includes('/')) {
-      const [range, stepStr] = part.split('/');
+    } else if (part.includes("/")) {
+      const [range, stepStr] = part.split("/");
       const step = parseInt(stepStr!, 10);
-      const start = range === '*' ? min : parseInt(range!, 10);
+      const start = range === "*" ? min : parseInt(range!, 10);
       for (let i = start; i <= max; i += step) values.add(i);
-    } else if (part.includes('-')) {
-      const [startStr, endStr] = part.split('-');
+    } else if (part.includes("-")) {
+      const [startStr, endStr] = part.split("-");
       const start = parseInt(startStr!, 10);
       const end = parseInt(endStr!, 10);
       for (let i = start; i <= end; i++) values.add(i);
@@ -100,13 +102,13 @@ export class CronScheduler {
       if (shouldRun(parsed, now)) {
         // Fire and forget — log errors instead of silently swallowing
         Promise.resolve(job.handler()).catch((err) => {
-          console.error('[celsian] Cron job error:', err);
+          console.error("[celsian] Cron job error:", err);
         });
       }
     }
   }
 
   getJobs(): CronJob[] {
-    return this.jobs.map(j => j.job);
+    return this.jobs.map((j) => j.job);
   }
 }

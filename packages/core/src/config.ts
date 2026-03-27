@@ -8,7 +8,7 @@ export interface CelsianConfig {
     prefix?: string;
   };
   schema?: {
-    provider?: 'typebox' | 'zod' | 'valibot' | 'auto';
+    provider?: "typebox" | "zod" | "valibot" | "auto";
   };
   rpc?: {
     basePath?: string;
@@ -27,16 +27,16 @@ export function defineConfig(config: CelsianConfig): CelsianConfig {
 const DEFAULT_CONFIG: CelsianConfig = {
   server: {
     port: 3000,
-    host: 'localhost',
+    host: "localhost",
     trustProxy: false,
   },
   schema: {
-    provider: 'auto',
+    provider: "auto",
   },
 };
 
 export async function loadConfig(root: string = process.cwd()): Promise<CelsianConfig> {
-  const configFiles = ['celsian.config.ts', 'celsian.config.js', 'celsian.config.mjs'];
+  const configFiles = ["celsian.config.ts", "celsian.config.js", "celsian.config.mjs"];
 
   for (const file of configFiles) {
     const configPath = `${root}/${file}`;

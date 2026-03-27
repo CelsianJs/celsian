@@ -1,7 +1,7 @@
 // @celsian/queue-redis — Redis-backed queue for CelsianJS task system
 
-import type { QueueBackend, QueueMessage } from '@celsian/core';
-import Redis from 'ioredis';
+import type { QueueBackend, QueueMessage } from "@celsian/core";
+import Redis from "ioredis";
 
 export interface RedisQueueOptions {
   /** Redis connection URL (redis://...) */
@@ -21,23 +21,23 @@ export class RedisQueue implements QueueBackend {
   private visibilityTimeout: number;
 
   // Redis key names
-  private pendingKey: string;   // LIST — pending messages
-  private inflightKey: string;  // HASH — in-flight messages by id
-  private delayedKey: string;   // SORTED SET — delayed messages (score = availableAt)
+  private pendingKey: string; // LIST — pending messages
+  private inflightKey: string; // HASH — in-flight messages by id
+  private delayedKey: string; // SORTED SET — delayed messages (score = availableAt)
 
   constructor(options: RedisQueueOptions = {}) {
     if (options.client) {
       this.redis = options.client;
       this.ownsClient = false;
     } else {
-      this.redis = new Redis(options.url ?? 'redis://localhost:6379', {
+      this.redis = new Redis(options.url ?? "redis://localhost:6379", {
         maxRetriesPerRequest: 3,
         lazyConnect: true,
       });
       this.ownsClient = true;
     }
 
-    this.prefix = options.prefix ?? 'celsian:queue';
+    this.prefix = options.prefix ?? "celsian:queue";
     this.visibilityTimeout = options.visibilityTimeout ?? 30_000;
     this.pendingKey = `${this.prefix}:pending`;
     this.inflightKey = `${this.prefix}:inflight`;
@@ -45,7 +45,7 @@ export class RedisQueue implements QueueBackend {
   }
 
   async connect(): Promise<void> {
-    if (this.ownsClient && this.redis.status === 'wait') {
+    if (this.ownsClient && this.redis.status === "wait") {
       await this.redis.connect();
     }
   }

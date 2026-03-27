@@ -1,8 +1,8 @@
 // @celsian/compress — Response compression plugin
 
-import type { PluginFunction, HookHandler, CelsianRequest, CelsianReply } from '@celsian/core';
+import type { CelsianReply, CelsianRequest, HookHandler, PluginFunction } from "@celsian/core";
 
-export type CompressionEncoding = 'gzip' | 'deflate';
+export type CompressionEncoding = "gzip" | "deflate";
 
 export interface CompressOptions {
   threshold?: number;
@@ -10,12 +10,9 @@ export interface CompressOptions {
 }
 
 const DEFAULT_THRESHOLD = 1024;
-const DEFAULT_ENCODINGS: CompressionEncoding[] = ['gzip', 'deflate'];
+const DEFAULT_ENCODINGS: CompressionEncoding[] = ["gzip", "deflate"];
 
-function negotiateEncoding(
-  acceptEncoding: string,
-  supported: CompressionEncoding[],
-): CompressionEncoding | null {
+function negotiateEncoding(acceptEncoding: string, supported: CompressionEncoding[]): CompressionEncoding | null {
   const accepted = acceptEncoding.toLowerCase();
   for (const encoding of supported) {
     if (accepted.includes(encoding)) {
@@ -38,10 +35,10 @@ function compressBody(
   writer.write(encoded);
   writer.close();
 
-  extraHeaders.set('content-encoding', encoding);
-  extraHeaders.set('content-type', contentType);
-  extraHeaders.delete('content-length');
-  extraHeaders.append('vary', 'accept-encoding');
+  extraHeaders.set("content-encoding", encoding);
+  extraHeaders.set("content-type", contentType);
+  extraHeaders.delete("content-length");
+  extraHeaders.append("vary", "accept-encoding");
 
   return new Response(cs.readable, {
     status: statusCode,
@@ -55,7 +52,7 @@ export function compress(options: CompressOptions = {}): PluginFunction {
 
   return function compressPlugin(app) {
     const hook: HookHandler = (request: CelsianRequest, reply: CelsianReply) => {
-      const acceptEncoding = request.headers.get('accept-encoding') ?? '';
+      const acceptEncoding = request.headers.get("accept-encoding") ?? "";
       const encoding = negotiateEncoding(acceptEncoding, encodings);
 
       if (!encoding) return;
@@ -70,15 +67,15 @@ export function compress(options: CompressOptions = {}): PluginFunction {
         if (body.length < threshold) return originalJson(data);
         reply.sent = true;
         const headers = new Headers(reply.headers);
-        return compressBody(body, encoding, 'application/json; charset=utf-8', reply.statusCode, headers);
+        return compressBody(body, encoding, "application/json; charset=utf-8", reply.statusCode, headers);
       };
 
       reply.send = (data: unknown): Response => {
         if (data instanceof Response) return data;
-        const body = typeof data === 'string' ? data : JSON.stringify(data);
+        const body = typeof data === "string" ? data : JSON.stringify(data);
         if (body.length < threshold) return originalSend(data);
         reply.sent = true;
-        const ct = typeof data === 'string' ? 'text/plain; charset=utf-8' : 'application/json; charset=utf-8';
+        const ct = typeof data === "string" ? "text/plain; charset=utf-8" : "application/json; charset=utf-8";
         const headers = new Headers(reply.headers);
         return compressBody(body, encoding, ct, reply.statusCode, headers);
       };
@@ -87,10 +84,10 @@ export function compress(options: CompressOptions = {}): PluginFunction {
         if (content.length < threshold) return originalHtml(content);
         reply.sent = true;
         const headers = new Headers(reply.headers);
-        return compressBody(content, encoding, 'text/html; charset=utf-8', reply.statusCode, headers);
+        return compressBody(content, encoding, "text/html; charset=utf-8", reply.statusCode, headers);
       };
     };
 
-    app.addHook('onRequest', hook as HookHandler);
+    app.addHook("onRequest", hook as HookHandler);
   };
 }

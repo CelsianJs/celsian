@@ -1,5 +1,5 @@
-import type { RouteMatch } from './types.js';
-import { applyRewrite } from './match.js';
+import { applyRewrite } from "./match.js";
+import type { RouteMatch } from "./types.js";
 
 /**
  * Proxy a request to the matched route's origin backend.
@@ -9,10 +9,7 @@ import { applyRewrite } from './match.js';
  * - Adds any route-level custom headers
  * - Adds X-Forwarded-* headers
  */
-export async function proxyRequest(
-  request: Request,
-  match: RouteMatch,
-): Promise<Response> {
+export async function proxyRequest(request: Request, match: RouteMatch): Promise<Response> {
   const { route, params } = match;
   const origin = route.entry.origin;
   const url = new URL(request.url);
@@ -31,9 +28,9 @@ export async function proxyRequest(
 
   // Build forwarded headers
   const headers = new Headers(request.headers);
-  headers.set('X-Forwarded-Host', url.hostname);
-  headers.set('X-Forwarded-Proto', url.protocol.replace(':', ''));
-  headers.set('X-Forwarded-For', request.headers.get('CF-Connecting-IP') ?? '127.0.0.1');
+  headers.set("X-Forwarded-Host", url.hostname);
+  headers.set("X-Forwarded-Proto", url.protocol.replace(":", ""));
+  headers.set("X-Forwarded-For", request.headers.get("CF-Connecting-IP") ?? "127.0.0.1");
 
   // Add route-level custom headers
   if (route.entry.headers) {
@@ -46,8 +43,8 @@ export async function proxyRequest(
   const proxyReq = new Request(targetUrl.toString(), {
     method: request.method,
     headers,
-    body: request.method !== 'GET' && request.method !== 'HEAD' ? request.body : undefined,
-    redirect: 'manual',
+    body: request.method !== "GET" && request.method !== "HEAD" ? request.body : undefined,
+    redirect: "manual",
   });
 
   return fetch(proxyReq);

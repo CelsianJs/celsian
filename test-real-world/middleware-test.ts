@@ -1,9 +1,10 @@
 // Real-world test: Middleware chain composition
-import { createApp } from '../packages/core/src/app.js';
-import { cors } from '../packages/core/src/plugins/cors.js';
-import { security } from '../packages/core/src/plugins/security.js';
-import type { CelsianApp } from '../packages/core/src/app.js';
-import type { PluginFunction, HookHandler } from '../packages/core/src/types.js';
+
+import type { CelsianApp } from "../packages/core/src/app.js";
+import { createApp } from "../packages/core/src/app.js";
+import { cors } from "../packages/core/src/plugins/cors.js";
+import { security } from "../packages/core/src/plugins/security.js";
+import type { HookHandler, PluginFunction } from "../packages/core/src/types.js";
 
 // Custom logging middleware that collects log entries
 export interface LogEntry {
@@ -16,7 +17,7 @@ export function createRequestLogger() {
   const logs: LogEntry[] = [];
 
   const plugin: PluginFunction = (app) => {
-    app.addHook('onRequest', (req) => {
+    app.addHook("onRequest", (req) => {
       logs.push({
         method: req.method,
         url: new URL(req.url).pathname,
@@ -33,30 +34,34 @@ export function createRequestLogger() {
 export function buildSecurityApp(): CelsianApp {
   const app = createApp();
 
-  app.register(security({
-    contentTypeOptions: true,
-    frameOptions: 'DENY',
-    hsts: { maxAge: 31536000, includeSubDomains: true },
-  }), { encapsulate: false });
+  app.register(
+    security({
+      contentTypeOptions: true,
+      frameOptions: "DENY",
+      hsts: { maxAge: 31536000, includeSubDomains: true },
+    }),
+    { encapsulate: false },
+  );
 
-  app.get('/test', (_req, reply) => reply.json({ ok: true }));
+  app.get("/test", (_req, reply) => reply.json({ ok: true }));
   return app;
 }
 
 // ─── App with CORS only ───
 
-export function buildCorsApp(options?: {
-  corsOrigin?: string | string[];
-}): CelsianApp {
+export function buildCorsApp(options?: { corsOrigin?: string | string[] }): CelsianApp {
   const app = createApp();
 
-  app.register(cors({
-    origin: options?.corsOrigin ?? '*',
-    credentials: true,
-    maxAge: 3600,
-  }), { encapsulate: false });
+  app.register(
+    cors({
+      origin: options?.corsOrigin ?? "*",
+      credentials: true,
+      maxAge: 3600,
+    }),
+    { encapsulate: false },
+  );
 
-  app.get('/test', (_req, reply) => reply.json({ ok: true }));
+  app.get("/test", (_req, reply) => reply.json({ ok: true }));
   return app;
 }
 
@@ -73,23 +78,23 @@ export function buildTimingApp(): CelsianApp {
     const start = (req as Record<string, unknown>)._startTime as number;
     if (start) {
       const duration = (performance.now() - start).toFixed(2);
-      reply.header('x-response-time', `${duration}ms`);
+      reply.header("x-response-time", `${duration}ms`);
     }
   };
 
-  app.addHook('onRequest', timingOnRequest);
+  app.addHook("onRequest", timingOnRequest);
 
   // Register routes with route-level onSend to set the timing header
   app.route({
-    method: 'GET',
-    url: '/test',
+    method: "GET",
+    url: "/test",
     onSend: timingOnSend,
     handler: (_req, reply) => reply.json({ ok: true }),
   });
 
   app.route({
-    method: 'GET',
-    url: '/slow',
+    method: "GET",
+    url: "/slow",
     onSend: timingOnSend,
     handler: async (_req, reply) => {
       await new Promise((r) => setTimeout(r, 10));
@@ -108,8 +113,8 @@ export function buildLoggingApp(): { app: CelsianApp; logs: LogEntry[] } {
 
   app.register(logPlugin, { encapsulate: false });
 
-  app.get('/test', (_req, reply) => reply.json({ ok: true }));
-  app.get('/other', (_req, reply) => reply.json({ other: true }));
+  app.get("/test", (_req, reply) => reply.json({ ok: true }));
+  app.get("/other", (_req, reply) => reply.json({ other: true }));
 
   return { app, logs };
 }
@@ -126,7 +131,7 @@ export function buildComposedApp(): { app: CelsianApp; logs: LogEntry[] } {
   // Logging via onRequest
   app.register(logPlugin, { encapsulate: false });
 
-  app.get('/test', (_req, reply) => reply.json({ ok: true }));
+  app.get("/test", (_req, reply) => reply.json({ ok: true }));
 
   return { app, logs };
 }

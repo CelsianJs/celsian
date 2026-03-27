@@ -27,7 +27,7 @@ const encoder = new TextEncoder();
  * Format an SSE event into the wire format.
  */
 function formatSSEEvent(event: SSEEvent): string {
-  let result = '';
+  let result = "";
 
   if (event.event) {
     result += `event: ${event.event}\n`;
@@ -42,13 +42,13 @@ function formatSSEEvent(event: SSEEvent): string {
   }
 
   // Data can be multi-line — each line needs its own `data:` prefix
-  const data = typeof event.data === 'string' ? event.data : JSON.stringify(event.data);
-  const lines = data.split('\n');
+  const data = typeof event.data === "string" ? event.data : JSON.stringify(event.data);
+  const lines = data.split("\n");
   for (const line of lines) {
     result += `data: ${line}\n`;
   }
 
-  result += '\n'; // Empty line terminates the event
+  result += "\n"; // Empty line terminates the event
   return result;
 }
 
@@ -81,10 +81,7 @@ export interface SSEChannel {
 /**
  * Create an SSE stream for a request.
  */
-export function createSSEStream(
-  request: Request,
-  options?: SSEStreamOptions,
-): SSEChannel {
+export function createSSEStream(request: Request, options?: SSEStreamOptions): SSEChannel {
   const pingInterval = options?.pingInterval ?? 30_000;
   const onClose = options?.onClose;
   let isOpen = true;
@@ -97,7 +94,7 @@ export function createSSEStream(
   if (pingInterval > 0) {
     pingTimer = setInterval(() => {
       if (isOpen) {
-        writer.write(encoder.encode(': ping\n\n')).catch(() => {
+        writer.write(encoder.encode(": ping\n\n")).catch(() => {
           close();
         });
       }
@@ -118,12 +115,12 @@ export function createSSEStream(
   }
 
   // Detect client disconnect via abort signal
-  request.signal?.addEventListener('abort', close);
+  request.signal?.addEventListener("abort", close);
 
   const headers: Record<string, string> = {
-    'content-type': 'text/event-stream',
-    'cache-control': 'no-cache',
-    connection: 'keep-alive',
+    "content-type": "text/event-stream",
+    "cache-control": "no-cache",
+    connection: "keep-alive",
     ...options?.headers,
   };
 

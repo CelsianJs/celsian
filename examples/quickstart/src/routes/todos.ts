@@ -6,8 +6,8 @@
 //   - Reply helpers (json, notFound, status)
 //   - In-memory data store (swap for a real DB in production)
 
-import { z } from 'zod';
-import type { PluginFunction } from '@celsian/core';
+import type { PluginFunction } from "@celsian/core";
+import { z } from "zod";
 
 // ─── Types ───
 
@@ -32,7 +32,7 @@ export function resetTodos() {
 // ─── Validation Schemas ───
 
 const createTodoSchema = z.object({
-  title: z.string().min(1, 'Title is required').max(200),
+  title: z.string().min(1, "Title is required").max(200),
   completed: z.boolean().optional().default(false),
 });
 
@@ -45,22 +45,22 @@ const updateTodoSchema = z.object({
 
 export const todoRoutes: PluginFunction = (app) => {
   // GET /todos — List all todos
-  app.get('/todos', (_req, reply) => {
+  app.get("/todos", (_req, reply) => {
     const list = Array.from(todos.values());
     return reply.json(list);
   });
 
   // GET /todos/:id — Get a single todo
-  app.get('/todos/:id', (req, reply) => {
+  app.get("/todos/:id", (req, reply) => {
     const todo = todos.get(req.params.id);
-    if (!todo) return reply.notFound('Todo not found');
+    if (!todo) return reply.notFound("Todo not found");
     return reply.json(todo);
   });
 
   // POST /todos — Create a new todo (with schema validation)
   app.route({
-    method: 'POST',
-    url: '/todos',
+    method: "POST",
+    url: "/todos",
     schema: { body: createTodoSchema },
     handler(req, reply) {
       const { title, completed } = req.parsedBody as z.infer<typeof createTodoSchema>;
@@ -79,12 +79,12 @@ export const todoRoutes: PluginFunction = (app) => {
 
   // PUT /todos/:id — Update a todo (with schema validation)
   app.route({
-    method: 'PUT',
-    url: '/todos/:id',
+    method: "PUT",
+    url: "/todos/:id",
     schema: { body: updateTodoSchema },
     handler(req, reply) {
       const todo = todos.get(req.params.id);
-      if (!todo) return reply.notFound('Todo not found');
+      if (!todo) return reply.notFound("Todo not found");
 
       const updates = req.parsedBody as z.infer<typeof updateTodoSchema>;
       if (updates.title !== undefined) todo.title = updates.title;
@@ -95,9 +95,9 @@ export const todoRoutes: PluginFunction = (app) => {
   });
 
   // DELETE /todos/:id — Delete a todo (204 No Content)
-  app.delete('/todos/:id', (req, reply) => {
+  app.delete("/todos/:id", (req, reply) => {
     const existed = todos.delete(req.params.id);
-    if (!existed) return reply.notFound('Todo not found');
+    if (!existed) return reply.notFound("Todo not found");
     return reply.status(204).send(null);
   });
 };

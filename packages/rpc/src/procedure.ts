@@ -1,13 +1,8 @@
 // @celsian/rpc — Procedure builder
 
-import type { StandardSchema } from '@celsian/schema';
-import { fromSchema } from '@celsian/schema';
-import type {
-  ProcedureDefinition,
-  ProcedureType,
-  RPCContext,
-  MiddlewareFunction,
-} from './types.js';
+import type { StandardSchema } from "@celsian/schema";
+import { fromSchema } from "@celsian/schema";
+import type { MiddlewareFunction, ProcedureDefinition, ProcedureType, RPCContext } from "./types.js";
 
 class ProcedureBuilder<TInput = unknown, TOutput = unknown> {
   private _inputSchema?: StandardSchema<TInput>;
@@ -42,13 +37,13 @@ class ProcedureBuilder<TInput = unknown, TOutput = unknown> {
   query(
     handler: (opts: { input: TInput; ctx: RPCContext }) => Promise<TOutput> | TOutput,
   ): ProcedureDefinition<TInput, TOutput> {
-    return this._build('query', handler);
+    return this._build("query", handler);
   }
 
   mutation(
     handler: (opts: { input: TInput; ctx: RPCContext }) => Promise<TOutput> | TOutput,
   ): ProcedureDefinition<TInput, TOutput> {
-    return this._build('mutation', handler);
+    return this._build("mutation", handler);
   }
 
   private _build(

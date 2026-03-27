@@ -6,10 +6,5 @@
     "composite": true
   },
   "include": ["src"],
-  "references": [
-    { "path": "../core" },
-    { "path": "../schema" },
-    { "path": "../rpc" },
-    { "path": "../cli" }
-  ]
+  "references": [{ "path": "../core" }, { "path": "../schema" }, { "path": "../rpc" }, { "path": "../cli" }]
 }

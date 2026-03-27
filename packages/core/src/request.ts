@@ -1,22 +1,18 @@
 // @celsian/core — Request builder
 
-import type { CelsianRequest } from './types.js';
+import type { CelsianRequest } from "./types.js";
 
 // Shared empty query object for requests with no query string
 const EMPTY_QUERY: Record<string, string | string[]> = Object.freeze(Object.create(null));
 
 // Keys that must never be set via user input (prototype pollution prevention)
-const BLOCKED_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+const BLOCKED_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
-export function buildRequest(
-  request: Request,
-  url: URL,
-  params: Record<string, string>,
-): CelsianRequest {
+export function buildRequest(request: Request, url: URL, params: Record<string, string>): CelsianRequest {
   // Use frozen empty object when there's no query string to avoid per-request allocation
   let query: Record<string, string | string[]>;
   const searchStr = url.search;
-  if (!searchStr || searchStr === '?') {
+  if (!searchStr || searchStr === "?") {
     query = EMPTY_QUERY as Record<string, string | string[]>;
   } else {
     query = Object.create(null);
@@ -52,8 +48,12 @@ export function buildRequest(
   req.clone = request.clone.bind(request);
 
   // Lazy getters for rarely-accessed properties
-  Object.defineProperty(celsianRequest, 'body', { get: () => request.body, configurable: true, enumerable: true });
-  Object.defineProperty(celsianRequest, 'bodyUsed', { get: () => request.bodyUsed, configurable: true, enumerable: true });
+  Object.defineProperty(celsianRequest, "body", { get: () => request.body, configurable: true, enumerable: true });
+  Object.defineProperty(celsianRequest, "bodyUsed", {
+    get: () => request.bodyUsed,
+    configurable: true,
+    enumerable: true,
+  });
 
   // Copy any custom properties set on the request (e.g., env/ctx from Cloudflare adapter)
   for (const key of Object.keys(request)) {
@@ -71,10 +71,10 @@ export function buildRequest(
  */
 export function buildRequestFast(
   request: Request,
-  pathname: string,
+  _pathname: string,
   queryString: string,
   params: Record<string, string>,
-  fullUrl: URL | null,
+  _fullUrl: URL | null,
 ): CelsianRequest {
   // Parse query string without creating a URL object
   let query: Record<string, string | string[]>;
@@ -114,8 +114,12 @@ export function buildRequestFast(
   req.clone = request.clone.bind(request);
 
   // Lazy getters for rarely-accessed properties
-  Object.defineProperty(celsianRequest, 'body', { get: () => request.body, configurable: true, enumerable: true });
-  Object.defineProperty(celsianRequest, 'bodyUsed', { get: () => request.bodyUsed, configurable: true, enumerable: true });
+  Object.defineProperty(celsianRequest, "body", { get: () => request.body, configurable: true, enumerable: true });
+  Object.defineProperty(celsianRequest, "bodyUsed", {
+    get: () => request.bodyUsed,
+    configurable: true,
+    enumerable: true,
+  });
 
   // Copy any custom properties set on the request (e.g., env/ctx from Cloudflare adapter)
   const requestKeys = Object.keys(request);

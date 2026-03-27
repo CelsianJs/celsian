@@ -1,19 +1,19 @@
 // @celsian/core — Encapsulation context for plugin isolation
 
-import { Router } from './router.js';
-import { createHookStore, cloneHookStore, type HookStore } from './hooks.js';
-import { assertDecorationUnique } from './errors.js';
+import { assertDecorationUnique } from "./errors.js";
+import { cloneHookStore, createHookStore, type HookStore } from "./hooks.js";
+import type { Router } from "./router.js";
 import type {
   HookHandler,
-  OnErrorHandler,
   HookName,
-  RouteMethod,
-  RouteHandler,
-  RouteOptions,
+  OnErrorHandler,
+  PluginContext,
   PluginFunction,
   PluginOptions,
-  PluginContext,
-} from './types.js';
+  RouteHandler,
+  RouteMethod,
+  RouteOptions,
+} from "./types.js";
 
 export class EncapsulationContext {
   readonly prefix: string;
@@ -57,28 +57,25 @@ export class EncapsulationContext {
 
     const addRoute = (method: RouteMethod, url: string, handler: RouteHandler, opts?: Partial<RouteOptions>) => {
       const fullUrl = ctx.prefix + url;
-      ctx.router.addRoute(
-        method,
-        fullUrl,
-        handler,
-        opts?.kind ?? 'serverless',
-        opts?.schema,
-        {
-          onRequest: [
-            ...ctx.hooks.onRequest,
-            ...(opts?.onRequest ? (Array.isArray(opts.onRequest) ? opts.onRequest : [opts.onRequest]) : []),
-          ],
-          preHandler: [
-            ...ctx.hooks.preHandler,
-            ...(opts?.preHandler ? (Array.isArray(opts.preHandler) ? opts.preHandler : [opts.preHandler]) : []),
-          ],
-          preSerialization: [
-            ...ctx.hooks.preSerialization,
-            ...(opts?.preSerialization ? (Array.isArray(opts.preSerialization) ? opts.preSerialization : [opts.preSerialization]) : []),
-          ],
-          onSend: opts?.onSend ? (Array.isArray(opts.onSend) ? opts.onSend : [opts.onSend]) : [],
-        },
-      );
+      ctx.router.addRoute(method, fullUrl, handler, opts?.kind ?? "serverless", opts?.schema, {
+        onRequest: [
+          ...ctx.hooks.onRequest,
+          ...(opts?.onRequest ? (Array.isArray(opts.onRequest) ? opts.onRequest : [opts.onRequest]) : []),
+        ],
+        preHandler: [
+          ...ctx.hooks.preHandler,
+          ...(opts?.preHandler ? (Array.isArray(opts.preHandler) ? opts.preHandler : [opts.preHandler]) : []),
+        ],
+        preSerialization: [
+          ...ctx.hooks.preSerialization,
+          ...(opts?.preSerialization
+            ? Array.isArray(opts.preSerialization)
+              ? opts.preSerialization
+              : [opts.preSerialization]
+            : []),
+        ],
+        onSend: opts?.onSend ? (Array.isArray(opts.onSend) ? opts.onSend : [opts.onSend]) : [],
+      });
     };
 
     // Cast to PluginContext: the generic route method signatures are type-level only.
@@ -89,7 +86,7 @@ export class EncapsulationContext {
           // Non-encapsulated: plugin affects parent context directly
           await plugin(ctx.toPluginContext(), options as Record<string, unknown>);
         } else {
-          const childCtx = ctx.createChild(options.prefix ?? '');
+          const childCtx = ctx.createChild(options.prefix ?? "");
           await plugin(childCtx.toPluginContext(), options as Record<string, unknown>);
         }
       },
@@ -101,21 +98,31 @@ export class EncapsulationContext {
         }
       },
 
-      get(url: string, handler: RouteHandler) { addRoute('GET', url, handler); },
-      post(url: string, handler: RouteHandler) { addRoute('POST', url, handler); },
-      put(url: string, handler: RouteHandler) { addRoute('PUT', url, handler); },
-      patch(url: string, handler: RouteHandler) { addRoute('PATCH', url, handler); },
-      delete(url: string, handler: RouteHandler) { addRoute('DELETE', url, handler); },
+      get(url: string, handler: RouteHandler) {
+        addRoute("GET", url, handler);
+      },
+      post(url: string, handler: RouteHandler) {
+        addRoute("POST", url, handler);
+      },
+      put(url: string, handler: RouteHandler) {
+        addRoute("PUT", url, handler);
+      },
+      patch(url: string, handler: RouteHandler) {
+        addRoute("PATCH", url, handler);
+      },
+      delete(url: string, handler: RouteHandler) {
+        addRoute("DELETE", url, handler);
+      },
 
       addHook(name: HookName, handler: HookHandler | OnErrorHandler) {
-        if (name === 'onError') {
+        if (name === "onError") {
           ctx.hooks.onError.push(handler as OnErrorHandler);
         } else {
           (ctx.hooks[name] as HookHandler[]).push(handler as HookHandler);
         }
         // onSend and onResponse are cross-cutting — propagate to parent so they
         // apply to all routes, not just routes registered within this plugin context
-        if ((name === 'onSend' || name === 'onResponse') && ctx.parent) {
+        if ((name === "onSend" || name === "onResponse") && ctx.parent) {
           let ancestor: EncapsulationContext | null = ctx.parent;
           while (ancestor) {
             (ancestor.hooks[name] as HookHandler[]).push(handler as HookHandler);

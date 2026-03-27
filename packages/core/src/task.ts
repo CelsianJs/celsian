@@ -1,7 +1,8 @@
 // @celsian/core — Task system: define background tasks, enqueue, and process
 
-import type { Logger } from './logger.js';
-import { generateQueueId, MemoryQueue, type QueueBackend, type QueueMessage } from './queue.js';
+import { CelsianError } from "./errors.js";
+import type { Logger } from "./logger.js";
+import { generateQueueId, type QueueBackend, type QueueMessage } from "./queue.js";
 
 export interface TaskDefinition<TInput = unknown> {
   name: string;
@@ -69,7 +70,7 @@ export class TaskWorker {
 
     // Wait for active jobs to finish
     while (this.activeJobs > 0) {
-      await new Promise(r => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, 50));
     }
   }
 
@@ -100,7 +101,7 @@ export class TaskWorker {
   private async processMessage(message: QueueMessage): Promise<void> {
     const definition = this.registry.get(message.taskName);
     if (!definition) {
-      this.log.error('Unknown task', { taskName: message.taskName });
+      this.log.error("Unknown task", { taskName: message.taskName });
       await this.queue.ack(message.id);
       return;
     }
@@ -116,7 +117,10 @@ export class TaskWorker {
         await Promise.race([
           definition.handler(message.input, ctx),
           new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('Task timeout')), definition.timeout),
+            setTimeout(
+              () => reject(new CelsianError(`Task "${message.taskName}" timed out after ${definition.timeout}ms`)),
+              definition.timeout,
+            ),
           ),
         ]);
       } else {
@@ -126,16 +130,16 @@ export class TaskWorker {
     } catch (error) {
       const retries = definition.retries ?? 0;
       if (message.attempt < retries) {
-        const delay = Math.min(1000 * Math.pow(2, message.attempt), 30000);
+        const delay = Math.min(1000 * 2 ** message.attempt, 30000);
         await this.queue.nack(message.id, delay);
-        ctx.log.warn('Task failed, retrying', {
+        ctx.log.warn("Task failed, retrying", {
           attempt: message.attempt,
           maxRetries: retries,
           error: (error as Error).message,
         });
       } else {
         await this.queue.ack(message.id);
-        ctx.log.error('Task failed permanently', {
+        ctx.log.error("Task failed permanently", {
           attempt: message.attempt,
           error: (error as Error).message,
         });
@@ -147,7 +151,7 @@ export class TaskWorker {
 export function createEnqueue(queue: QueueBackend, registry: TaskRegistry) {
   return async function enqueue(taskName: string, input: unknown): Promise<string> {
     if (!registry.has(taskName)) {
-      throw new Error(`Unknown task: ${taskName}`);
+      throw new CelsianError(`Unknown task: "${taskName}". Register it with taskRegistry.register() before enqueuing.`);
     }
     const definition = registry.get(taskName)!;
     const id = generateQueueId();

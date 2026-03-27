@@ -1,3 +1,5 @@
+import { PlatformError } from "../errors.js";
+
 /**
  * Fly.io deployment provider.
  *
@@ -22,5 +24,5 @@ export interface FlyDeployOptions {
  */
 export async function deployFly(_opts: FlyDeployOptions): Promise<{ url: string }> {
   // TODO: Implement — Fly Machines API deployment
-  throw new Error('@celsian/platform: Fly.io deployment not yet implemented');
+  throw new PlatformError("@celsian/platform: Fly.io deployment not yet implemented");
 }

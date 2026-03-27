@@ -1,7 +1,7 @@
 // @celsian/jwt — JWT authentication plugin
 
-import * as jose from 'jose';
-import type { PluginFunction, HookHandler, CelsianRequest, CelsianReply } from '@celsian/core';
+import type { CelsianReply, CelsianRequest, HookHandler, PluginFunction } from "@celsian/core";
+import * as jose from "jose";
 
 export interface JWTOptions {
   secret: string;
@@ -23,7 +23,7 @@ export interface JWTNamespace {
 }
 
 export function jwt(options: JWTOptions): PluginFunction {
-  const algorithms = options.algorithms ?? ['HS256'];
+  const algorithms = options.algorithms ?? ["HS256"];
   const secretKey = new TextEncoder().encode(options.secret);
 
   return function jwtPlugin(app) {
@@ -34,7 +34,7 @@ export function jwt(options: JWTOptions): PluginFunction {
           .setIssuedAt();
 
         if (signOptions?.expiresIn) {
-          if (typeof signOptions.expiresIn === 'number') {
+          if (typeof signOptions.expiresIn === "number") {
             builder = builder.setExpirationTime(Math.floor(Date.now() / 1000) + signOptions.expiresIn);
           } else {
             builder = builder.setExpirationTime(signOptions.expiresIn);
@@ -52,18 +52,18 @@ export function jwt(options: JWTOptions): PluginFunction {
       },
     };
 
-    app.decorate('jwt', jwtInstance);
+    app.decorate("jwt", jwtInstance);
   };
 }
 
 export function createJWTGuard(options: JWTOptions): HookHandler {
-  const algorithms = options.algorithms ?? ['HS256'];
+  const algorithms = options.algorithms ?? ["HS256"];
   const secretKey = new TextEncoder().encode(options.secret);
 
   const guard: HookHandler<void | Response> = async (request: CelsianRequest, reply: CelsianReply) => {
-    const auth = request.headers.get('authorization');
-    if (!auth || !auth.startsWith('Bearer ')) {
-      return reply.status(401).json({ error: 'Missing or invalid authorization header' });
+    const auth = request.headers.get("authorization");
+    if (!auth?.startsWith("Bearer ")) {
+      return reply.status(401).json({ error: "Missing or invalid authorization header" });
     }
 
     const token = auth.slice(7);
@@ -72,7 +72,7 @@ export function createJWTGuard(options: JWTOptions): HookHandler {
       const { payload } = await jose.jwtVerify(token, secretKey, { algorithms });
       (request as Record<string, unknown>).user = payload;
     } catch {
-      return reply.status(401).json({ error: 'Invalid or expired token' });
+      return reply.status(401).json({ error: "Invalid or expired token" });
     }
   };
 

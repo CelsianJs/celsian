@@ -1,6 +1,6 @@
 // @celsian/core — OpenAPI 3.1 documentation plugin for REST routes
 
-import type { PluginFunction, InternalRoute } from '../types.js';
+import type { InternalRoute, PluginFunction } from "../types.js";
 
 export interface OpenAPIOptions {
   title?: string;
@@ -28,23 +28,23 @@ interface OpenAPISpec {
  * plain JSON Schema objects, and objects with a `toJsonSchema()` method.
  */
 function extractJsonSchema(schema: unknown): Record<string, unknown> | null {
-  if (schema == null || typeof schema !== 'object') return null;
+  if (schema == null || typeof schema !== "object") return null;
 
   const s = schema as Record<string, unknown>;
 
   // If it has a toJsonSchema method (e.g. @celsian/schema wrappers)
-  if (typeof s.toJsonSchema === 'function') {
+  if (typeof s.toJsonSchema === "function") {
     return s.toJsonSchema() as Record<string, unknown>;
   }
 
   // TypeBox / plain JSON Schema — has `type` at the top level
-  if ('type' in s) {
+  if ("type" in s) {
     return s;
   }
 
   // If it has `properties`, treat it as an object schema missing `type`
-  if ('properties' in s) {
-    return { type: 'object', ...s };
+  if ("properties" in s) {
+    return { type: "object", ...s };
   }
 
   return null;
@@ -65,9 +65,9 @@ function schemaToPathParams(schema: unknown): Array<Record<string, unknown>> {
 
   return Object.entries(properties).map(([name, prop]) => ({
     name,
-    in: 'path',
+    in: "path",
     required: required.includes(name) || true, // path params are always required
-    schema: prop ?? { type: 'string' },
+    schema: prop ?? { type: "string" },
   }));
 }
 
@@ -85,9 +85,9 @@ function schemaToQueryParams(schema: unknown): Array<Record<string, unknown>> {
 
   return Object.entries(properties).map(([name, prop]) => ({
     name,
-    in: 'query',
+    in: "query",
     required: required.includes(name),
-    schema: prop ?? { type: 'string' },
+    schema: prop ?? { type: "string" },
   }));
 }
 
@@ -95,19 +95,19 @@ function schemaToQueryParams(schema: unknown): Array<Record<string, unknown>> {
  * Convert CelsianJS route path (/users/:id) to OpenAPI path (/users/{id}).
  */
 function toOpenAPIPath(url: string): string {
-  return url.replace(/:([^/]+)/g, '{$1}').replace(/\*([^/]*)/g, '{$1}');
+  return url.replace(/:([^/]+)/g, "{$1}").replace(/\*([^/]*)/g, "{$1}");
 }
 
 /**
  * Derive a tag from a URL path (first meaningful segment).
  */
 function deriveTag(url: string): string {
-  const segments = url.split('/').filter(Boolean);
-  if (segments.length === 0) return 'default';
+  const segments = url.split("/").filter(Boolean);
+  if (segments.length === 0) return "default";
   const first = segments[0]!;
   // Skip param/wildcard segments
-  if (first.startsWith(':') || first.startsWith('*') || first.startsWith('{')) {
-    return 'default';
+  if (first.startsWith(":") || first.startsWith("*") || first.startsWith("{")) {
+    return "default";
   }
   return first;
 }
@@ -117,14 +117,14 @@ function deriveTag(url: string): string {
  */
 function buildOperationId(method: string, url: string): string {
   const parts = url
-    .split('/')
+    .split("/")
     .filter(Boolean)
     .map((seg) => {
-      if (seg.startsWith(':')) return `By${capitalize(seg.slice(1))}`;
-      if (seg.startsWith('*')) return 'Wildcard';
+      if (seg.startsWith(":")) return `By${capitalize(seg.slice(1))}`;
+      if (seg.startsWith("*")) return "Wildcard";
       return capitalize(seg);
     });
-  return method.toLowerCase() + parts.join('');
+  return method.toLowerCase() + parts.join("");
 }
 
 function capitalize(s: string): string {
@@ -133,10 +133,7 @@ function capitalize(s: string): string {
 
 // ─── Spec Generator ───
 
-function generateSpec(
-  routes: InternalRoute[],
-  options: OpenAPIOptions,
-): OpenAPISpec {
+function generateSpec(routes: InternalRoute[], options: OpenAPIOptions): OpenAPISpec {
   const paths: Record<string, Record<string, unknown>> = {};
 
   for (const route of routes) {
@@ -160,9 +157,9 @@ function generateSpec(
       for (const m of paramMatches) {
         parameters.push({
           name: m[1],
-          in: 'path',
+          in: "path",
           required: true,
-          schema: { type: 'string' },
+          schema: { type: "string" },
         });
       }
     }
@@ -182,7 +179,7 @@ function generateSpec(
         operation.requestBody = {
           required: true,
           content: {
-            'application/json': { schema: bodySchema },
+            "application/json": { schema: bodySchema },
           },
         };
       }
@@ -197,7 +194,7 @@ function generateSpec(
           responses[String(code)] = {
             description: `Response ${code}`,
             content: {
-              'application/json': { schema: json },
+              "application/json": { schema: json },
             },
           };
         } else {
@@ -207,7 +204,7 @@ function generateSpec(
       operation.responses = responses;
     } else {
       operation.responses = {
-        '200': { description: 'Successful response' },
+        "200": { description: "Successful response" },
       };
     }
 
@@ -218,10 +215,10 @@ function generateSpec(
   }
 
   const spec: OpenAPISpec = {
-    openapi: '3.1.0',
+    openapi: "3.1.0",
     info: {
-      title: options.title ?? 'CelsianJS API',
-      version: options.version ?? '1.0.0',
+      title: options.title ?? "CelsianJS API",
+      version: options.version ?? "1.0.0",
       ...(options.description ? { description: options.description } : {}),
     },
     paths,
@@ -266,30 +263,28 @@ function swaggerHTML(jsonPath: string, title: string): string {
 // ─── Plugin ───
 
 export function openapi(options: OpenAPIOptions = {}): PluginFunction {
-  const jsonPath = options.jsonPath ?? '/docs/openapi.json';
-  const uiPath = options.uiPath ?? '/docs';
+  const jsonPath = options.jsonPath ?? "/docs/openapi.json";
+  const uiPath = options.uiPath ?? "/docs";
 
   return function openapiPlugin(app) {
     // Serve the OpenAPI JSON spec
     app.route({
-      method: 'GET',
+      method: "GET",
       url: jsonPath,
       handler(_request, reply) {
         // Lazily generate the spec at request time so all routes are registered
-        const routes = app.getRoutes().filter(
-          (r) => r.url !== jsonPath && r.url !== uiPath,
-        );
+        const routes = app.getRoutes().filter((r) => r.url !== jsonPath && r.url !== uiPath);
         const spec = generateSpec(routes, options);
-        return reply.header('content-type', 'application/json; charset=utf-8').send(JSON.stringify(spec, null, 2));
+        return reply.header("content-type", "application/json; charset=utf-8").send(JSON.stringify(spec, null, 2));
       },
     });
 
     // Serve the Swagger UI HTML page
     app.route({
-      method: 'GET',
+      method: "GET",
       url: uiPath,
       handler(_request, reply) {
-        const title = options.title ?? 'CelsianJS API';
+        const title = options.title ?? "CelsianJS API";
         return reply.html(swaggerHTML(jsonPath, title));
       },
     });

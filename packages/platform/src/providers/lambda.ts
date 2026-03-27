@@ -1,3 +1,5 @@
+import { PlatformError } from "../errors.js";
+
 /**
  * AWS Lambda deployment provider.
  *
@@ -27,5 +29,5 @@ export interface LambdaBundle {
  */
 export async function deployLambda(_opts: LambdaDeployOptions): Promise<{ apiUrl: string }> {
   // TODO: Implement — create/update Lambda functions, configure API Gateway
-  throw new Error('@celsian/platform: Lambda deployment not yet implemented');
+  throw new PlatformError("@celsian/platform: Lambda deployment not yet implemented");
 }

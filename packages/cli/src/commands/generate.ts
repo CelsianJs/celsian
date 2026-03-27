@@ -1,11 +1,11 @@
 // @celsian/cli — celsian generate command
 
-import { writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { logger } from '../utils/logger.js';
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { logger } from "../utils/logger.js";
 
 export function generateRoute(name: string): void {
-  const filePath = join(process.cwd(), 'src', 'routes', `${name}.ts`);
+  const filePath = join(process.cwd(), "src", "routes", `${name}.ts`);
   const dir = dirname(filePath);
 
   if (!existsSync(dir)) {
@@ -39,7 +39,7 @@ export default ${name}Routes;
 }
 
 export function generateRpc(name: string): void {
-  const filePath = join(process.cwd(), 'src', 'rpc', `${name}.ts`);
+  const filePath = join(process.cwd(), "src", "rpc", `${name}.ts`);
   const dir = dirname(filePath);
 
   if (!existsSync(dir)) {

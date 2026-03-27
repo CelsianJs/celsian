@@ -1,6 +1,6 @@
 // @celsian/core — CORS plugin
 
-import type { PluginFunction, HookHandler } from '../types.js';
+import type { HookHandler, PluginFunction } from "../types.js";
 
 export interface CORSOptions {
   origin?: string | string[] | ((origin: string) => boolean);
@@ -12,28 +12,25 @@ export interface CORSOptions {
 }
 
 const DEFAULTS: Required<CORSOptions> = {
-  origin: '*',
-  methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE'],
+  origin: "*",
+  methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE"],
   allowedHeaders: [],
   exposedHeaders: [],
   credentials: false,
   maxAge: 0,
 };
 
-function isOriginAllowed(
-  requestOrigin: string,
-  option: CORSOptions['origin'],
-): boolean {
-  if (option === '*') return true;
-  if (typeof option === 'string') return requestOrigin === option;
+function isOriginAllowed(requestOrigin: string, option: CORSOptions["origin"]): boolean {
+  if (option === "*") return true;
+  if (typeof option === "string") return requestOrigin === option;
   if (Array.isArray(option)) return option.includes(requestOrigin);
-  if (typeof option === 'function') return option(requestOrigin);
+  if (typeof option === "function") return option(requestOrigin);
   return false;
 }
 
 function resolveOriginHeader(origin: string, opts: Required<CORSOptions>): string {
-  if (!isOriginAllowed(origin, opts.origin)) return '';
-  return opts.origin === '*' && !opts.credentials ? '*' : origin;
+  if (!isOriginAllowed(origin, opts.origin)) return "";
+  return opts.origin === "*" && !opts.credentials ? "*" : origin;
 }
 
 export function cors(options: CORSOptions = {}): PluginFunction {
@@ -42,10 +39,10 @@ export function cors(options: CORSOptions = {}): PluginFunction {
   return function corsPlugin(app) {
     // Register catch-all OPTIONS route for preflight
     app.route({
-      method: 'OPTIONS',
-      url: '/*path',
+      method: "OPTIONS",
+      url: "/*path",
       handler(request, _reply) {
-        const origin = request.headers.get('origin') ?? '';
+        const origin = request.headers.get("origin") ?? "";
         const allowOrigin = resolveOriginHeader(origin, opts);
 
         // Don't leak CORS headers to disallowed origins
@@ -54,24 +51,24 @@ export function cors(options: CORSOptions = {}): PluginFunction {
         }
 
         const headers: Record<string, string> = {};
-        headers['access-control-allow-origin'] = allowOrigin;
-        headers['access-control-allow-methods'] = opts.methods.join(', ');
+        headers["access-control-allow-origin"] = allowOrigin;
+        headers["access-control-allow-methods"] = opts.methods.join(", ");
 
         if (opts.allowedHeaders.length > 0) {
-          headers['access-control-allow-headers'] = opts.allowedHeaders.join(', ');
+          headers["access-control-allow-headers"] = opts.allowedHeaders.join(", ");
         } else {
-          const requestedHeaders = request.headers.get('access-control-request-headers');
+          const requestedHeaders = request.headers.get("access-control-request-headers");
           if (requestedHeaders) {
-            headers['access-control-allow-headers'] = requestedHeaders;
+            headers["access-control-allow-headers"] = requestedHeaders;
           }
         }
 
         if (opts.credentials) {
-          headers['access-control-allow-credentials'] = 'true';
+          headers["access-control-allow-credentials"] = "true";
         }
 
         if (opts.maxAge > 0) {
-          headers['access-control-max-age'] = String(opts.maxAge);
+          headers["access-control-max-age"] = String(opts.maxAge);
         }
 
         return new Response(null, { status: 204, headers });
@@ -80,22 +77,22 @@ export function cors(options: CORSOptions = {}): PluginFunction {
 
     // Actual request CORS headers
     const sendHook: HookHandler = (request, reply) => {
-      const origin = request.headers.get('origin') ?? '';
+      const origin = request.headers.get("origin") ?? "";
       const allowOrigin = resolveOriginHeader(origin, opts);
 
       // Don't set any CORS headers for disallowed origins
       if (!allowOrigin) return;
 
-      reply.header('access-control-allow-origin', allowOrigin);
+      reply.header("access-control-allow-origin", allowOrigin);
 
       if (opts.credentials) {
-        reply.header('access-control-allow-credentials', 'true');
+        reply.header("access-control-allow-credentials", "true");
       }
 
       if (opts.exposedHeaders.length > 0) {
-        reply.header('access-control-expose-headers', opts.exposedHeaders.join(', '));
+        reply.header("access-control-expose-headers", opts.exposedHeaders.join(", "));
       }
     };
-    app.addHook('onSend', sendHook);
+    app.addHook("onSend", sendHook);
   };
 }

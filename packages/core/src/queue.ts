@@ -43,11 +43,11 @@ export class MemoryQueue implements QueueBackend {
 
   async pop(): Promise<QueueMessage | null> {
     const now = Date.now();
-    const idx = this.messages.findIndex(m => m.availableAt <= now);
+    const idx = this.messages.findIndex((m) => m.availableAt <= now);
     if (idx === -1) return null;
 
     const [message] = this.messages.splice(idx, 1);
-    this.inFlight.set(message!.id, message!);
+    this.inFlight.set(message?.id, message!);
     return message!;
   }
 

@@ -1,6 +1,6 @@
 // @celsian/cli — Banner + version
 
-const VERSION = '0.1.0';
+const VERSION = "0.1.0";
 
 export function printBanner(): void {
   console.log(`

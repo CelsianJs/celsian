@@ -1,18 +1,18 @@
-import { describe, it, expect, beforeEach, afterAll } from 'vitest';
-import { RedisQueue } from '../src/index.js';
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { RedisQueue } from "../src/index.js";
 
 const REDIS_URL = process.env.REDIS_URL;
 
 // Skip all tests if no Redis URL configured
 const describeWithRedis = REDIS_URL ? describe : describe.skip;
 
-describeWithRedis('RedisQueue', () => {
+describeWithRedis("RedisQueue", () => {
   let queue: RedisQueue;
 
   beforeEach(async () => {
     queue = new RedisQueue({
       url: REDIS_URL,
-      prefix: 'celsian:test:queue',
+      prefix: "celsian:test:queue",
     });
     await queue.flush();
   });
@@ -24,11 +24,11 @@ describeWithRedis('RedisQueue', () => {
     }
   });
 
-  it('should push and pop a message', async () => {
+  it("should push and pop a message", async () => {
     await queue.push({
-      id: 'msg-1',
-      taskName: 'test-task',
-      input: { foo: 'bar' },
+      id: "msg-1",
+      taskName: "test-task",
+      input: { foo: "bar" },
       attempt: 0,
       maxRetries: 3,
       createdAt: Date.now(),
@@ -37,20 +37,20 @@ describeWithRedis('RedisQueue', () => {
 
     const msg = await queue.pop();
     expect(msg).not.toBeNull();
-    expect(msg!.id).toBe('msg-1');
-    expect(msg!.taskName).toBe('test-task');
-    expect(msg!.input).toEqual({ foo: 'bar' });
+    expect(msg?.id).toBe("msg-1");
+    expect(msg?.taskName).toBe("test-task");
+    expect(msg?.input).toEqual({ foo: "bar" });
   });
 
-  it('should return null when queue is empty', async () => {
+  it("should return null when queue is empty", async () => {
     const msg = await queue.pop();
     expect(msg).toBeNull();
   });
 
-  it('should ack a message (remove from in-flight)', async () => {
+  it("should ack a message (remove from in-flight)", async () => {
     await queue.push({
-      id: 'msg-2',
-      taskName: 'test-task',
+      id: "msg-2",
+      taskName: "test-task",
       input: {},
       attempt: 0,
       maxRetries: 0,
@@ -60,17 +60,17 @@ describeWithRedis('RedisQueue', () => {
 
     const msg = await queue.pop();
     expect(msg).not.toBeNull();
-    await queue.ack(msg!.id);
+    await queue.ack(msg?.id);
 
     // Should not be able to pop again
     const msg2 = await queue.pop();
     expect(msg2).toBeNull();
   });
 
-  it('should nack and re-queue a message', async () => {
+  it("should nack and re-queue a message", async () => {
     await queue.push({
-      id: 'msg-3',
-      taskName: 'test-task',
+      id: "msg-3",
+      taskName: "test-task",
       input: {},
       attempt: 0,
       maxRetries: 3,
@@ -79,23 +79,23 @@ describeWithRedis('RedisQueue', () => {
     });
 
     const msg = await queue.pop();
-    expect(msg!.attempt).toBe(0);
+    expect(msg?.attempt).toBe(0);
 
     // Nack with no delay so it's immediately available
-    await queue.nack(msg!.id, 0);
+    await queue.nack(msg?.id, 0);
 
     const msg2 = await queue.pop();
     expect(msg2).not.toBeNull();
-    expect(msg2!.id).toBe('msg-3');
-    expect(msg2!.attempt).toBe(1);
+    expect(msg2?.id).toBe("msg-3");
+    expect(msg2?.attempt).toBe(1);
   });
 
-  it('should report size', async () => {
+  it("should report size", async () => {
     expect(await queue.size()).toBe(0);
 
     await queue.push({
-      id: 'msg-4',
-      taskName: 'test-task',
+      id: "msg-4",
+      taskName: "test-task",
       input: {},
       attempt: 0,
       maxRetries: 0,
@@ -106,8 +106,8 @@ describeWithRedis('RedisQueue', () => {
     expect(await queue.size()).toBe(1);
 
     await queue.push({
-      id: 'msg-5',
-      taskName: 'test-task',
+      id: "msg-5",
+      taskName: "test-task",
       input: {},
       attempt: 0,
       maxRetries: 0,
@@ -118,10 +118,10 @@ describeWithRedis('RedisQueue', () => {
     expect(await queue.size()).toBe(2);
   });
 
-  it('should handle delayed messages', async () => {
+  it("should handle delayed messages", async () => {
     await queue.push({
-      id: 'msg-delayed',
-      taskName: 'test-task',
+      id: "msg-delayed",
+      taskName: "test-task",
       input: {},
       attempt: 0,
       maxRetries: 0,
@@ -134,17 +134,17 @@ describeWithRedis('RedisQueue', () => {
     expect(msg1).toBeNull();
 
     // Wait for it to become available
-    await new Promise(r => setTimeout(r, 150));
+    await new Promise((r) => setTimeout(r, 150));
 
     const msg2 = await queue.pop();
     expect(msg2).not.toBeNull();
-    expect(msg2!.id).toBe('msg-delayed');
+    expect(msg2?.id).toBe("msg-delayed");
   });
 
-  it('should count delayed messages in size', async () => {
+  it("should count delayed messages in size", async () => {
     await queue.push({
-      id: 'msg-d1',
-      taskName: 'test-task',
+      id: "msg-d1",
+      taskName: "test-task",
       input: {},
       attempt: 0,
       maxRetries: 0,
@@ -157,15 +157,15 @@ describeWithRedis('RedisQueue', () => {
 });
 
 // Basic unit tests that don't require Redis
-describe('RedisQueue (unit)', () => {
-  it('should accept URL option', () => {
-    const queue = new RedisQueue({ url: 'redis://localhost:6379' });
+describe("RedisQueue (unit)", () => {
+  it("should accept URL option", () => {
+    const queue = new RedisQueue({ url: "redis://localhost:6379" });
     expect(queue).toBeDefined();
     // Don't actually connect
   });
 
-  it('should accept custom prefix', () => {
-    const queue = new RedisQueue({ prefix: 'my-app:queue' });
+  it("should accept custom prefix", () => {
+    const queue = new RedisQueue({ prefix: "my-app:queue" });
     expect(queue).toBeDefined();
   });
 });

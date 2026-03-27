@@ -1,6 +1,6 @@
 // @celsian/cache — HTTP response caching
 
-import type { KVStore } from './store.js';
+import type { KVStore } from "./store.js";
 
 export interface CachedResponse {
   status: number;
@@ -28,9 +28,9 @@ export interface ResponseCacheOptions {
 
 const DEFAULT_OPTIONS = {
   ttlMs: 60_000,
-  methods: ['GET', 'HEAD'],
+  methods: ["GET", "HEAD"],
   statusCodes: [200],
-  prefix: 'rc:',
+  prefix: "rc:",
 };
 
 /**
@@ -71,7 +71,7 @@ export function createResponseCache(options: ResponseCacheOptions) {
   }
 
   function isExcluded(pathname: string): boolean {
-    return exclude.some(p => pathname.startsWith(p));
+    return exclude.some((p) => pathname.startsWith(p));
   }
 
   /**
@@ -99,8 +99,8 @@ export function createResponseCache(options: ResponseCacheOptions) {
     // Check cache
     const cached = await store.get<CachedResponse>(cacheKey);
     if (cached) {
-      const headers = { ...cached.headers, 'x-cache': 'HIT' };
-      return new Response(method === 'HEAD' ? null : cached.body, {
+      const headers = { ...cached.headers, "x-cache": "HIT" };
+      return new Response(method === "HEAD" ? null : cached.body, {
         status: cached.status,
         headers,
       });
@@ -121,16 +121,20 @@ export function createResponseCache(options: ResponseCacheOptions) {
       responseHeaders[key] = value;
     });
 
-    await store.set<CachedResponse>(cacheKey, {
-      status: response.status,
-      headers: responseHeaders,
-      body,
-      cachedAt: Date.now(),
-    }, customTtlMs ?? ttlMs);
+    await store.set<CachedResponse>(
+      cacheKey,
+      {
+        status: response.status,
+        headers: responseHeaders,
+        body,
+        cachedAt: Date.now(),
+      },
+      customTtlMs ?? ttlMs,
+    );
 
     // Add cache miss header
     const newHeaders = new Headers(response.headers);
-    newHeaders.set('x-cache', 'MISS');
+    newHeaders.set("x-cache", "MISS");
 
     return new Response(body, {
       status: response.status,
@@ -141,9 +145,7 @@ export function createResponseCache(options: ResponseCacheOptions) {
   /**
    * Wrap a fetch-compatible handler with caching.
    */
-  function wrap(
-    handler: (request: Request) => Response | Promise<Response>,
-  ): (request: Request) => Promise<Response> {
+  function wrap(handler: (request: Request) => Response | Promise<Response>): (request: Request) => Promise<Response> {
     return (request: Request) => cached(request, () => handler(request));
   }
 
@@ -158,7 +160,7 @@ export function createResponseCache(options: ResponseCacheOptions) {
    * Invalidate all cached responses matching a prefix/pattern.
    */
   async function invalidateAll(pattern?: string): Promise<void> {
-    await store.clear(prefix + (pattern ?? ''));
+    await store.clear(prefix + (pattern ?? ""));
   }
 
   return { cached, wrap, invalidate, invalidateAll };

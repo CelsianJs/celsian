@@ -1,14 +1,15 @@
 // @celsian/schema — TypeBox adapter (first-class)
 // Uses top-level await to load TypeBox dynamically (ESM-safe, no require())
 
-import type { StandardSchema, SchemaResult } from '../standard.js';
+import { SchemaError } from "../errors.js";
+import type { SchemaResult, StandardSchema } from "../standard.js";
 
 // Pre-load TypeBox Value module at import time via top-level await.
 // If @sinclair/typebox is not installed, Value stays null and
 // validate() throws a descriptive error on first use.
 let Value: any = null;
 try {
-  const mod = await import('@sinclair/typebox/value');
+  const mod = await import("@sinclair/typebox/value");
   Value = mod.Value;
 } catch {
   // @sinclair/typebox not installed — will error at validate time
@@ -18,8 +19,8 @@ export function fromTypeBox<T>(typeboxSchema: any): StandardSchema<T, T> {
   return {
     validate(input: unknown): SchemaResult<T> {
       if (!Value) {
-        throw new Error(
-          '@sinclair/typebox is required for TypeBox schema validation. Install it with: npm install @sinclair/typebox',
+        throw new SchemaError(
+          "@sinclair/typebox is required for TypeBox schema validation. Install it with: npm install @sinclair/typebox",
         );
       }
       try {
@@ -31,7 +32,7 @@ export function fromTypeBox<T>(typeboxSchema: any): StandardSchema<T, T> {
           success: false,
           issues: errors.map((e: any) => ({
             message: e.message,
-            path: e.path?.split('/').filter(Boolean),
+            path: e.path?.split("/").filter(Boolean),
           })),
         };
       } catch (e: any) {

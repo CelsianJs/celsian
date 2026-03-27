@@ -1,6 +1,6 @@
 // @celsian/core — WebSocket support
 
-import type { CelsianRequest } from './types.js';
+import type { CelsianRequest } from "./types.js";
 
 export interface WSHandler {
   open?: (ws: WSConnection, req: CelsianRequest) => void;
@@ -18,8 +18,8 @@ export interface WSConnection {
 let _wsIdCounter = 0;
 
 function generateWSId(): string {
-  _wsIdCounter = (_wsIdCounter + 1) % 0x7FFFFFFF;
-  return 'ws-' + Date.now().toString(36) + '-' + _wsIdCounter.toString(36);
+  _wsIdCounter = (_wsIdCounter + 1) % 0x7fffffff;
+  return `ws-${Date.now().toString(36)}-${_wsIdCounter.toString(36)}`;
 }
 
 export class WSRegistry {
@@ -91,9 +91,10 @@ export class WSRegistry {
   }
 }
 
-export function createWSConnection(
-  rawWs: { send(data: string | ArrayBuffer): void; close(code?: number, reason?: string): void },
-): WSConnection {
+export function createWSConnection(rawWs: {
+  send(data: string | ArrayBuffer): void;
+  close(code?: number, reason?: string): void;
+}): WSConnection {
   return {
     id: generateWSId(),
     send: (data) => rawWs.send(data),

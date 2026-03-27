@@ -1,22 +1,22 @@
 // @celsian/rpc — Type-safe RPC
 
-export { procedure, createProcedure } from './procedure.js';
-export { router, RPCHandler } from './router.js';
-export { createRPCClient, RPCError } from './client.js';
-export { encode, decode } from './wire.js';
-export { generateOpenAPI } from './openapi.js';
+export type { RPCClientOptions } from "./client.js";
+export { createRPCClient, RPCError } from "./client.js";
+export { generateOpenAPI } from "./openapi.js";
+export { createProcedure, procedure } from "./procedure.js";
+export { RPCHandler, router } from "./router.js";
 
 export type {
-  RPCContext,
   ContextFactory,
-  ProcedureType,
-  ProcedureDefinition,
   MiddlewareFunction,
+  OpenAPISpec,
+  ProcedureDefinition,
+  ProcedureType,
   RouterDefinition,
+  RPCContext,
   RPCManifest,
   RPCRequest,
   RPCResponse,
   TaggedValue,
-  OpenAPISpec,
-} from './types.js';
-export type { RPCClientOptions } from './client.js';
+} from "./types.js";
+export { decode, encode } from "./wire.js";

@@ -1,6 +1,6 @@
 // @celsian/core — Structured JSON logger (pino-style)
 
-export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
+export type LogLevel = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
 
 export interface Logger {
   trace(msg: string, data?: Record<string, unknown>): void;
@@ -31,11 +31,13 @@ export interface LoggerOptions {
 }
 
 export function createLogger(options: LoggerOptions = {}): Logger {
-  const minLevel = LEVEL_VALUES[options.level ?? 'info'];
-  const write = options.destination ?? ((line: string) => {
-    // Use console.log for cross-runtime compatibility (Edge, Node, Bun, Deno)
-    console.log(line);
-  });
+  const minLevel = LEVEL_VALUES[options.level ?? "info"];
+  const write =
+    options.destination ??
+    ((line: string) => {
+      // Use console.log for cross-runtime compatibility (Edge, Node, Bun, Deno)
+      console.log(line);
+    });
   const baseBindings = options.bindings ?? {};
 
   function log(level: LogLevel, msg: string, data?: Record<string, unknown>): void {
@@ -58,29 +60,79 @@ export function createLogger(options: LoggerOptions = {}): Logger {
   }
 
   const logger: Logger = {
-    get level() { return options.level ?? 'info'; },
-    set level(l: LogLevel) { options.level = l; },
+    get level() {
+      return options.level ?? "info";
+    },
+    set level(l: LogLevel) {
+      options.level = l;
+    },
 
-    trace(msg, data) { log('trace', msg, data); },
-    debug(msg, data) { log('debug', msg, data); },
-    info(msg, data) { log('info', msg, data); },
-    warn(msg, data) { log('warn', msg, data); },
-    error(msg, data) { log('error', msg, data); },
-    fatal(msg, data) { log('fatal', msg, data); },
+    trace(msg, data) {
+      log("trace", msg, data);
+    },
+    debug(msg, data) {
+      log("debug", msg, data);
+    },
+    info(msg, data) {
+      log("info", msg, data);
+    },
+    warn(msg, data) {
+      log("warn", msg, data);
+    },
+    error(msg, data) {
+      log("error", msg, data);
+    },
+    fatal(msg, data) {
+      log("fatal", msg, data);
+    },
 
     child(bindings: Record<string, unknown>): Logger {
       // Lightweight child — reuse parent's log function and write destination
       const childBindings = { ...baseBindings, ...bindings };
       const childLogger: Logger = {
-        get level() { return options.level ?? 'info'; },
-        set level(l: LogLevel) { /* child inherits parent level */ },
-        trace(msg, data) { if (LEVEL_VALUES.trace >= minLevel) { write(JSON.stringify({ level: 'trace', time: Date.now(), ...childBindings, msg, ...data })); } },
-        debug(msg, data) { if (LEVEL_VALUES.debug >= minLevel) { write(JSON.stringify({ level: 'debug', time: Date.now(), ...childBindings, msg, ...data })); } },
-        info(msg, data) { if (LEVEL_VALUES.info >= minLevel) { write(JSON.stringify({ level: 'info', time: Date.now(), ...childBindings, msg, ...data })); } },
-        warn(msg, data) { if (LEVEL_VALUES.warn >= minLevel) { write(JSON.stringify({ level: 'warn', time: Date.now(), ...childBindings, msg, ...data })); } },
-        error(msg, data) { if (LEVEL_VALUES.error >= minLevel) { write(JSON.stringify({ level: 'error', time: Date.now(), ...childBindings, msg, ...data })); } },
-        fatal(msg, data) { if (LEVEL_VALUES.fatal >= minLevel) { write(JSON.stringify({ level: 'fatal', time: Date.now(), ...childBindings, msg, ...data })); } },
-        child(b) { return createLogger({ level: options.level ?? 'info', destination: write, bindings: { ...childBindings, ...b } }); },
+        get level() {
+          return options.level ?? "info";
+        },
+        set level(_l: LogLevel) {
+          /* No-op: child loggers inherit the parent's level. Set level on the root logger instead. */
+        },
+        trace(msg, data) {
+          if (LEVEL_VALUES.trace >= minLevel) {
+            write(JSON.stringify({ level: "trace", time: Date.now(), ...childBindings, msg, ...data }));
+          }
+        },
+        debug(msg, data) {
+          if (LEVEL_VALUES.debug >= minLevel) {
+            write(JSON.stringify({ level: "debug", time: Date.now(), ...childBindings, msg, ...data }));
+          }
+        },
+        info(msg, data) {
+          if (LEVEL_VALUES.info >= minLevel) {
+            write(JSON.stringify({ level: "info", time: Date.now(), ...childBindings, msg, ...data }));
+          }
+        },
+        warn(msg, data) {
+          if (LEVEL_VALUES.warn >= minLevel) {
+            write(JSON.stringify({ level: "warn", time: Date.now(), ...childBindings, msg, ...data }));
+          }
+        },
+        error(msg, data) {
+          if (LEVEL_VALUES.error >= minLevel) {
+            write(JSON.stringify({ level: "error", time: Date.now(), ...childBindings, msg, ...data }));
+          }
+        },
+        fatal(msg, data) {
+          if (LEVEL_VALUES.fatal >= minLevel) {
+            write(JSON.stringify({ level: "fatal", time: Date.now(), ...childBindings, msg, ...data }));
+          }
+        },
+        child(b) {
+          return createLogger({
+            level: options.level ?? "info",
+            destination: write,
+            bindings: { ...childBindings, ...b },
+          });
+        },
       };
       return childLogger;
     },
@@ -92,6 +144,6 @@ export function createLogger(options: LoggerOptions = {}): Logger {
 let _idCounter = 0;
 
 export function generateRequestId(): string {
-  _idCounter = (_idCounter + 1) % 0x7FFFFFFF;
-  return Date.now().toString(36) + '-' + _idCounter.toString(36);
+  _idCounter = (_idCounter + 1) % 0x7fffffff;
+  return `${Date.now().toString(36)}-${_idCounter.toString(36)}`;
 }

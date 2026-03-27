@@ -1,5 +1,5 @@
-import { createApp } from '@celsian/core';
-import { createLambdaHandler } from '@celsian/adapter-lambda';
+import { createLambdaHandler } from "@celsian/adapter-lambda";
+import { createApp } from "@celsian/core";
 
 // ─── App Setup ───
 
@@ -9,30 +9,30 @@ const app = createApp({
 
 // ─── Routes ───
 
-app.get('/health', (_req, reply) => {
+app.get("/health", (_req, reply) => {
   return reply.json({
-    status: 'ok',
+    status: "ok",
     timestamp: new Date().toISOString(),
-    region: process.env.AWS_REGION ?? 'unknown',
+    region: process.env.AWS_REGION ?? "unknown",
   });
 });
 
-app.get('/users', (_req, reply) => {
+app.get("/users", (_req, reply) => {
   return reply.json({
     users: [
-      { id: 1, name: 'Alice', email: 'alice@example.com' },
-      { id: 2, name: 'Bob', email: 'bob@example.com' },
-      { id: 3, name: 'Charlie', email: 'charlie@example.com' },
+      { id: 1, name: "Alice", email: "alice@example.com" },
+      { id: 2, name: "Bob", email: "bob@example.com" },
+      { id: 3, name: "Charlie", email: "charlie@example.com" },
     ],
   });
 });
 
-app.get('/users/:id', (req, reply) => {
+app.get("/users/:id", (req, reply) => {
   const id = parseInt(req.params.id, 10);
 
-  if (isNaN(id) || id < 1) {
+  if (Number.isNaN(id) || id < 1) {
     return reply.status(400).json({
-      error: 'Invalid user ID',
+      error: "Invalid user ID",
       statusCode: 400,
     });
   }
@@ -45,12 +45,12 @@ app.get('/users/:id', (req, reply) => {
   });
 });
 
-app.post('/users', (req, reply) => {
+app.post("/users", (req, reply) => {
   const body = req.parsedBody as { name?: string; email?: string } | undefined;
 
   if (!body?.name || !body?.email) {
     return reply.status(400).json({
-      error: 'Missing required fields: name, email',
+      error: "Missing required fields: name, email",
       statusCode: 400,
     });
   }
@@ -63,7 +63,7 @@ app.post('/users', (req, reply) => {
   });
 });
 
-app.post('/echo', (req, reply) => {
+app.post("/echo", (req, reply) => {
   return reply.json({
     received: req.parsedBody,
     method: req.method,

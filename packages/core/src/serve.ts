@@ -1,7 +1,7 @@
 // @celsian/core — Built-in server (Node.js / Bun / Deno runtime detection)
 
-import type { CelsianApp } from './app.js';
-import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { IncomingMessage, ServerResponse } from "node:http";
+import type { CelsianApp } from "./app.js";
 
 export interface ServeOptions {
   port?: number;
@@ -25,9 +25,9 @@ export async function serve(app: CelsianApp, options: ServeOptions = {}): Promis
 
   // Load config file if present (options override config)
   let configPort = 3000;
-  let configHost = '0.0.0.0';
+  let configHost = "0.0.0.0";
   try {
-    const { loadConfig } = await import('./config.js');
+    const { loadConfig } = await import("./config.js");
     const config = await loadConfig();
     configPort = config.server?.port ?? configPort;
     configHost = config.server?.host ?? configHost;
@@ -43,12 +43,12 @@ export async function serve(app: CelsianApp, options: ServeOptions = {}): Promis
   const host = options.host ?? configHost;
 
   // Bun runtime detection
-  if (typeof (globalThis as any).Bun !== 'undefined') {
+  if (typeof (globalThis as any).Bun !== "undefined") {
     return serveBun(app, port, host, options);
   }
 
   // Deno runtime detection
-  if (typeof (globalThis as any).Deno !== 'undefined') {
+  if (typeof (globalThis as any).Deno !== "undefined") {
     return serveDeno(app, port, host, options);
   }
 
@@ -57,21 +57,21 @@ export async function serve(app: CelsianApp, options: ServeOptions = {}): Promis
 }
 
 async function serveNode(app: CelsianApp, port: number, host: string, options: ServeOptions): Promise<ServeResult> {
-  const http = await import('node:http');
-  const { readFile, stat } = await import('node:fs/promises');
-  const { join, extname } = await import('node:path');
+  const http = await import("node:http");
+  const { readFile, stat } = await import("node:fs/promises");
+  const { join, extname } = await import("node:path");
 
   const MIME_TYPES: Record<string, string> = {
-    '.html': 'text/html',
-    '.js': 'application/javascript',
-    '.css': 'text/css',
-    '.json': 'application/json',
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.svg': 'image/svg+xml',
-    '.ico': 'image/x-icon',
-    '.woff': 'font/woff',
-    '.woff2': 'font/woff2',
+    ".html": "text/html",
+    ".js": "application/javascript",
+    ".css": "text/css",
+    ".json": "application/json",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2",
   };
 
   let inFlight = 0;
@@ -85,7 +85,7 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
   const server = http.createServer(async (req: IncomingMessage, res: ServerResponse) => {
     if (shuttingDown) {
       res.statusCode = 503;
-      res.end('Service Unavailable');
+      res.end("Service Unavailable");
       return;
     }
 
@@ -93,14 +93,14 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
 
     // Static files — only parse URL when staticDir is configured
     if (hasStaticDir) {
-      const url = new URL(req.url ?? '/', baseUrl);
-      const { resolve, normalize } = await import('node:path');
+      const url = new URL(req.url ?? "/", baseUrl);
+      const { resolve } = await import("node:path");
       const staticRoot = resolve(options.staticDir!);
       // Decode URI and normalize to prevent path traversal (e.g., /../../../etc/passwd)
       const decodedPath = decodeURIComponent(url.pathname);
       const filePath = resolve(join(staticRoot, decodedPath));
       // Ensure the resolved path is within the static directory
-      if (!filePath.startsWith(staticRoot + '/') && filePath !== staticRoot) {
+      if (!filePath.startsWith(`${staticRoot}/`) && filePath !== staticRoot) {
         // Path traversal attempt — fall through to app handler
       } else {
         try {
@@ -108,8 +108,8 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
           if (s.isFile()) {
             const content = await readFile(filePath);
             const ext = extname(filePath);
-            res.setHeader('content-type', MIME_TYPES[ext] ?? 'application/octet-stream');
-            res.setHeader('cache-control', 'public, max-age=31536000, immutable');
+            res.setHeader("content-type", MIME_TYPES[ext] ?? "application/octet-stream");
+            res.setHeader("cache-control", "public, max-age=31536000, immutable");
             res.end(content);
             inFlight--;
             return;
@@ -121,15 +121,15 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
     }
 
     // Build Web Request with raw path (let app.handle() do fast URL parsing)
-    const webRequest = nodeToWebRequestFast(req, req.url ?? '/', baseUrl);
+    const webRequest = nodeToWebRequestFast(req, req.url ?? "/", baseUrl);
 
     try {
       const response = await app.handle(webRequest);
       await writeWebResponse(res, response);
     } catch (error) {
-      console.error('[celsian] Unhandled error:', error);
+      console.error("[celsian] Unhandled error:", error);
       res.statusCode = 500;
-      res.end('Internal Server Error');
+      res.end("Internal Server Error");
     } finally {
       inFlight--;
     }
@@ -140,7 +140,7 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
     if (shuttingDown) return;
     shuttingDown = true;
 
-    app.log.info('shutting down gracefully');
+    app.log.info("shutting down gracefully");
 
     // Stop accepting new connections
     server.close();
@@ -148,7 +148,7 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
     // Wait for in-flight requests to drain
     const deadline = Date.now() + shutdownTimeout;
     while (inFlight > 0 && Date.now() < deadline) {
-      await new Promise(r => setTimeout(r, 100));
+      await new Promise((r) => setTimeout(r, 100));
     }
 
     // Stop task worker and cron
@@ -161,24 +161,24 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
     }
   };
 
-  process.on('SIGTERM', () => handleShutdown());
-  process.on('SIGINT', () => handleShutdown());
+  process.on("SIGTERM", () => handleShutdown());
+  process.on("SIGINT", () => handleShutdown());
 
   if (options.signal) {
-    options.signal.addEventListener('abort', () => handleShutdown());
+    options.signal.addEventListener("abort", () => handleShutdown());
   }
 
   // WebSocket upgrade handling (requires 'ws' package)
   if (app.wsRegistry.hasAnyHandlers()) {
     try {
-      const wsMod = await import('ws');
-      const { createWSConnection } = await import('./websocket.js');
-      const { buildRequest } = await import('./request.js');
+      const wsMod = await import("ws");
+      const { createWSConnection } = await import("./websocket.js");
+      const { buildRequest } = await import("./request.js");
       const WSS = wsMod.WebSocketServer ?? (wsMod as any).default?.WebSocketServer;
       const wss = new WSS({ noServer: true });
 
-      server.on('upgrade', async (req: IncomingMessage, socket: any, head: Buffer) => {
-        const url = new URL(req.url ?? '/', `http://${host}:${port}`);
+      server.on("upgrade", async (req: IncomingMessage, socket: any, head: Buffer) => {
+        const url = new URL(req.url ?? "/", `http://${host}:${port}`);
         const pathname = url.pathname;
         const handler = app.wsRegistry.getHandler(pathname);
 
@@ -192,10 +192,10 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
         const origin = req.headers.origin;
         const appOptions = (app as any)._options ?? {};
         const corsOrigin = appOptions.cors?.origin;
-        if (corsOrigin && corsOrigin !== '*') {
+        if (corsOrigin && corsOrigin !== "*") {
           const allowed = Array.isArray(corsOrigin) ? corsOrigin : [corsOrigin];
           if (!origin || !allowed.includes(origin)) {
-            socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+            socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
             socket.destroy();
             return;
           }
@@ -203,7 +203,7 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
 
         // --- Run onRequest hooks (auth, etc.) ---
         try {
-          const { createReply } = await import('./reply.js');
+          const { createReply } = await import("./reply.js");
           const webReq = nodeToWebRequest(req, url);
           const celsianReq = buildRequest(webReq, url, {});
           const reply = createReply();
@@ -211,17 +211,17 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
           // Run all onRequest hooks — if any return a Response, reject the upgrade
           const hookStore = (app as any)._hookStore ?? (app as any).hookStore;
           if (hookStore?.onRequest?.length) {
-            const { runHooks } = await import('./hooks.js');
+            const { runHooks } = await import("./hooks.js");
             const hookResult = await runHooks(hookStore.onRequest, celsianReq, reply);
             if (hookResult instanceof Response) {
               const statusCode = hookResult.status || 403;
-              socket.write(`HTTP/1.1 ${statusCode} ${hookResult.statusText || 'Forbidden'}\r\n\r\n`);
+              socket.write(`HTTP/1.1 ${statusCode} ${hookResult.statusText || "Forbidden"}\r\n\r\n`);
               socket.destroy();
               return;
             }
           }
         } catch {
-          socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
+          socket.write("HTTP/1.1 500 Internal Server Error\r\n\r\n");
           socket.destroy();
           return;
         }
@@ -240,23 +240,23 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
 
           handler.open?.(conn, celsianReq);
 
-          ws.on('error', (err: Error) => {
-            app.log.error('WebSocket error', { path: pathname, connId: conn.id, error: err.message });
+          ws.on("error", (err: Error) => {
+            app.log.error("WebSocket error", { path: pathname, connId: conn.id, error: err.message });
           });
 
-          ws.on('message', (data: Buffer | ArrayBuffer | Buffer[]) => {
+          ws.on("message", (data: Buffer | ArrayBuffer | Buffer[]) => {
             const msg = Buffer.isBuffer(data) ? data.toString() : data;
             handler.message?.(conn, msg as string | ArrayBuffer);
           });
 
-          ws.on('close', (code: number, reason: Buffer) => {
+          ws.on("close", (code: number, reason: Buffer) => {
             handler.close?.(conn, code, reason.toString());
             app.wsRegistry.removeConnection(pathname, conn);
           });
         });
       });
 
-      app.log.info('WebSocket upgrade handler enabled');
+      app.log.info("WebSocket upgrade handler enabled");
     } catch {
       // 'ws' package not installed — WebSocket disabled for Node.js
     }
@@ -294,15 +294,18 @@ function serveBun(app: CelsianApp, port: number, host: string, options: ServeOpt
 function serveDeno(app: CelsianApp, port: number, host: string, options: ServeOptions): ServeResult {
   const controller = new AbortController();
 
-  (globalThis as any).Deno.serve({
-    port,
-    hostname: host,
-    signal: options.signal ?? controller.signal,
-    onListen() {
-      console.log(`[celsian] Server running at http://${host}:${port}`);
-      options.onReady?.({ port, host });
+  (globalThis as any).Deno.serve(
+    {
+      port,
+      hostname: host,
+      signal: options.signal ?? controller.signal,
+      onListen() {
+        console.log(`[celsian] Server running at http://${host}:${port}`);
+        options.onReady?.({ port, host });
+      },
     },
-  }, app.fetch);
+    app.fetch,
+  );
 
   return {
     close: async () => {
@@ -317,21 +320,21 @@ function serveDeno(app: CelsianApp, port: number, host: string, options: ServeOp
 export function nodeToWebRequest(req: IncomingMessage, url: URL): Request {
   const headers = new Headers();
   for (const [key, value] of Object.entries(req.headers)) {
-    if (typeof value === 'string') {
+    if (typeof value === "string") {
       headers.set(key, value);
     } else if (Array.isArray(value)) {
       for (const v of value) headers.append(key, v);
     }
   }
 
-  const method = req.method ?? 'GET';
-  const hasBody = method !== 'GET' && method !== 'HEAD';
+  const method = req.method ?? "GET";
+  const hasBody = method !== "GET" && method !== "HEAD";
 
   return new Request(url.toString(), {
     method,
     headers,
     body: hasBody ? (req as unknown as ReadableStream) : undefined,
-    duplex: hasBody ? 'half' : undefined,
+    duplex: hasBody ? "half" : undefined,
   });
 }
 
@@ -343,15 +346,15 @@ export function nodeToWebRequest(req: IncomingMessage, url: URL): Request {
 function nodeToWebRequestFast(req: IncomingMessage, rawPath: string, baseUrl: string): Request {
   const headers = new Headers();
   for (const [key, value] of Object.entries(req.headers)) {
-    if (typeof value === 'string') {
+    if (typeof value === "string") {
       headers.set(key, value);
     } else if (Array.isArray(value)) {
       for (const v of value) headers.append(key, v);
     }
   }
 
-  const method = req.method ?? 'GET';
-  const hasBody = method !== 'GET' && method !== 'HEAD';
+  const method = req.method ?? "GET";
+  const hasBody = method !== "GET" && method !== "HEAD";
 
   // Use full URL (required by Request constructor) but keep it minimal
   // by concatenating baseUrl + rawPath instead of calling new URL()
@@ -359,25 +362,22 @@ function nodeToWebRequestFast(req: IncomingMessage, rawPath: string, baseUrl: st
     method,
     headers,
     body: hasBody ? (req as unknown as ReadableStream) : undefined,
-    duplex: hasBody ? 'half' : undefined,
+    duplex: hasBody ? "half" : undefined,
   });
 }
 
-export async function writeWebResponse(
-  res: ServerResponse,
-  response: Response,
-): Promise<void> {
+export async function writeWebResponse(res: ServerResponse, response: Response): Promise<void> {
   res.statusCode = response.status;
 
   for (const [key, value] of response.headers.entries()) {
-    if (key.toLowerCase() === 'set-cookie') continue; // handled below
+    if (key.toLowerCase() === "set-cookie") continue; // handled below
     res.setHeader(key, value);
   }
 
   // BUG-3 fix: preserve multiple Set-Cookie headers (entries() collapses them)
   const cookies = (response.headers as any).getSetCookie?.() ?? [];
   if (cookies.length > 0) {
-    res.setHeader('set-cookie', cookies);
+    res.setHeader("set-cookie", cookies);
   }
 
   if (response.body) {

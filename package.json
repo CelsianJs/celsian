@@ -7,12 +7,15 @@
     "build": "tsc -b --force",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "tsc --noEmit",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "tsc --noEmit",
     "changeset": "changeset",
     "release": "changeset publish",
     "bench": "pnpm --filter celsian-benchmarks exec tsx run.ts"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.9",
     "@changesets/cli": "^2.27.0",
     "@sinclair/typebox": "^0.34.0",
     "@types/autocannon": "^7.12.7",

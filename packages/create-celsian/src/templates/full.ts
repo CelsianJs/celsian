@@ -1,43 +1,43 @@
 export const fullTemplate: Record<string, string> = {
-  'package.json': JSON.stringify(
+  "package.json": JSON.stringify(
     {
-      name: '{{name}}',
-      version: '0.1.0',
-      type: 'module',
+      name: "{{name}}",
+      version: "0.1.0",
+      type: "module",
       scripts: {
-        dev: 'npx tsx --watch src/index.ts',
-        build: 'tsc',
-        start: 'node dist/index.js',
-        test: 'npx vitest run',
-        lint: 'npx tsc --noEmit',
+        dev: "npx tsx --watch src/index.ts",
+        build: "tsc",
+        start: "node dist/index.js",
+        test: "npx vitest run",
+        lint: "npx tsc --noEmit",
       },
       dependencies: {
-        celsian: '^0.2.0',
-        '@celsian/core': '^0.2.0',
-        '@celsian/jwt': '^0.2.0',
-        '@celsian/rpc': '^0.2.0',
-        '@celsian/rate-limit': '^0.2.0',
-        '@sinclair/typebox': '^0.34.0',
+        celsian: "^0.2.0",
+        "@celsian/core": "^0.2.0",
+        "@celsian/jwt": "^0.2.0",
+        "@celsian/rpc": "^0.2.0",
+        "@celsian/rate-limit": "^0.2.0",
+        "@sinclair/typebox": "^0.34.0",
       },
       devDependencies: {
-        typescript: '^5.7.0',
-        tsx: '^4.0.0',
-        vitest: '^3.0.0',
-        '@types/node': '^22.0.0',
+        typescript: "^5.7.0",
+        tsx: "^4.0.0",
+        vitest: "^3.0.0",
+        "@types/node": "^22.0.0",
       },
     },
     null,
     2,
   ),
 
-  'tsconfig.json': JSON.stringify(
+  "tsconfig.json": JSON.stringify(
     {
       compilerOptions: {
-        target: 'ES2022',
-        module: 'ESNext',
-        moduleResolution: 'bundler',
-        lib: ['ES2022'],
-        types: ['node'],
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "bundler",
+        lib: ["ES2022"],
+        types: ["node"],
         strict: true,
         esModuleInterop: true,
         skipLibCheck: true,
@@ -45,16 +45,16 @@ export const fullTemplate: Record<string, string> = {
         resolveJsonModule: true,
         isolatedModules: true,
         declaration: true,
-        outDir: 'dist',
-        rootDir: 'src',
+        outDir: "dist",
+        rootDir: "src",
       },
-      include: ['src'],
+      include: ["src"],
     },
     null,
     2,
   ),
 
-  '.env.example': `# Server
+  ".env.example": `# Server
 PORT=3000
 HOST=0.0.0.0
 CORS_ORIGIN=*
@@ -69,7 +69,7 @@ DATABASE_URL=file:./data.db
 NODE_ENV=development
 `,
 
-  '.gitignore': `node_modules/
+  ".gitignore": `node_modules/
 dist/
 *.tsbuildinfo
 .env
@@ -77,7 +77,7 @@ data.db
 `,
 
   // ─── src/types.ts ───
-  'src/types.ts': `// Shared types for {{name}}
+  "src/types.ts": `// Shared types for {{name}}
 
 export interface User {
   id: string;
@@ -111,7 +111,7 @@ export interface JWTPayload {
 `,
 
   // ─── src/plugins/database.ts ───
-  'src/plugins/database.ts': `// Database module — in-memory store for development
+  "src/plugins/database.ts": `// Database module — in-memory store for development
 // Replace with a real database (PostgreSQL, SQLite, etc.) for production
 
 import type { User, Session } from '../types.js';
@@ -147,7 +147,7 @@ db.users.set(demoUser.id, demoUser);
 `,
 
   // ─── src/plugins/auth.ts ───
-  'src/plugins/auth.ts': `// JWT auth plugin — guards protected routes via Bearer token
+  "src/plugins/auth.ts": `// JWT auth plugin — guards protected routes via Bearer token
 // Uses @celsian/jwt under the hood
 
 import { jwt, createJWTGuard } from '@celsian/jwt';
@@ -173,7 +173,7 @@ export const requireAuth: HookHandler = createJWTGuard({
 `,
 
   // ─── src/plugins/security.ts ───
-  'src/plugins/security.ts': `// Security plugin — CORS + CSRF + security headers + rate limiting
+  "src/plugins/security.ts": `// Security plugin — CORS + CSRF + security headers + rate limiting
 // Combines multiple @celsian/core plugins into a single registration
 
 import { cors, security, csrf } from '@celsian/core';
@@ -217,7 +217,7 @@ export function securityPlugins(): PluginFunction[] {
 `,
 
   // ─── src/routes/health.ts ───
-  'src/routes/health.ts': `// Health check route — GET /health
+  "src/routes/health.ts": `// Health check route — GET /health
 // Returns server status and uptime for load balancers and monitoring
 
 import type { PluginFunction } from '@celsian/core';
@@ -240,7 +240,7 @@ export default function healthRoutes(): PluginFunction {
 `,
 
   // ─── src/routes/users.ts ───
-  'src/routes/users.ts': `// User CRUD routes — /users
+  "src/routes/users.ts": `// User CRUD routes — /users
 // Full REST: GET (list), POST (create), GET/:id, PUT/:id, DELETE/:id
 
 import { Type } from '@sinclair/typebox';
@@ -325,7 +325,7 @@ export default function userRoutes(): PluginFunction {
 `,
 
   // ─── src/routes/rpc.ts ───
-  'src/routes/rpc.ts': `// RPC endpoint — type-safe procedures at /_rpc/*
+  "src/routes/rpc.ts": `// RPC endpoint — type-safe procedures at /_rpc/*
 // Demonstrates queries and mutations with typed schemas
 
 import { procedure, router, RPCHandler } from '@celsian/rpc';
@@ -382,7 +382,7 @@ export default function rpcRoutes(): PluginFunction {
 `,
 
   // ─── src/tasks/cleanup.ts ───
-  'src/tasks/cleanup.ts': `// Background task: clean up expired sessions
+  "src/tasks/cleanup.ts": `// Background task: clean up expired sessions
 // Registered with app.task() and runs when enqueued or on a schedule
 
 import type { TaskDefinition } from '@celsian/core';
@@ -411,7 +411,7 @@ export const cleanupTask: TaskDefinition = {
 `,
 
   // ─── src/tasks/report.ts ───
-  'src/tasks/report.ts': `// Cron job: daily report generation
+  "src/tasks/report.ts": `// Cron job: daily report generation
 // Runs every day at midnight via app.cron()
 
 /**
@@ -432,7 +432,7 @@ export async function generateDailyReport(): Promise<void> {
 `,
 
   // ─── src/index.ts ───
-  'src/index.ts': `// {{name}} — Full-stack Celsian API
+  "src/index.ts": `// {{name}} — Full-stack Celsian API
 // Routes, plugins, background tasks, and cron — all wired up
 
 import { createApp, serve, openapi } from 'celsian';
@@ -503,7 +503,7 @@ serve(app, { port });
 `,
 
   // ─── test/api.test.ts ───
-  'test/api.test.ts': `// Integration tests using app.inject() — no server needed
+  "test/api.test.ts": `// Integration tests using app.inject() — no server needed
 // Run with: npm test
 
 import { describe, it, expect, beforeAll } from 'vitest';
@@ -666,7 +666,7 @@ CMD ["node", "dist/index.js"]
 `,
 
   // ─── README.md ───
-  'README.md': `# {{name}}
+  "README.md": `# {{name}}
 
 A full-stack API built with [CelsianJS](https://github.com/CelsianJs/celsian) — the fast, modular Node.js framework.
 

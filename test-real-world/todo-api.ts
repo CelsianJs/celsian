@@ -1,6 +1,7 @@
 // Real-world test: Full CRUD Todo REST API
-import { createApp } from '../packages/core/src/app.js';
-import type { CelsianApp } from '../packages/core/src/app.js';
+
+import type { CelsianApp } from "../packages/core/src/app.js";
+import { createApp } from "../packages/core/src/app.js";
 
 interface Todo {
   id: number;
@@ -17,15 +18,15 @@ export function buildTodoApp(): CelsianApp {
   const todos = new Map<number, Todo>();
 
   // GET /todos — list all
-  app.get('/todos', (_req, reply) => {
+  app.get("/todos", (_req, reply) => {
     return reply.json(Array.from(todos.values()));
   });
 
   // GET /todos/:id — get one
-  app.get('/todos/:id', (req, reply) => {
+  app.get("/todos/:id", (req, reply) => {
     const id = parseInt(req.params.id, 10);
-    if (isNaN(id)) {
-      return reply.badRequest('Invalid todo ID');
+    if (Number.isNaN(id)) {
+      return reply.badRequest("Invalid todo ID");
     }
     const todo = todos.get(id);
     if (!todo) {
@@ -35,10 +36,10 @@ export function buildTodoApp(): CelsianApp {
   });
 
   // POST /todos — create
-  app.post('/todos', (req, reply) => {
+  app.post("/todos", (req, reply) => {
     const body = req.parsedBody as { title?: string } | undefined;
-    if (!body || typeof body.title !== 'string' || !body.title.trim()) {
-      return reply.badRequest('Title is required and must be a non-empty string');
+    if (!body || typeof body.title !== "string" || !body.title.trim()) {
+      return reply.badRequest("Title is required and must be a non-empty string");
     }
 
     const todo: Todo = {
@@ -52,10 +53,10 @@ export function buildTodoApp(): CelsianApp {
   });
 
   // PUT /todos/:id — update
-  app.put('/todos/:id', (req, reply) => {
+  app.put("/todos/:id", (req, reply) => {
     const id = parseInt(req.params.id, 10);
-    if (isNaN(id)) {
-      return reply.badRequest('Invalid todo ID');
+    if (Number.isNaN(id)) {
+      return reply.badRequest("Invalid todo ID");
     }
     const existing = todos.get(id);
     if (!existing) {
@@ -64,18 +65,18 @@ export function buildTodoApp(): CelsianApp {
 
     const body = req.parsedBody as { title?: string; completed?: boolean } | undefined;
     if (!body) {
-      return reply.badRequest('Request body is required');
+      return reply.badRequest("Request body is required");
     }
 
     if (body.title !== undefined) {
-      if (typeof body.title !== 'string' || !body.title.trim()) {
-        return reply.badRequest('Title must be a non-empty string');
+      if (typeof body.title !== "string" || !body.title.trim()) {
+        return reply.badRequest("Title must be a non-empty string");
       }
       existing.title = body.title.trim();
     }
     if (body.completed !== undefined) {
-      if (typeof body.completed !== 'boolean') {
-        return reply.badRequest('Completed must be a boolean');
+      if (typeof body.completed !== "boolean") {
+        return reply.badRequest("Completed must be a boolean");
       }
       existing.completed = body.completed;
     }
@@ -84,10 +85,10 @@ export function buildTodoApp(): CelsianApp {
   });
 
   // DELETE /todos/:id — delete
-  app.delete('/todos/:id', (req, reply) => {
+  app.delete("/todos/:id", (req, reply) => {
     const id = parseInt(req.params.id, 10);
-    if (isNaN(id)) {
-      return reply.badRequest('Invalid todo ID');
+    if (Number.isNaN(id)) {
+      return reply.badRequest("Invalid todo ID");
     }
     if (!todos.has(id)) {
       return reply.notFound(`Todo ${id} not found`);

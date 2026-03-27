@@ -1,6 +1,6 @@
 // @celsian/schema — Zod adapter
 
-import type { StandardSchema, SchemaResult } from '../standard.js';
+import type { SchemaResult, StandardSchema } from "../standard.js";
 
 export function fromZod<T>(zodSchema: any): StandardSchema<T, T> {
   return {
@@ -18,10 +18,10 @@ export function fromZod<T>(zodSchema: any): StandardSchema<T, T> {
       };
     },
     toJsonSchema(): Record<string, unknown> {
-      if (typeof zodSchema.toJsonSchema === 'function') {
+      if (typeof zodSchema.toJsonSchema === "function") {
         return zodSchema.toJsonSchema();
       }
-      return { type: 'object' };
+      return { type: "object" };
     },
     _input: undefined as unknown as T,
     _output: undefined as unknown as T,

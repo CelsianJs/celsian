@@ -1,7 +1,7 @@
 // @celsian/cli — celsian build command
 
-import { resolve, relative } from 'node:path';
-import { logger } from '../utils/logger.js';
+import { relative, resolve } from "node:path";
+import { logger } from "../utils/logger.js";
 
 export interface BuildOptions {
   entry: string;
@@ -24,13 +24,15 @@ export async function buildCommand(options: BuildOptions): Promise<void> {
   const outdir = resolve(cwd, options.outdir);
 
   logger.info(`Building ${relative(cwd, entryPath)}`);
-  logger.dim(`  format: ${options.format}  target: ${options.target}  platform: ${options.platform}${options.minify ? '  minify: on' : ''}`);
+  logger.dim(
+    `  format: ${options.format}  target: ${options.target}  platform: ${options.platform}${options.minify ? "  minify: on" : ""}`,
+  );
 
-  let esbuild: typeof import('esbuild');
+  let esbuild: typeof import("esbuild");
   try {
-    esbuild = await import('esbuild');
+    esbuild = await import("esbuild");
   } catch {
-    logger.error('esbuild is required but not installed. Run: pnpm add -D esbuild');
+    logger.error("esbuild is required but not installed. Run: pnpm add -D esbuild");
     process.exit(1);
   }
 
@@ -41,45 +43,45 @@ export async function buildCommand(options: BuildOptions): Promise<void> {
       entryPoints: [entryPath],
       outdir,
       bundle: true,
-      format: options.format as 'esm' | 'cjs' | 'iife',
+      format: options.format as "esm" | "cjs" | "iife",
       target: options.target,
-      platform: options.platform as 'node' | 'browser' | 'neutral',
+      platform: options.platform as "node" | "browser" | "neutral",
       minify: options.minify,
-      external: ['node:*'],
+      external: ["node:*"],
       metafile: true,
-      logLevel: 'silent',
+      logLevel: "silent",
     });
 
     const elapsed = performance.now() - startTime;
 
     // Gather output file info
-    const outputs = Object.entries(result.metafile!.outputs);
+    const outputs = Object.entries(result.metafile?.outputs);
     if (outputs.length === 0) {
-      logger.warn('Build produced no output files.');
+      logger.warn("Build produced no output files.");
       return;
     }
 
-    console.log('');
+    console.log("");
     for (const [file, meta] of outputs) {
       const relPath = relative(cwd, resolve(cwd, file));
       const size = formatBytes(meta.bytes);
       logger.success(`${relPath}  ${size}`);
     }
 
-    console.log('');
+    console.log("");
     logger.dim(`  Done in ${elapsed.toFixed(0)}ms`);
 
     if (result.warnings.length > 0) {
-      console.log('');
+      console.log("");
       for (const warning of result.warnings) {
         logger.warn(`${warning.text}`);
       }
     }
   } catch (error) {
-    if (error && typeof error === 'object' && 'errors' in error) {
+    if (error && typeof error === "object" && "errors" in error) {
       const buildError = error as { errors: Array<{ text: string; location?: { file?: string; line?: number } }> };
       for (const err of buildError.errors) {
-        const loc = err.location ? ` (${err.location.file}:${err.location.line})` : '';
+        const loc = err.location ? ` (${err.location.file}:${err.location.line})` : "";
         logger.error(`${err.text}${loc}`);
       }
     } else {

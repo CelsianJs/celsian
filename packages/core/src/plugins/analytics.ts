@@ -1,8 +1,8 @@
 // @celsian/core — Database analytics wrapper
 // Instruments every query with timing, surfaces DB vs server time
 
-import type { DatabasePool, TransactionCapablePool, TransactionClient } from './database.js';
-import type { PluginFunction } from '../types.js';
+import type { PluginFunction } from "../types.js";
+import type { DatabasePool, TransactionCapablePool, TransactionClient } from "./database.js";
 
 export interface QueryMetric {
   sql: string;
@@ -79,7 +79,7 @@ export function trackedPool<T extends DatabasePool>(pool: T): T & TrackedPool {
   };
 
   // Preserve transaction support if the pool has it
-  if ('beginTransaction' in pool && typeof (pool as TransactionCapablePool).beginTransaction === 'function') {
+  if ("beginTransaction" in pool && typeof (pool as TransactionCapablePool).beginTransaction === "function") {
     const txPool = pool as TransactionCapablePool;
     (tracked as unknown as TransactionCapablePool).beginTransaction = async () => {
       const start = performance.now();
@@ -87,7 +87,7 @@ export function trackedPool<T extends DatabasePool>(pool: T): T & TrackedPool {
       const duration = performance.now() - start;
       metrics.dbTime += duration;
       metrics.queryCount++;
-      metrics.queries.push({ sql: 'BEGIN', duration, timestamp: Date.now() });
+      metrics.queries.push({ sql: "BEGIN", duration, timestamp: Date.now() });
 
       return trackedTransaction(tx, metrics);
     };
@@ -117,7 +117,7 @@ function trackedTransaction(tx: TransactionClient, metrics: RequestMetrics): Tra
         const duration = performance.now() - start;
         metrics.dbTime += duration;
         metrics.queryCount++;
-        metrics.queries.push({ sql: 'COMMIT', duration, timestamp: Date.now() });
+        metrics.queries.push({ sql: "COMMIT", duration, timestamp: Date.now() });
       }
     },
     async rollback(): Promise<void> {
@@ -128,7 +128,7 @@ function trackedTransaction(tx: TransactionClient, metrics: RequestMetrics): Tra
         const duration = performance.now() - start;
         metrics.dbTime += duration;
         metrics.queryCount++;
-        metrics.queries.push({ sql: 'ROLLBACK', duration, timestamp: Date.now() });
+        metrics.queries.push({ sql: "ROLLBACK", duration, timestamp: Date.now() });
       }
     },
   };
@@ -150,41 +150,38 @@ export function dbAnalytics(options?: {
   /** Add Server-Timing header. Default: true */
   serverTiming?: boolean;
 }): PluginFunction {
-  const poolName = options?.poolName ?? 'db';
+  const poolName = options?.poolName ?? "db";
   const slowThreshold = options?.slowThreshold ?? 100;
   const serverTiming = options?.serverTiming ?? true;
 
   return function dbAnalyticsPlugin(app) {
     // Reset metrics at the start of each request
-    app.addHook('onRequest', (request) => {
+    app.addHook("onRequest", (request) => {
       const pool = (request as Record<string, unknown>)[poolName] as TrackedPool | undefined;
       pool?.resetMetrics();
     });
 
     // Add Server-Timing header and log slow queries on response
     if (serverTiming) {
-      app.addHook('onSend', (request, reply) => {
+      app.addHook("onSend", (request, reply) => {
         const pool = (request as Record<string, unknown>)[poolName] as TrackedPool | undefined;
         if (!pool?.metrics) return;
         const { dbTime, queryCount } = pool.metrics;
         if (queryCount > 0) {
-          (reply as any).header(
-            'server-timing',
-            `db;dur=${dbTime.toFixed(1)};desc="${queryCount} queries"`,
-          );
+          (reply as any).header("server-timing", `db;dur=${dbTime.toFixed(1)};desc="${queryCount} queries"`);
         }
       });
     }
 
     // Log slow queries
     if (slowThreshold > 0) {
-      app.addHook('onResponse', (request) => {
+      app.addHook("onResponse", (request) => {
         const pool = (request as Record<string, unknown>)[poolName] as TrackedPool | undefined;
         if (!pool?.metrics) return;
         for (const q of pool.metrics.queries) {
           if (q.duration >= slowThreshold) {
             const log = (request as any).log;
-            log?.warn('slow query', { sql: q.sql, duration: Math.round(q.duration), threshold: slowThreshold });
+            log?.warn("slow query", { sql: q.sql, duration: Math.round(q.duration), threshold: slowThreshold });
           }
         }
       });
@@ -197,7 +194,7 @@ export function dbAnalytics(options?: {
  * Use this if you don't want the full dbAnalytics plugin.
  */
 export function dbTimingHeader(options?: { poolName?: string }) {
-  const poolName = options?.poolName ?? 'db';
+  const poolName = options?.poolName ?? "db";
 
   return (request: Record<string, unknown>, reply: Record<string, unknown>) => {
     const pool = request[poolName] as { metrics?: RequestMetrics } | undefined;
@@ -205,11 +202,8 @@ export function dbTimingHeader(options?: { poolName?: string }) {
 
     const { dbTime, queryCount } = pool.metrics;
     const replyObj = reply as { header?: (key: string, value: string) => void };
-    if (typeof replyObj.header === 'function') {
-      replyObj.header(
-        'server-timing',
-        `db;dur=${dbTime.toFixed(1)};desc="${queryCount} queries"`,
-      );
+    if (typeof replyObj.header === "function") {
+      replyObj.header("server-timing", `db;dur=${dbTime.toFixed(1)};desc="${queryCount} queries"`);
     }
   };
 }
@@ -219,7 +213,7 @@ export function dbTimingHeader(options?: { poolName?: string }) {
  */
 export function slowQueryLogger(options?: { threshold?: number; poolName?: string }) {
   const threshold = options?.threshold ?? 100;
-  const poolName = options?.poolName ?? 'db';
+  const poolName = options?.poolName ?? "db";
 
   return (request: Record<string, unknown>) => {
     const pool = request[poolName] as { metrics?: RequestMetrics } | undefined;
@@ -228,7 +222,7 @@ export function slowQueryLogger(options?: { threshold?: number; poolName?: strin
     for (const q of pool.metrics.queries) {
       if (q.duration >= threshold) {
         const log = (request as { log?: { warn: (...args: unknown[]) => void } }).log;
-        log?.warn('slow query', { sql: q.sql, duration: Math.round(q.duration), threshold });
+        log?.warn("slow query", { sql: q.sql, duration: Math.round(q.duration), threshold });
       }
     }
   };

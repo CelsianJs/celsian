@@ -9,10 +9,10 @@
 // The JWT plugin is registered in src/index.ts. This module exports
 // the shared secret and a getJwt() helper for signing tokens.
 
-import { createJWTGuard, type JWTNamespace } from '@celsian/jwt';
+import { createJWTGuard, type JWTNamespace } from "@celsian/jwt";
 
 // In production, load this from an environment variable or secrets manager.
-export const JWT_SECRET = process.env.JWT_SECRET ?? 'quickstart-dev-secret';
+export const JWT_SECRET = process.env.JWT_SECRET ?? "quickstart-dev-secret";
 
 // Re-usable hook — attach to any route via `preHandler: authGuard`
 export const authGuard = createJWTGuard({ secret: JWT_SECRET });
@@ -27,6 +27,6 @@ export function setJwtInstance(instance: JWTNamespace) {
 }
 
 export function getJwt(): JWTNamespace {
-  if (!_jwt) throw new Error('JWT not initialized — ensure app.ready() was awaited');
+  if (!_jwt) throw new Error("JWT not initialized — ensure app.ready() was awaited");
   return _jwt;
 }

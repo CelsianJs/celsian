@@ -1,6 +1,6 @@
 // @celsian/core — Hook store + execution
 
-import type { HookHandler, OnErrorHandler, CelsianRequest, CelsianReply } from './types.js';
+import type { CelsianReply, CelsianRequest, HookHandler, OnErrorHandler } from "./types.js";
 
 export interface HookStore {
   onRequest: HookHandler[];
@@ -71,18 +71,14 @@ export async function runOnSendHooks(
   }
 }
 
-export function runHooksFireAndForget(
-  hooks: HookHandler[],
-  request: CelsianRequest,
-  reply: CelsianReply,
-): void {
+export function runHooksFireAndForget(hooks: HookHandler[], request: CelsianRequest, reply: CelsianReply): void {
   for (const hook of hooks) {
     try {
       const result = hook(request, reply);
       // If the hook returns a thenable, log errors instead of silently swallowing
-      if (result && typeof (result as any).catch === 'function') {
+      if (result && typeof (result as any).catch === "function") {
         (result as Promise<unknown>).catch((err: unknown) => {
-          console.error('[celsian] fire-and-forget hook error:', err);
+          console.error("[celsian] fire-and-forget hook error:", err);
         });
       }
     } catch {

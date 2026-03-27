@@ -6,19 +6,19 @@ export interface CookieOptions {
   httpOnly?: boolean;
   maxAge?: number;
   path?: string;
-  sameSite?: 'strict' | 'lax' | 'none';
+  sameSite?: "strict" | "lax" | "none";
   secure?: boolean;
 }
 
 // Keys that must never be set via user input (prototype pollution prevention)
-const BLOCKED_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+const BLOCKED_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 export function parseCookies(header: string): Record<string, string> {
   const cookies: Record<string, string> = Object.create(null);
   if (!header) return cookies;
 
-  for (const pair of header.split(';')) {
-    const idx = pair.indexOf('=');
+  for (const pair of header.split(";")) {
+    const idx = pair.indexOf("=");
     if (idx === -1) continue;
     const key = pair.slice(0, idx).trim();
     const value = pair.slice(idx + 1).trim();
@@ -30,16 +30,12 @@ export function parseCookies(header: string): Record<string, string> {
   return cookies;
 }
 
-export function serializeCookie(
-  name: string,
-  value: string,
-  options: CookieOptions = {},
-): string {
+export function serializeCookie(name: string, value: string, options: CookieOptions = {}): string {
   // Secure defaults — user-provided options override via spread
   const opts: CookieOptions = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
     ...options,
   };
 
@@ -47,13 +43,13 @@ export function serializeCookie(
 
   if (opts.domain) cookie += `; Domain=${opts.domain}`;
   if (opts.expires) cookie += `; Expires=${opts.expires.toUTCString()}`;
-  if (opts.httpOnly) cookie += '; HttpOnly';
+  if (opts.httpOnly) cookie += "; HttpOnly";
   if (opts.maxAge !== undefined) cookie += `; Max-Age=${opts.maxAge}`;
   if (opts.path) cookie += `; Path=${opts.path}`;
   if (opts.sameSite) {
     cookie += `; SameSite=${opts.sameSite.charAt(0).toUpperCase() + opts.sameSite.slice(1)}`;
   }
-  if (opts.secure) cookie += '; Secure';
+  if (opts.secure) cookie += "; Secure";
 
   return cookie;
 }

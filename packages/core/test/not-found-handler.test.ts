@@ -1,83 +1,83 @@
-import { describe, it, expect } from 'vitest';
-import { createApp } from '../src/app.js';
+import { describe, expect, it } from "vitest";
+import { createApp } from "../src/app.js";
 
-describe('setNotFoundHandler', () => {
-  it('should use custom 404 handler when set', async () => {
+describe("setNotFoundHandler", () => {
+  it("should use custom 404 handler when set", async () => {
     const app = createApp();
-    app.get('/exists', (_req, reply) => reply.json({ ok: true }));
+    app.get("/exists", (_req, reply) => reply.json({ ok: true }));
 
     app.setNotFoundHandler((_req, reply) => {
-      return reply.status(404).html('<h1>Page Not Found</h1>');
+      return reply.status(404).html("<h1>Page Not Found</h1>");
     });
 
-    const response = await app.handle(new Request('http://localhost/nope'));
+    const response = await app.handle(new Request("http://localhost/nope"));
     expect(response.status).toBe(404);
-    expect(response.headers.get('content-type')).toBe('text/html; charset=utf-8');
+    expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
     const body = await response.text();
-    expect(body).toBe('<h1>Page Not Found</h1>');
+    expect(body).toBe("<h1>Page Not Found</h1>");
   });
 
-  it('should return custom JSON from not-found handler', async () => {
+  it("should return custom JSON from not-found handler", async () => {
     const app = createApp();
     app.setNotFoundHandler((_req, reply) => {
-      return reply.status(404).json({ error: 'Custom not found', path: 'unknown' });
+      return reply.status(404).json({ error: "Custom not found", path: "unknown" });
     });
 
-    const response = await app.handle(new Request('http://localhost/missing'));
+    const response = await app.handle(new Request("http://localhost/missing"));
     expect(response.status).toBe(404);
     const body = await response.json();
-    expect(body.error).toBe('Custom not found');
+    expect(body.error).toBe("Custom not found");
   });
 
-  it('should still return default 404 when no custom handler', async () => {
+  it("should still return default 404 when no custom handler", async () => {
     const app = createApp();
-    const response = await app.handle(new Request('http://localhost/nope'));
+    const response = await app.handle(new Request("http://localhost/nope"));
     expect(response.status).toBe(404);
     const body = await response.json();
-    expect(body.code).toBe('NOT_FOUND');
+    expect(body.code).toBe("NOT_FOUND");
   });
 
-  it('should still return 405 for wrong method even with custom 404 handler', async () => {
+  it("should still return 405 for wrong method even with custom 404 handler", async () => {
     const app = createApp();
-    app.get('/users', (_req, reply) => reply.json([]));
-    app.setNotFoundHandler((_req, reply) => reply.status(404).html('Not Found'));
+    app.get("/users", (_req, reply) => reply.json([]));
+    app.setNotFoundHandler((_req, reply) => reply.status(404).html("Not Found"));
 
-    const response = await app.handle(new Request('http://localhost/users', { method: 'DELETE' }));
+    const response = await app.handle(new Request("http://localhost/users", { method: "DELETE" }));
     expect(response.status).toBe(405);
   });
 });
 
-describe('setErrorHandler', () => {
-  it('should use custom error handler', async () => {
+describe("setErrorHandler", () => {
+  it("should use custom error handler", async () => {
     const app = createApp();
 
     app.setErrorHandler((error, _req, reply) => {
       return reply.status(500).json({ customError: true, message: error.message });
     });
 
-    app.get('/fail', () => {
-      throw new Error('Boom');
+    app.get("/fail", () => {
+      throw new Error("Boom");
     });
 
-    const response = await app.handle(new Request('http://localhost/fail'));
+    const response = await app.handle(new Request("http://localhost/fail"));
     expect(response.status).toBe(500);
     const body = await response.json();
     expect(body.customError).toBe(true);
-    expect(body.message).toBe('Boom');
+    expect(body.message).toBe("Boom");
   });
 
-  it('should fall back to default error handler if custom throws', async () => {
+  it("should fall back to default error handler if custom throws", async () => {
     const app = createApp();
 
     app.setErrorHandler(() => {
-      throw new Error('handler also broke');
+      throw new Error("handler also broke");
     });
 
-    app.get('/fail', () => {
-      throw new Error('Original error');
+    app.get("/fail", () => {
+      throw new Error("Original error");
     });
 
-    const response = await app.handle(new Request('http://localhost/fail'));
+    const response = await app.handle(new Request("http://localhost/fail"));
     expect(response.status).toBe(500);
   });
 });

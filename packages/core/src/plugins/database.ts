@@ -1,6 +1,7 @@
 // @celsian/core — Database connection pool plugin
 
-import type { PluginFunction, HookHandler } from '../types.js';
+import { CelsianError } from "../errors.js";
+import type { HookHandler, PluginFunction } from "../types.js";
 
 export interface DatabasePool {
   /** Execute a query */
@@ -35,7 +36,7 @@ export interface DatabaseOptions<T extends DatabasePool = DatabasePool> {
 
 export function database<T extends DatabasePool>(options: DatabaseOptions<T>): PluginFunction {
   return async function databasePlugin(app) {
-    const name = options.name ?? 'db';
+    const name = options.name ?? "db";
     const pool = await options.createPool();
 
     // Decorate app with the pool
@@ -52,14 +53,14 @@ export function database<T extends DatabasePool>(options: DatabaseOptions<T>): P
  * The transaction client is available as `req.tx`.
  */
 export function withTransaction(options?: { poolName?: string }): HookHandler {
-  const poolName = options?.poolName ?? 'db';
+  const poolName = options?.poolName ?? "db";
 
   return async (request, _reply) => {
     const pool = (request as Record<string, unknown>)[poolName] as TransactionCapablePool | undefined;
-    if (!pool || typeof pool.beginTransaction !== 'function') {
-      throw new Error(
+    if (!pool || typeof pool.beginTransaction !== "function") {
+      throw new CelsianError(
         `withTransaction: no transaction-capable pool found at request.${poolName}. ` +
-        `Register the database plugin first and ensure your pool implements beginTransaction().`
+          `Register the database plugin first and ensure your pool implements beginTransaction().`,
       );
     }
 
@@ -78,7 +79,7 @@ export function withTransaction(options?: { poolName?: string }): HookHandler {
 export function transactionLifecycle(): PluginFunction {
   return function transactionLifecyclePlugin(app) {
     // On successful response, commit
-    app.addHook('onSend', async (request) => {
+    app.addHook("onSend", async (request) => {
       const tx = (request as Record<string, unknown>).tx as TransactionClient | undefined;
       const pending = (request as Record<string, unknown>)._txPending;
       if (tx && pending) {
@@ -88,7 +89,7 @@ export function transactionLifecycle(): PluginFunction {
     });
 
     // On error, rollback
-    app.addHook('onError', async (_error, request) => {
+    app.addHook("onError", async (_error, request) => {
       const tx = (request as Record<string, unknown>).tx as TransactionClient | undefined;
       const pending = (request as Record<string, unknown>)._txPending;
       if (tx && pending) {

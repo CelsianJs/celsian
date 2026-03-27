@@ -1,6 +1,6 @@
 // @celsian/adapter-cloudflare — Cloudflare Workers adapter
 
-import type { CelsianApp } from '@celsian/core';
+import type { CelsianApp } from "@celsian/core";
 
 /**
  * Cloudflare Workers environment bindings (KV, D1, R2, etc.)
@@ -40,11 +40,11 @@ export function createCloudflareHandler(app: CelsianApp): CloudflareWorkerExport
         (request as unknown as Record<string, unknown>).ctx = ctx;
         return await app.handle(request);
       } catch (error) {
-        console.error('[celsian] Unhandled error in Cloudflare handler:', error);
-        return new Response(
-          JSON.stringify({ error: 'Internal Server Error', statusCode: 500 }),
-          { status: 500, headers: { 'content-type': 'application/json; charset=utf-8' } },
-        );
+        console.error("[celsian] Unhandled error in Cloudflare handler:", error);
+        return new Response(JSON.stringify({ error: "Internal Server Error", statusCode: 500 }), {
+          status: 500,
+          headers: { "content-type": "application/json; charset=utf-8" },
+        });
       }
     },
   };

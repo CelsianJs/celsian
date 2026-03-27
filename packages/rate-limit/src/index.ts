@@ -1,6 +1,6 @@
 // @celsian/rate-limit — Sliding window rate limiter plugin
 
-import type { PluginFunction, CelsianRequest, CelsianReply, HookHandler } from '@celsian/core';
+import type { CelsianReply, CelsianRequest, HookHandler, PluginFunction } from "@celsian/core";
 
 export interface RateLimitOptions {
   max: number;
@@ -63,15 +63,17 @@ export class MemoryRateLimitStore implements RateLimitStore {
 function createDefaultKeyGenerator(trustProxy: boolean): (req: CelsianRequest) => string {
   if (trustProxy) {
     return (req: CelsianRequest): string => {
-      return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-        ?? req.headers.get('x-real-ip')
-        ?? 'anonymous-' + Date.now().toString(36);
+      return (
+        req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+        req.headers.get("x-real-ip") ??
+        `anonymous-${Date.now().toString(36)}`
+      );
     };
   }
   // Without trustProxy, do NOT trust forwarded headers — use a per-request identifier
   // to avoid shared-bucket DoS from the 'unknown' fallback
   return (_req: CelsianRequest): string => {
-    return 'anonymous-' + Date.now().toString(36);
+    return `anonymous-${Date.now().toString(36)}`;
   };
 }
 
@@ -87,23 +89,20 @@ export function rateLimit(options: RateLimitOptions): PluginFunction {
       const key = keyGenerator(request);
       const { count, resetAt } = await store.increment(key, window);
 
-      reply.header('x-ratelimit-limit', String(max));
-      reply.header('x-ratelimit-remaining', String(Math.max(0, max - count)));
-      reply.header('x-ratelimit-reset', String(Math.ceil(resetAt / 1000)));
+      reply.header("x-ratelimit-limit", String(max));
+      reply.header("x-ratelimit-remaining", String(Math.max(0, max - count)));
+      reply.header("x-ratelimit-reset", String(Math.ceil(resetAt / 1000)));
 
       if (count > max) {
         const retryAfter = Math.ceil((resetAt - Date.now()) / 1000);
-        return reply
-          .status(429)
-          .header('retry-after', String(retryAfter))
-          .json({
-            error: 'Too Many Requests',
-            statusCode: 429,
-            retryAfter,
-          });
+        return reply.status(429).header("retry-after", String(retryAfter)).json({
+          error: "Too Many Requests",
+          statusCode: 429,
+          retryAfter,
+        });
       }
     };
 
-    app.addHook('onRequest', hook as HookHandler);
+    app.addHook("onRequest", hook as HookHandler);
   };
 }

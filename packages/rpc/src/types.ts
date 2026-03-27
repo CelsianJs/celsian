@@ -1,6 +1,6 @@
 // @celsian/rpc — Type definitions
 
-import type { StandardSchema } from '@celsian/schema';
+import type { StandardSchema } from "@celsian/schema";
 
 // ─── Context ───
 
@@ -13,12 +13,9 @@ export type ContextFactory = (request: Request) => RPCContext | Promise<RPCConte
 
 // ─── Procedure Types ───
 
-export type ProcedureType = 'query' | 'mutation';
+export type ProcedureType = "query" | "mutation";
 
-export interface ProcedureDefinition<
-  TInput = unknown,
-  TOutput = unknown,
-> {
+export interface ProcedureDefinition<TInput = unknown, TOutput = unknown> {
   type: ProcedureType;
   inputSchema?: StandardSchema<TInput>;
   outputSchema?: StandardSchema<TOutput>;
@@ -26,10 +23,7 @@ export interface ProcedureDefinition<
   middlewares: MiddlewareFunction[];
 }
 
-export type MiddlewareFunction = (opts: {
-  ctx: RPCContext;
-  next: () => Promise<unknown>;
-}) => Promise<unknown>;
+export type MiddlewareFunction = (opts: { ctx: RPCContext; next: () => Promise<unknown> }) => Promise<unknown>;
 
 // ─── Router Types ───
 
@@ -38,12 +32,15 @@ export interface RouterDefinition {
 }
 
 export interface RPCManifest {
-  procedures: Record<string, {
-    type: ProcedureType;
-    path: string;
-    inputSchema?: Record<string, unknown>;
-    outputSchema?: Record<string, unknown>;
-  }>;
+  procedures: Record<
+    string,
+    {
+      type: ProcedureType;
+      path: string;
+      inputSchema?: Record<string, unknown>;
+      outputSchema?: Record<string, unknown>;
+    }
+  >;
 }
 
 // ─── Wire Protocol ───
@@ -72,7 +69,7 @@ export interface TaggedValue {
 // ─── OpenAPI ───
 
 export interface OpenAPISpec {
-  openapi: '3.1.0';
+  openapi: "3.1.0";
   info: {
     title: string;
     version: string;

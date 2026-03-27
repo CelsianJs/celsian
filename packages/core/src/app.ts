@@ -1,42 +1,48 @@
 // @celsian/core — CelsianApp: hook-based server with plugin encapsulation
 
-import { Router } from './router.js';
-import { createReply } from './reply.js';
-import { buildRequest, buildRequestFast } from './request.js';
-import { EncapsulationContext } from './context.js';
-import { runHooks, runOnSendHooks, runHooksFireAndForget } from './hooks.js';
-import { HttpError, ValidationError, assertPlugin, wrapNonError } from './errors.js';
-import { fromSchema, type StandardSchema } from '@celsian/schema';
-import { createInject, type InjectOptions } from './inject.js';
-import { createLogger, generateRequestId, type Logger } from './logger.js';
-import { parseCookies } from './cookie.js';
-import { TaskRegistry, TaskWorker, createEnqueue, type TaskDefinition, type TaskWorkerOptions } from './task.js';
-import { MemoryQueue, type QueueBackend } from './queue.js';
-import { CronScheduler, type CronJob } from './cron.js';
-import { WSRegistry, type WSHandler } from './websocket.js';
+import { fromSchema, type StandardSchema } from "@celsian/schema";
+import { EncapsulationContext } from "./context.js";
+import { parseCookies } from "./cookie.js";
+import { type CronJob, CronScheduler } from "./cron.js";
+import { assertPlugin, HttpError, ValidationError, wrapNonError } from "./errors.js";
+import { runHooks, runHooksFireAndForget, runOnSendHooks } from "./hooks.js";
+import { createInject, type InjectOptions } from "./inject.js";
+import { createLogger, generateRequestId, type Logger } from "./logger.js";
+import { MemoryQueue, type QueueBackend } from "./queue.js";
+import { createReply } from "./reply.js";
+import { buildRequest, buildRequestFast } from "./request.js";
+import { Router } from "./router.js";
+import { createEnqueue, type TaskDefinition, TaskRegistry, TaskWorker, type TaskWorkerOptions } from "./task.js";
 import type {
   CelsianAppOptions,
-  CelsianRequest,
   CelsianReply,
+  CelsianRequest,
+  ExtractRouteParams,
   HookHandler,
-  OnErrorHandler,
   HookName,
-  RouteHandler,
-  RouteOptions,
+  InternalRoute,
+  OnErrorHandler,
+  PluginContext,
   PluginFunction,
   PluginOptions,
-  PluginContext,
-  InternalRoute,
+  RouteHandler,
   RouteManifestEntry,
-  ExtractRouteParams,
+  RouteOptions,
   TypedRouteHandler,
-} from './types.js';
+} from "./types.js";
+import { type WSHandler, WSRegistry } from "./websocket.js";
 
 export class CelsianApp {
   // Pre-stringified error responses (avoid JSON.stringify on every miss)
-  private static readonly NOT_FOUND_BODY = JSON.stringify({ error: 'Not Found', statusCode: 404, code: 'NOT_FOUND' });
-  private static readonly METHOD_NOT_ALLOWED_BODY = JSON.stringify({ error: 'Method Not Allowed', statusCode: 405, code: 'METHOD_NOT_ALLOWED' });
-  private static readonly JSON_CONTENT_TYPE: Record<string, string> = { 'content-type': 'application/json; charset=utf-8' };
+  private static readonly NOT_FOUND_BODY = JSON.stringify({ error: "Not Found", statusCode: 404, code: "NOT_FOUND" });
+  private static readonly METHOD_NOT_ALLOWED_BODY = JSON.stringify({
+    error: "Method Not Allowed",
+    statusCode: 405,
+    code: "METHOD_NOT_ALLOWED",
+  });
+  private static readonly JSON_CONTENT_TYPE: Record<string, string> = {
+    "content-type": "application/json; charset=utf-8",
+  };
 
   private router = new Router();
   private rootContext: EncapsulationContext;
@@ -53,7 +59,9 @@ export class CelsianApp {
 
   // Custom handlers
   private notFoundHandler: RouteHandler | null = null;
-  private errorHandler: ((error: Error, request: CelsianRequest, reply: CelsianReply) => Response | Promise<Response>) | null = null;
+  private errorHandler:
+    | ((error: Error, request: CelsianRequest, reply: CelsianReply) => Response | Promise<Response>)
+    | null = null;
 
   // Custom content-type parsers
   private contentTypeParsers = new Map<string, (request: Request) => Promise<unknown>>();
@@ -70,7 +78,7 @@ export class CelsianApp {
   private readonly cachedRequestTimeout: number;
 
   constructor(private options: CelsianAppOptions = {}) {
-    this.rootContext = new EncapsulationContext(null, options.prefix ?? '', this.router);
+    this.rootContext = new EncapsulationContext(null, options.prefix ?? "", this.router);
     this.pluginContext = this.rootContext.toPluginContext();
 
     // Cache hot-path options
@@ -81,14 +89,19 @@ export class CelsianApp {
     // Logger setup
     if (options.logger === true) {
       this.log = createLogger();
-    } else if (options.logger && typeof options.logger === 'object') {
+    } else if (options.logger && typeof options.logger === "object") {
       this.log = options.logger;
     } else {
       // Silent no-op logger
       const noop = () => {};
       this.log = {
-        level: 'info' as const,
-        trace: noop, debug: noop, info: noop, warn: noop, error: noop, fatal: noop,
+        level: "info" as const,
+        trace: noop,
+        debug: noop,
+        info: noop,
+        warn: noop,
+        error: noop,
+        fatal: noop,
         child: () => this.log,
       };
     }
@@ -135,8 +148,8 @@ export class CelsianApp {
     this.pluginContext.delete(url, handler);
   }
 
-  addHook(name: 'onError', handler: OnErrorHandler): void;
-  addHook(name: Exclude<HookName, 'onError'>, handler: HookHandler): void;
+  addHook(name: "onError", handler: OnErrorHandler): void;
+  addHook(name: Exclude<HookName, "onError">, handler: HookHandler): void;
   addHook(name: HookName, handler: HookHandler | OnErrorHandler): void {
     this.pluginContext.addHook(name, handler as HookHandler);
   }
@@ -162,7 +175,9 @@ export class CelsianApp {
     this.notFoundHandler = handler;
   }
 
-  setErrorHandler(handler: (error: Error, request: CelsianRequest, reply: CelsianReply) => Response | Promise<Response>): void {
+  setErrorHandler(
+    handler: (error: Error, request: CelsianRequest, reply: CelsianReply) => Response | Promise<Response>,
+  ): void {
     this.errorHandler = handler;
   }
 
@@ -237,29 +252,25 @@ export class CelsianApp {
 
   // ─── Health Check ───
 
-  health(options: {
-    path?: string;
-    readyPath?: string;
-    check?: () => Promise<boolean> | boolean;
-  } = {}): void {
-    const healthPath = options.path ?? '/health';
-    const readyPath = options.readyPath ?? '/ready';
+  health(options: { path?: string; readyPath?: string; check?: () => Promise<boolean> | boolean } = {}): void {
+    const healthPath = options.path ?? "/health";
+    const readyPath = options.readyPath ?? "/ready";
     const check = options.check;
 
     this.get(healthPath, async (_req, reply) => {
       if (check) {
         const ok = await check();
-        if (!ok) return reply.status(503).json({ status: 'unhealthy' });
+        if (!ok) return reply.status(503).json({ status: "unhealthy" });
       }
-      return reply.json({ status: 'ok', timestamp: new Date().toISOString() });
+      return reply.json({ status: "ok", timestamp: new Date().toISOString() });
     });
 
     this.get(readyPath, async (_req, reply) => {
       try {
         await this.ready();
-        return reply.json({ status: 'ready' });
+        return reply.json({ status: "ready" });
       } catch {
-        return reply.status(503).json({ status: 'not ready' });
+        return reply.status(503).json({ status: "not ready" });
       }
     });
   }
@@ -295,7 +306,7 @@ export class CelsianApp {
     // Fast URL parsing: extract pathname and query with simple string ops
     // Avoids new URL() which validates, normalizes, encodes, etc.
     const rawUrl = request.url;
-    const method = request.method as import('./types.js').RouteMethod;
+    const method = request.method as import("./types.js").RouteMethod;
 
     let pathname: string;
     let queryString: string;
@@ -303,10 +314,10 @@ export class CelsianApp {
 
     if (rawUrl.charCodeAt(0) === 47 /* '/' */) {
       // Path-only URL (e.g., "/json" or "/json?q=1")
-      const qIdx = rawUrl.indexOf('?');
+      const qIdx = rawUrl.indexOf("?");
       if (qIdx === -1) {
         pathname = rawUrl;
-        queryString = '';
+        queryString = "";
       } else {
         pathname = rawUrl.substring(0, qIdx);
         queryString = rawUrl.substring(qIdx + 1);
@@ -327,13 +338,13 @@ export class CelsianApp {
       }
       if (pathStart === -1) {
         // No path component (e.g., "http://host") — default to "/"
-        pathname = '/';
-        queryString = '';
+        pathname = "/";
+        queryString = "";
       } else {
-        const qIdx = rawUrl.indexOf('?', pathStart);
+        const qIdx = rawUrl.indexOf("?", pathStart);
         if (qIdx === -1) {
           pathname = rawUrl.substring(pathStart);
-          queryString = '';
+          queryString = "";
         } else {
           pathname = rawUrl.substring(pathStart, qIdx);
           queryString = rawUrl.substring(qIdx + 1);
@@ -343,18 +354,18 @@ export class CelsianApp {
 
     // Trust proxy: needs full URL object
     if (this.options.trustProxy) {
-      if (!fullUrl) fullUrl = new URL(rawUrl, 'http://localhost');
-      const proto = request.headers.get('x-forwarded-proto');
-      const host = request.headers.get('x-forwarded-host');
-      if (proto) fullUrl.protocol = proto + ':';
+      if (!fullUrl) fullUrl = new URL(rawUrl, "http://localhost");
+      const proto = request.headers.get("x-forwarded-proto");
+      const host = request.headers.get("x-forwarded-host");
+      if (proto) fullUrl.protocol = `${proto}:`;
       if (host) fullUrl.host = host;
     }
 
     let match = this.router.match(method, pathname);
 
     // HEAD fallback: try GET handler if no explicit HEAD route
-    if (!match && method === 'HEAD') {
-      match = this.router.match('GET' as import('./types.js').RouteMethod, pathname);
+    if (!match && method === "HEAD") {
+      match = this.router.match("GET" as import("./types.js").RouteMethod, pathname);
     }
 
     if (!match) {
@@ -366,13 +377,13 @@ export class CelsianApp {
         });
       }
       if (this.notFoundHandler) {
-        if (!fullUrl) fullUrl = new URL(rawUrl, 'http://localhost');
+        if (!fullUrl) fullUrl = new URL(rawUrl, "http://localhost");
         const celsianRequest = buildRequest(request, fullUrl, {});
         const reply = createReply();
         // Apply reply decorations
         if (this.rootContext.replyDecorations.size > 0) {
           for (const [key, value] of this.rootContext.replyDecorations) {
-            (reply as Record<string, unknown>)[key] = typeof value === 'function' ? value() : value;
+            (reply as Record<string, unknown>)[key] = typeof value === "function" ? value() : value;
           }
         }
         try {
@@ -400,17 +411,17 @@ export class CelsianApp {
     if (this.rootContext.requestDecorations.size > 0) {
       for (const [key, value] of this.rootContext.requestDecorations) {
         if (!(key in celsianRequest)) {
-          (celsianRequest as Record<string, unknown>)[key] = typeof value === 'function' ? value() : value;
+          (celsianRequest as Record<string, unknown>)[key] = typeof value === "function" ? value() : value;
         }
       }
     }
 
     // Lazy cookie parsing
     let parsedCookies: Record<string, string> | null = null;
-    Object.defineProperty(celsianRequest, 'cookies', {
+    Object.defineProperty(celsianRequest, "cookies", {
       get: () => {
         if (!parsedCookies) {
-          parsedCookies = parseCookies(request.headers.get('cookie') ?? '');
+          parsedCookies = parseCookies(request.headers.get("cookie") ?? "");
         }
         return parsedCookies;
       },
@@ -431,7 +442,7 @@ export class CelsianApp {
     if (this.rootContext.replyDecorations.size > 0) {
       for (const [key, value] of this.rootContext.replyDecorations) {
         if (!(key in reply)) {
-          (reply as Record<string, unknown>)[key] = typeof value === 'function' ? value() : value;
+          (reply as Record<string, unknown>)[key] = typeof value === "function" ? value() : value;
         }
       }
     }
@@ -443,18 +454,25 @@ export class CelsianApp {
     if (this.hasLogger) {
       const requestId = (celsianRequest as Record<string, unknown>).requestId as string;
       const start = performance.now();
-      this.log.info('incoming request', { method, url: pathname, requestId });
+      this.log.info("incoming request", { method, url: pathname, requestId });
 
       try {
         const response = await this.runWithTimeout(celsianRequest, reply, match.route, timeout);
         const duration = Math.round(performance.now() - start);
-        this.log.info('request completed', { method, url: pathname, statusCode: response.status, duration, requestId });
+        this.log.info("request completed", { method, url: pathname, statusCode: response.status, duration, requestId });
         return response;
       } catch (thrown) {
         const error = wrapNonError(thrown);
         const response = await this.handleError(error, celsianRequest, reply);
         const duration = Math.round(performance.now() - start);
-        this.log.error('request error', { method, url: pathname, statusCode: response.status, duration, requestId, error: error.message });
+        this.log.error("request error", {
+          method,
+          url: pathname,
+          statusCode: response.status,
+          duration,
+          requestId,
+          error: error.message,
+        });
         return response;
       }
     }
@@ -470,7 +488,7 @@ export class CelsianApp {
     return this.handle.bind(this);
   }
 
-  getRoutes(filter?: { kind?: 'serverless' | 'hot' | 'task' }): InternalRoute[] {
+  getRoutes(filter?: { kind?: "serverless" | "hot" | "task" }): InternalRoute[] {
     const routes = this.router.getAllRoutes();
     if (filter?.kind) {
       return routes.filter((r) => r.kind === filter.kind);
@@ -484,7 +502,11 @@ export class CelsianApp {
    */
   getRouteManifest(): { serverless: RouteManifestEntry[]; hot: RouteManifestEntry[]; task: RouteManifestEntry[] } {
     const routes = this.router.getAllRoutes();
-    const manifest = { serverless: [] as RouteManifestEntry[], hot: [] as RouteManifestEntry[], task: [] as RouteManifestEntry[] };
+    const manifest = {
+      serverless: [] as RouteManifestEntry[],
+      hot: [] as RouteManifestEntry[],
+      task: [] as RouteManifestEntry[],
+    };
     for (const r of routes) {
       const bucket = manifest[r.kind as keyof typeof manifest];
       if (bucket) bucket.push({ method: r.method, url: r.url, kind: r.kind });
@@ -510,16 +532,12 @@ export class CelsianApp {
     return Promise.race([
       this.runLifecycle(request, reply, route).finally(() => clearTimeout(timer)),
       new Promise<Response>((_, reject) => {
-        timer = setTimeout(() => reject(new HttpError(504, 'Gateway Timeout')), timeout);
+        timer = setTimeout(() => reject(new HttpError(504, "Gateway Timeout")), timeout);
       }),
     ]);
   }
 
-  private async runLifecycle(
-    request: CelsianRequest,
-    reply: CelsianReply,
-    route: InternalRoute,
-  ): Promise<Response> {
+  private async runLifecycle(request: CelsianRequest, reply: CelsianReply, route: InternalRoute): Promise<Response> {
     let earlyResponse: Response | null;
 
     // 1. onRequest hooks (skip if empty)
@@ -618,10 +636,7 @@ export class CelsianApp {
     return response;
   }
 
-  private validateRequest(
-    request: CelsianRequest,
-    schema: NonNullable<InternalRoute['schema']>,
-  ): void {
+  private validateRequest(request: CelsianRequest, schema: NonNullable<InternalRoute["schema"]>): void {
     if (schema.body && request.parsedBody !== undefined) {
       const bodySchema: StandardSchema = fromSchema(schema.body);
       const result = bodySchema.validate(request.parsedBody);
@@ -649,18 +664,18 @@ export class CelsianApp {
   }
 
   private async parseBody(request: CelsianRequest): Promise<void> {
-    const contentType = request.headers.get('content-type') ?? '';
+    const contentType = request.headers.get("content-type") ?? "";
 
-    if (request.method === 'GET' || request.method === 'HEAD') {
+    if (request.method === "GET" || request.method === "HEAD") {
       return;
     }
 
     // Enforce body size limit via Content-Length header (fast reject before reading)
     const bodyLimit = this.cachedBodyLimit;
     if (bodyLimit > 0) {
-      const contentLength = request.headers.get('content-length');
+      const contentLength = request.headers.get("content-length");
       if (contentLength && parseInt(contentLength, 10) > bodyLimit) {
-        throw new HttpError(413, 'Payload Too Large');
+        throw new HttpError(413, "Payload Too Large");
       }
     }
 
@@ -675,13 +690,13 @@ export class CelsianApp {
     }
 
     try {
-      if (contentType.includes('application/json')) {
+      if (contentType.includes("application/json")) {
         // Read body as text first to enforce body size limit on actual data
         // (Content-Length can be omitted in chunked transfer encoding)
         try {
           const text = await request.text();
           if (bodyLimit > 0 && text.length > bodyLimit) {
-            throw new HttpError(413, 'Payload Too Large');
+            throw new HttpError(413, "Payload Too Large");
           }
           if (!text.trim()) {
             // Empty body — leave as undefined
@@ -691,23 +706,26 @@ export class CelsianApp {
         } catch (parseErr) {
           if (parseErr instanceof HttpError) throw parseErr;
           throw new HttpError(400, `Invalid JSON (content-type: ${contentType}): ${(parseErr as Error).message}`, {
-            code: 'INVALID_JSON',
+            code: "INVALID_JSON",
             cause: parseErr as Error,
           });
         }
-      } else if (contentType.includes('application/x-www-form-urlencoded') || contentType.includes('multipart/form-data')) {
+      } else if (
+        contentType.includes("application/x-www-form-urlencoded") ||
+        contentType.includes("multipart/form-data")
+      ) {
         request.parsedBody = await request.formData();
-      } else if (contentType.includes('text/')) {
+      } else if (contentType.includes("text/")) {
         const text = await request.text();
         if (bodyLimit > 0 && text.length > bodyLimit) {
-          throw new HttpError(413, 'Payload Too Large');
+          throw new HttpError(413, "Payload Too Large");
         }
         request.parsedBody = text;
       } else if (!contentType) {
         // No content-type: try JSON, fall back to text
         const text = await request.text();
         if (bodyLimit > 0 && text.length > bodyLimit) {
-          throw new HttpError(413, 'Payload Too Large');
+          throw new HttpError(413, "Payload Too Large");
         }
         if (!text.trim()) return;
         try {
@@ -722,11 +740,7 @@ export class CelsianApp {
     }
   }
 
-  private async handleError(
-    error: Error,
-    request: CelsianRequest,
-    reply: CelsianReply,
-  ): Promise<Response> {
+  private async handleError(error: Error, request: CelsianRequest, reply: CelsianReply): Promise<Response> {
     // Try custom error handler first
     if (this.errorHandler) {
       try {
@@ -751,38 +765,36 @@ export class CelsianApp {
     if (error instanceof ValidationError) {
       return new Response(JSON.stringify(error.toJSON()), {
         status: 400,
-        headers: { 'content-type': 'application/json; charset=utf-8' },
+        headers: { "content-type": "application/json; charset=utf-8" },
       });
     }
 
     if (error instanceof HttpError) {
       return new Response(JSON.stringify(error.toJSON()), {
         status: error.statusCode,
-        headers: { 'content-type': 'application/json; charset=utf-8' },
+        headers: { "content-type": "application/json; charset=utf-8" },
       });
     }
 
     const status = (error as { statusCode?: number }).statusCode ?? 500;
-    const isProduction = typeof process !== 'undefined'
-      && (process.env.NODE_ENV === 'production' || process.env.CELSIAN_ENV === 'production');
+    const isProduction =
+      typeof process !== "undefined" &&
+      (process.env.NODE_ENV === "production" || process.env.CELSIAN_ENV === "production");
 
     const body: Record<string, unknown> = {
-      error: status >= 500 && isProduction ? 'Internal Server Error' : (error.message || 'Internal Server Error'),
+      error: status >= 500 && isProduction ? "Internal Server Error" : error.message || "Internal Server Error",
       statusCode: status,
-      code: (error as { code?: string }).code ?? 'INTERNAL_SERVER_ERROR',
+      code: (error as { code?: string }).code ?? "INTERNAL_SERVER_ERROR",
     };
 
     if (!isProduction && error.stack) {
       body.stack = error.stack;
     }
 
-    return new Response(
-      JSON.stringify(body),
-      {
-        status,
-        headers: { 'content-type': 'application/json; charset=utf-8' },
-      },
-    );
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { "content-type": "application/json; charset=utf-8" },
+    });
   }
 }
 
