@@ -2,8 +2,8 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
-import { join, extname } from 'node:path';
-import type { CelsianApp } from '@celsian/server';
+import { join, extname, resolve } from 'node:path';
+import type { CelsianApp } from '@celsian/core';
 // Inline types — will be imported from @celsian/build when ThenJS ships
 type RouteManifest = Record<string, { kind: string; method: string; path: string }>;
 type TaskManifest = Record<string, { name: string; handler: string }>;
@@ -71,8 +71,16 @@ const MIME_TYPES = {
 };
 
 async function tryStaticFile(pathname, dirs) {
+  // Decode URI to handle encoded traversal sequences (e.g., %2e%2e%2f)
+  const decodedPath = decodeURIComponent(pathname);
   for (const dir of dirs) {
-    const filePath = join(dir, pathname);
+    const { resolve: resolvePath } = await import('node:path');
+    const resolvedRoot = resolvePath(dir);
+    const filePath = resolvePath(join(dir, decodedPath));
+    // Prevent path traversal — resolved path must be within the static root
+    if (!filePath.startsWith(resolvedRoot + '/') && filePath !== resolvedRoot) {
+      continue;
+    }
     try {
       const s = await stat(filePath);
       if (s.isFile()) {
@@ -171,19 +179,25 @@ export function serve(app: CelsianApp, options: NodeAdapterOptions = {}): void {
 
     // Try static files
     if (staticDir) {
-      const filePath = join(staticDir, url.pathname);
-      try {
-        const s = await stat(filePath);
-        if (s.isFile()) {
-          const content = await readFile(filePath);
-          const ext = extname(filePath);
-          res.setHeader('content-type', MIME_TYPES[ext] ?? 'application/octet-stream');
-          res.setHeader('cache-control', 'public, max-age=31536000, immutable');
-          res.end(content);
-          return;
+      // Decode URI and resolve to prevent path traversal (e.g., /../../../etc/passwd)
+      const decodedPath = decodeURIComponent(url.pathname);
+      const resolvedRoot = resolve(staticDir);
+      const filePath = resolve(join(staticDir, decodedPath));
+      // Ensure the resolved path is within the static directory
+      if (filePath.startsWith(resolvedRoot + '/') || filePath === resolvedRoot) {
+        try {
+          const s = await stat(filePath);
+          if (s.isFile()) {
+            const content = await readFile(filePath);
+            const ext = extname(filePath);
+            res.setHeader('content-type', MIME_TYPES[ext] ?? 'application/octet-stream');
+            res.setHeader('cache-control', 'public, max-age=31536000, immutable');
+            res.end(content);
+            return;
+          }
+        } catch {
+          // Not a static file, continue
         }
-      } catch {
-        // Not a static file, continue
       }
     }
 

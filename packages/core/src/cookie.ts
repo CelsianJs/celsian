@@ -35,17 +35,25 @@ export function serializeCookie(
   value: string,
   options: CookieOptions = {},
 ): string {
+  // Secure defaults — user-provided options override via spread
+  const opts: CookieOptions = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    ...options,
+  };
+
   let cookie = `${name}=${encodeURIComponent(value)}`;
 
-  if (options.domain) cookie += `; Domain=${options.domain}`;
-  if (options.expires) cookie += `; Expires=${options.expires.toUTCString()}`;
-  if (options.httpOnly) cookie += '; HttpOnly';
-  if (options.maxAge !== undefined) cookie += `; Max-Age=${options.maxAge}`;
-  if (options.path) cookie += `; Path=${options.path}`;
-  if (options.sameSite) {
-    cookie += `; SameSite=${options.sameSite.charAt(0).toUpperCase() + options.sameSite.slice(1)}`;
+  if (opts.domain) cookie += `; Domain=${opts.domain}`;
+  if (opts.expires) cookie += `; Expires=${opts.expires.toUTCString()}`;
+  if (opts.httpOnly) cookie += '; HttpOnly';
+  if (opts.maxAge !== undefined) cookie += `; Max-Age=${opts.maxAge}`;
+  if (opts.path) cookie += `; Path=${opts.path}`;
+  if (opts.sameSite) {
+    cookie += `; SameSite=${opts.sameSite.charAt(0).toUpperCase() + opts.sameSite.slice(1)}`;
   }
-  if (options.secure) cookie += '; Secure';
+  if (opts.secure) cookie += '; Secure';
 
   return cookie;
 }

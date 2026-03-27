@@ -78,9 +78,15 @@ export function runHooksFireAndForget(
 ): void {
   for (const hook of hooks) {
     try {
-      hook(request, reply);
+      const result = hook(request, reply);
+      // If the hook returns a thenable, log errors instead of silently swallowing
+      if (result && typeof (result as any).catch === 'function') {
+        (result as Promise<unknown>).catch((err: unknown) => {
+          console.error('[celsian] fire-and-forget hook error:', err);
+        });
+      }
     } catch {
-      // Fire and forget
+      // Fire and forget — synchronous errors are intentionally ignored
     }
   }
 }

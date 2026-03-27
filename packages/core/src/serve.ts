@@ -177,11 +177,51 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
       const WSS = wsMod.WebSocketServer ?? (wsMod as any).default?.WebSocketServer;
       const wss = new WSS({ noServer: true });
 
-      server.on('upgrade', (req: IncomingMessage, socket: any, head: Buffer) => {
-        const pathname = new URL(req.url ?? '/', `http://${host}:${port}`).pathname;
+      server.on('upgrade', async (req: IncomingMessage, socket: any, head: Buffer) => {
+        const url = new URL(req.url ?? '/', `http://${host}:${port}`);
+        const pathname = url.pathname;
         const handler = app.wsRegistry.getHandler(pathname);
 
         if (!handler) {
+          socket.destroy();
+          return;
+        }
+
+        // --- Origin validation ---
+        // If CORS is configured (app has allowedOrigins), validate the Origin header
+        const origin = req.headers.origin;
+        const appOptions = (app as any)._options ?? {};
+        const corsOrigin = appOptions.cors?.origin;
+        if (corsOrigin && corsOrigin !== '*') {
+          const allowed = Array.isArray(corsOrigin) ? corsOrigin : [corsOrigin];
+          if (!origin || !allowed.includes(origin)) {
+            socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+            socket.destroy();
+            return;
+          }
+        }
+
+        // --- Run onRequest hooks (auth, etc.) ---
+        try {
+          const { createReply } = await import('./reply.js');
+          const webReq = nodeToWebRequest(req, url);
+          const celsianReq = buildRequest(webReq, url, {});
+          const reply = createReply();
+
+          // Run all onRequest hooks — if any return a Response, reject the upgrade
+          const hookStore = (app as any)._hookStore ?? (app as any).hookStore;
+          if (hookStore?.onRequest?.length) {
+            const { runHooks } = await import('./hooks.js');
+            const hookResult = await runHooks(hookStore.onRequest, celsianReq, reply);
+            if (hookResult instanceof Response) {
+              const statusCode = hookResult.status || 403;
+              socket.write(`HTTP/1.1 ${statusCode} ${hookResult.statusText || 'Forbidden'}\r\n\r\n`);
+              socket.destroy();
+              return;
+            }
+          }
+        } catch {
+          socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
           socket.destroy();
           return;
         }
@@ -195,7 +235,6 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
           app.wsRegistry.addConnection(pathname, conn);
 
           // Build a CelsianRequest for the upgrade
-          const url = new URL(req.url ?? '/', `http://${host}:${port}`);
           const webReq = nodeToWebRequest(req, url);
           const celsianReq = buildRequest(webReq, url, {});
 

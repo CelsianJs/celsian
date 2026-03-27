@@ -98,9 +98,9 @@ export class CronScheduler {
 
     for (const { job, parsed } of this.jobs) {
       if (shouldRun(parsed, now)) {
-        // Fire and forget
-        Promise.resolve(job.handler()).catch(() => {
-          // Silently ignore cron errors
+        // Fire and forget — log errors instead of silently swallowing
+        Promise.resolve(job.handler()).catch((err) => {
+          console.error('[celsian] Cron job error:', err);
         });
       }
     }

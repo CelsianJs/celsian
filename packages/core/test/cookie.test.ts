@@ -25,9 +25,12 @@ describe('Cookie parsing', () => {
 });
 
 describe('Cookie serialization', () => {
-  it('should serialize basic cookie', () => {
+  it('should serialize basic cookie with secure defaults', () => {
     const cookie = serializeCookie('name', 'value');
-    expect(cookie).toBe('name=value');
+    // Secure defaults: httpOnly=true, sameSite='lax'
+    expect(cookie).toContain('name=value');
+    expect(cookie).toContain('HttpOnly');
+    expect(cookie).toContain('SameSite=Lax');
   });
 
   it('should serialize with all options', () => {
@@ -56,7 +59,51 @@ describe('Cookie serialization', () => {
 
   it('should URL-encode values', () => {
     const cookie = serializeCookie('data', 'hello world');
-    expect(cookie).toBe('data=hello%20world');
+    expect(cookie).toContain('data=hello%20world');
+  });
+
+  it('should allow overriding secure defaults', () => {
+    // Explicitly disable httpOnly and sameSite
+    const cookie = serializeCookie('token', 'abc', {
+      httpOnly: false,
+      sameSite: undefined,
+    });
+    expect(cookie).toContain('token=abc');
+    // httpOnly=false means no HttpOnly flag
+    expect(cookie).not.toContain('HttpOnly');
+  });
+});
+
+describe('Cookie secure defaults', () => {
+  it('defaults httpOnly to true', () => {
+    const cookie = serializeCookie('session', 'xyz');
+    expect(cookie).toContain('HttpOnly');
+  });
+
+  it('defaults sameSite to lax', () => {
+    const cookie = serializeCookie('session', 'xyz');
+    expect(cookie).toContain('SameSite=Lax');
+  });
+
+  it('secure defaults to false in non-production (NODE_ENV not set)', () => {
+    // In test environment, NODE_ENV may or may not be 'production'
+    const cookie = serializeCookie('session', 'xyz');
+    if (process.env.NODE_ENV === 'production') {
+      expect(cookie).toContain('Secure');
+    } else {
+      expect(cookie).not.toContain('Secure');
+    }
+  });
+
+  it('user options override secure defaults', () => {
+    const cookie = serializeCookie('nosecure', 'val', {
+      httpOnly: false,
+      sameSite: 'none',
+      secure: true,
+    });
+    expect(cookie).not.toContain('HttpOnly');
+    expect(cookie).toContain('SameSite=None');
+    expect(cookie).toContain('Secure');
   });
 });
 
