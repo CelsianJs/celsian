@@ -2,15 +2,13 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
-import { createApp } from '../../server/src/app.js';
-import { cors } from '../../server/src/middleware/cors.js';
-import { rateLimit } from '../../server/src/middleware/rate-limit.js';
+import { createApp } from '../../core/src/app.js';
+import { cors } from '../../core/src/plugins/cors.js';
 import { nodeToWebRequest, writeWebResponse } from '../src/index.js';
-import { createSSEStream } from '../../server/src/sse.js';
+import { createSSEStream } from '../../core/src/sse.js';
 import { MemoryKVStore } from '../../cache/src/store.js';
 import { createResponseCache } from '../../cache/src/response-cache.js';
 import { createSessionManager } from '../../cache/src/session.js';
-import { createTaskQueue } from '../../server/src/tasks.js';
 
 let server: Server;
 let port: number;
@@ -25,22 +23,20 @@ describe('E2E: Full Stack Integration', () => {
     const kvStore = new MemoryKVStore({ cleanupIntervalMs: 0 });
     const responseCache = createResponseCache({ store: kvStore, ttlMs: 5000 });
     const sessions = createSessionManager({ store: kvStore });
-    const taskQueue = createTaskQueue({ pollIntervalMs: 10 });
     const taskResults: string[] = [];
 
     // Register middleware
-    await app.register(cors, { origin: 'https://example.com', credentials: true });
-    await app.register(rateLimit, { max: 200, windowMs: 60_000 });
+    await app.register(cors({ origin: 'https://example.com', credentials: true }), { encapsulate: false });
 
-    // Register task handler
-    taskQueue.register({
+    // Register task handler using core's built-in task system
+    app.task({
       name: 'process-data',
-      handler: async (job) => {
-        taskResults.push(`processed:${job.payload.id}`);
-        return { success: true, data: { processed: true } };
+      handler: async (input: unknown) => {
+        const payload = input as { id: string };
+        taskResults.push(`processed:${payload.id}`);
       },
+      retries: 0,
     });
-    taskQueue.start();
 
     // Routes
     app.get('/api/health', (_req, reply) => reply.json({ status: 'ok', uptime: process.uptime() }));
@@ -73,12 +69,12 @@ describe('E2E: Full Stack Integration', () => {
     });
 
     app.post('/api/task', async (req, reply) => {
-      const jobId = await taskQueue.enqueue('process-data', { id: 'test-123' });
+      const jobId = await app.enqueue('process-data', { id: 'test-123' });
       return reply.json({ jobId });
     });
 
     app.get('/api/task-results', (_req, reply) => {
-      return reply.json({ results: taskResults, stats: taskQueue.stats() });
+      return reply.json({ results: taskResults });
     });
 
     app.get('/api/sse', (req, _reply) => {
@@ -100,6 +96,11 @@ describe('E2E: Full Stack Integration', () => {
     app.get('/api/html', (_req, reply) => {
       return reply.html('<h1>Hello CelsianJS</h1>');
     });
+
+    // Start task worker (core requires explicit start)
+    app.setTaskWorkerOptions({ pollInterval: 50 });
+    await app.ready();
+    app.startWorker();
 
     // Create HTTP server
     server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -127,6 +128,9 @@ describe('E2E: Full Stack Integration', () => {
   afterAll(async () => {
     server.close();
   });
+
+  // Allow `app` reference in tests (closure captures it from beforeAll)
+  // Note: app is local to beforeAll but task/session tests work via HTTP.
 
   // ─── Basic Routes ───
 
@@ -200,13 +204,7 @@ describe('E2E: Full Stack Integration', () => {
     expect(res.headers.get('access-control-allow-origin')).toBeNull();
   });
 
-  // ─── Rate Limiting ───
-
-  it('rate limit headers are present', async () => {
-    const res = await fetch(url('/api/health'));
-    expect(res.headers.get('x-ratelimit-limit')).toBe('200');
-    expect(res.headers.get('x-ratelimit-remaining')).toBeDefined();
-  });
+  // ─── Rate Limiting (removed with @celsian/server — now in @celsian/rate-limit) ───
 
   // ─── Response Cache ───
 
@@ -255,13 +253,12 @@ describe('E2E: Full Stack Integration', () => {
     const { jobId } = await enqueueRes.json();
     expect(jobId).toBeTruthy();
 
-    // Wait for processing
-    await new Promise(r => setTimeout(r, 100));
+    // Wait for processing (pollInterval set to 50ms above)
+    await new Promise(r => setTimeout(r, 300));
 
     const resultsRes = await fetch(url('/api/task-results'));
-    const { results, stats } = await resultsRes.json();
+    const { results } = await resultsRes.json();
     expect(results).toContain('processed:test-123');
-    expect(stats.completed).toBeGreaterThanOrEqual(1);
   });
 
   // ─── SSE ───

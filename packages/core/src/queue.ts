@@ -25,9 +25,20 @@ export function generateQueueId(): string {
   return Date.now().toString(36) + '-' + _queueIdCounter.toString(36);
 }
 
+export interface MemoryQueueOptions {
+  /** Maximum number of completed job IDs to track. Oldest are evicted first. Default: 1000 */
+  maxCompletedJobs?: number;
+}
+
 export class MemoryQueue implements QueueBackend {
   private messages: QueueMessage[] = [];
   private inFlight = new Map<string, QueueMessage>();
+  private completed: string[] = [];
+  private readonly maxCompletedJobs: number;
+
+  constructor(options: MemoryQueueOptions = {}) {
+    this.maxCompletedJobs = options.maxCompletedJobs ?? 1000;
+  }
 
   async push(message: QueueMessage): Promise<void> {
     this.messages.push(message);
@@ -45,6 +56,11 @@ export class MemoryQueue implements QueueBackend {
 
   async ack(id: string): Promise<void> {
     this.inFlight.delete(id);
+    this.completed.push(id);
+    // Evict oldest completed jobs when over limit
+    if (this.completed.length > this.maxCompletedJobs) {
+      this.completed.splice(0, this.completed.length - this.maxCompletedJobs);
+    }
   }
 
   async nack(id: string, delay = 1000): Promise<void> {

@@ -1,7 +1,4 @@
-// @celsian/server — Server-Sent Events (SSE) support
-
-import type { PluginFunction, CelsianRequest, CelsianReply } from './types.js';
-import { fp } from './types.js';
+// @celsian/core — Server-Sent Events (SSE) support
 
 export interface SSEEvent {
   /** Event type (maps to `event:` field) */
@@ -129,9 +126,6 @@ export function createSSEStream(
     connection: 'keep-alive',
     ...options?.headers,
   };
-
-  // Check for Last-Event-ID (for reconnection)
-  const lastEventId = request.headers.get('last-event-id');
 
   const response = new Response(stream.readable as ReadableStream<Uint8Array>, {
     status: 200,

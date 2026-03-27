@@ -12,7 +12,7 @@ export type HookName =
   | 'onResponse'
   | 'onError';
 
-export type HookHandler<T = void> = (
+export type HookHandler<T = void | Response> = (
   request: CelsianRequest,
   reply: CelsianReply,
 ) => T | Promise<T>;

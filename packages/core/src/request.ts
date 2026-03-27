@@ -13,14 +13,21 @@ export function buildRequest(
   url: URL,
   params: Record<string, string>,
 ): CelsianRequest {
-  const query: Record<string, string | string[]> = Object.create(null);
-  for (const [key, value] of url.searchParams) {
-    if (BLOCKED_KEYS.has(key)) continue;
-    const existing = query[key];
-    if (existing !== undefined) {
-      query[key] = Array.isArray(existing) ? [...existing, value] : [existing, value];
-    } else {
-      query[key] = value;
+  // Use frozen empty object when there's no query string to avoid per-request allocation
+  let query: Record<string, string | string[]>;
+  const searchStr = url.search;
+  if (!searchStr || searchStr === '?') {
+    query = EMPTY_QUERY as Record<string, string | string[]>;
+  } else {
+    query = Object.create(null);
+    for (const [key, value] of url.searchParams) {
+      if (BLOCKED_KEYS.has(key)) continue;
+      const existing = query[key];
+      if (existing !== undefined) {
+        query[key] = Array.isArray(existing) ? [...existing, value] : [existing, value];
+      } else {
+        query[key] = value;
+      }
     }
   }
 

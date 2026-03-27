@@ -19,7 +19,7 @@ export async function handleUpdateRoutes(
     if (token !== apiKey) {
       return {
         response: Response.json(
-          { success: false, error: 'Unauthorized' } satisfies UpdateRoutesResult,
+          { success: false, error: 'Unauthorized', routeCount: 0 } satisfies UpdateRoutesResult,
           { status: 401 },
         ),
       };

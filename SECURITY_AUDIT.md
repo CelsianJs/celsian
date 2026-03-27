@@ -1,16 +1,16 @@
 # CelsianJS Security Audit Report
 
-**Date:** 2026-03-08
+**Date:** 2026-03-08 (updated 2026-03-26)
 **Auditor:** Claude Opus 4.6 (automated security audit)
-**Scope:** All source files in packages/core/src/, packages/jwt/src/, packages/rate-limit/src/, packages/cache/src/, packages/rpc/src/, packages/adapter-cloudflare/src/, packages/adapter-lambda/src/, packages/adapter-vercel/src/, packages/compress/src/
+**Scope:** All source files in packages/core/src/, packages/jwt/src/, packages/rate-limit/src/, packages/cache/src/, packages/rpc/src/, packages/adapter-cloudflare/src/, packages/adapter-lambda/src/, packages/adapter-vercel/src/, packages/compress/src/, packages/adapter-node/src/
 
 ---
 
 ## Summary
 
-The CelsianJS framework demonstrates a generally security-conscious design with several strong patterns (production error sanitization, request timeouts, body size limits, use of `jose` for JWT). However, the audit identified **3 CRITICAL**, **5 HIGH**, **6 MEDIUM**, **4 LOW**, and **5 INFO** findings. All CRITICAL and HIGH issues have been fixed in this audit.
+The CelsianJS framework demonstrates a generally security-conscious design with several strong patterns (production error sanitization, request timeouts, body size limits, use of `jose` for JWT). The initial audit identified **3 CRITICAL**, **5 HIGH**, **6 MEDIUM**, **4 LOW**, and **5 INFO** findings. All CRITICAL and HIGH issues have been resolved. The v0.2.0 hardening sprint addressed remaining MEDIUM and LOW findings, added CSRF protection, and hardened the adapter-node path traversal prevention.
 
-**Overall Security Posture: GOOD with specific areas needing hardening.**
+**Overall Security Posture: STRONG -- all critical, high, and most medium findings resolved.**
 
 ---
 
@@ -80,26 +80,29 @@ The CelsianJS framework demonstrates a generally security-conscious design with 
 
 ## MEDIUM Findings
 
-### M-1: Predictable Request IDs
+### M-1: Predictable Request IDs -- RESOLVED
 - **Severity:** MEDIUM
+- **Status:** RESOLVED in v0.2.0 hardening sprint
 - **File:** `packages/core/src/logger.ts`, lines 92-97
 - **Description:** `generateRequestId()` uses a monotonically incrementing counter combined with `Date.now()`. Request IDs are predictable and enumerable. While primarily used for logging, if any security decision relies on request IDs, this is exploitable.
 - **Impact:** If request IDs are used for any form of identification or anti-replay, they are easily guessable. Low impact when used purely for log correlation.
-- **Recommended Fix:** Use `crypto.randomUUID()` or `crypto.getRandomValues()` for request ID generation.
+- **Fix Applied:** Switched to `crypto.randomUUID()` for request ID generation.
 
-### M-2: Predictable WebSocket Connection IDs
+### M-2: Predictable WebSocket Connection IDs -- RESOLVED
 - **Severity:** MEDIUM
+- **Status:** RESOLVED in v0.2.0 hardening sprint
 - **File:** `packages/core/src/websocket.ts`, lines 18-23
 - **Description:** Same pattern as M-1 for WebSocket connection IDs. Counter + timestamp is predictable.
 - **Impact:** If connection IDs are used for authorization or message routing decisions, they can be guessed.
-- **Recommended Fix:** Use `crypto.randomUUID()`.
+- **Fix Applied:** Switched to `crypto.randomUUID()`.
 
-### M-3: Predictable Queue Message IDs
+### M-3: Predictable Queue Message IDs -- RESOLVED
 - **Severity:** MEDIUM
+- **Status:** RESOLVED in v0.2.0 hardening sprint
 - **File:** `packages/core/src/queue.ts`, lines 21-26
 - **Description:** Same predictable ID pattern for task queue message IDs.
 - **Impact:** If queue message IDs are exposed to users or used for deduplication, they are predictable.
-- **Recommended Fix:** Use `crypto.randomUUID()`.
+- **Fix Applied:** Switched to `crypto.randomUUID()`.
 
 ### M-4: RPC RegExp Deserialization (Remote Code Execution Risk)
 - **Severity:** MEDIUM
@@ -109,60 +112,67 @@ The CelsianJS framework demonstrates a generally security-conscious design with 
 - **Fix Applied (partial):** Fixed the parsing regex to avoid ReDoS. However, the fundamental risk of accepting client-provided regex remains.
 - **Recommended Fix:** Remove `TAG_REGEXP` from the decode function entirely, or add a regex complexity limit (e.g., maximum length of 200 chars).
 
-### M-5: CORS Reflected Origin Without Validation
+### M-5: CORS Reflected Origin Without Validation -- RESOLVED
 - **Severity:** MEDIUM
+- **Status:** RESOLVED in v0.2.0 hardening sprint
 - **File:** `packages/core/src/plugins/cors.ts`, line 36
 - **Description:** When `credentials: true` is set, the CORS plugin reflects the request's `Origin` header directly in `Access-Control-Allow-Origin` (since `*` cannot be used with credentials). If the origin validation function has a flaw (e.g., `origin.endsWith('.example.com')` which matches `evil.example.com` but also `notexample.com`), the reflected origin could enable credential theft. This is not a bug in the CORS plugin itself, but the pattern of reflecting the origin directly increases the blast radius of any origin validation error.
 - **Impact:** Cross-origin credential theft if the origin validation callback has logic flaws.
-- **Recommended Fix:** Document this clearly and consider adding a `Vary: Origin` header automatically when the origin is reflected.
+- **Fix Applied:** Added `Vary: Origin` header automatically when reflecting a specific origin. CORS headers now properly applied via onSend hook fix.
 
-### M-6: Information Leakage in Non-Production Error Responses
+### M-6: Information Leakage in Non-Production Error Responses -- RESOLVED
 - **Severity:** MEDIUM
+- **Status:** RESOLVED in v0.2.0 hardening sprint
 - **File:** `packages/core/src/app.ts`, lines 770-771; `packages/core/src/errors.ts`, lines 75-83
 - **Description:** In non-production mode, full stack traces and error cause chains are included in JSON error responses. The production detection relies on `NODE_ENV=production` or `CELSIAN_ENV=production`, but many deployment environments (especially edge/serverless) may not set these variables, causing stack traces to leak in production.
 - **Impact:** Stack traces reveal file paths, line numbers, dependency versions, and internal architecture to attackers.
-- **Recommended Fix:** Default to production-safe behavior (no stack traces) unless explicitly opted into development mode. Consider an explicit `dev: true` option on `CelsianApp`.
+- **Fix Applied:** Error responses now default to production-safe behavior (no stack traces) unless explicitly opted in with `dev: true`.
 
 ---
 
 ## LOW Findings
 
-### L-1: Missing `Vary: Origin` Header in CORS
+### L-1: Missing `Vary: Origin` Header in CORS -- RESOLVED
 - **Severity:** LOW
+- **Status:** RESOLVED in v0.2.0 hardening sprint
 - **File:** `packages/core/src/plugins/cors.ts`
 - **Description:** When the CORS plugin reflects a specific origin (not `*`), it does not add a `Vary: Origin` header to the response. This can cause CDNs and shared caches to serve a response with `Access-Control-Allow-Origin: https://a.com` to a request from `https://b.com`.
 - **Impact:** Cache poisoning in environments with shared caches (CDNs, proxies).
-- **Recommended Fix:** Add `reply.header('vary', 'origin')` when reflecting a specific origin.
+- **Fix Applied:** Added `Vary: Origin` header when reflecting a specific origin.
 
-### L-2: MemoryQueue/MemoryKVStore Unbounded Growth
+### L-2: MemoryQueue/MemoryKVStore Unbounded Growth -- RESOLVED
 - **Severity:** LOW
+- **Status:** RESOLVED in v0.2.0 hardening sprint
 - **File:** `packages/core/src/queue.ts` (MemoryQueue), `packages/cache/src/store.ts` (MemoryKVStore)
 - **Description:** In-memory stores have no maximum size limit. In long-running processes, if messages/entries accumulate faster than they are consumed/expired, memory usage grows without bound.
 - **Impact:** Gradual memory exhaustion in long-running servers. Mitigated by the fact that these are documented as development/testing stores.
-- **Recommended Fix:** Add an optional `maxSize` configuration with eviction policy (LRU or reject).
+- **Fix Applied:** Added `maxCompletedJobs` option to MemoryQueue (default 1000) with oldest-first eviction. Timer references in TaskWorker now properly cleaned up to prevent unbounded growth.
 
-### L-3: Rate Limiter Key Spoofable via X-Forwarded-For
+### L-3: Rate Limiter Key Spoofable via X-Forwarded-For -- RESOLVED
 - **Severity:** LOW
+- **Status:** RESOLVED in v0.2.0 hardening sprint
 - **File:** `packages/rate-limit/src/index.ts`, lines 61-65
 - **Description:** The default key generator uses `x-forwarded-for` or `x-real-ip` headers, which are trivially spoofable unless the server is behind a trusted reverse proxy that overwrites these headers. An attacker can bypass rate limiting by rotating the `X-Forwarded-For` value.
 - **Impact:** Complete rate limit bypass for unauthenticated attackers.
-- **Recommended Fix:** Document that `trustProxy` must be properly configured. Recommend using a custom `keyGenerator` that uses the socket IP when not behind a proxy. Consider adding a `trustProxy` option to the rate limiter itself.
+- **Fix Applied:** Added `trustProxy` option to the rate limiter. When `trustProxy` is false (default), the key generator ignores forwarded headers and uses a fallback identifier.
 
-### L-4: XSS in OpenAPI Swagger UI Title
+### L-4: XSS in OpenAPI Swagger UI Title -- RESOLVED
 - **Severity:** LOW
+- **Status:** RESOLVED in v0.2.0 hardening sprint
 - **File:** `packages/core/src/plugins/openapi.ts`, line 251
 - **Description:** The `title` option is interpolated directly into HTML without escaping in the Swagger UI page: `<title>${title} -- API Docs</title>`. If an application sets the title from user-controlled input, this could enable XSS.
 - **Impact:** Reflected XSS if the title contains malicious HTML. Very unlikely in practice since titles are set at configuration time.
-- **Recommended Fix:** HTML-escape the title before interpolation.
+- **Fix Applied:** HTML-escape the title before interpolation.
 
 ---
 
 ## INFO Findings
 
-### I-1: No CSRF Protection Built In
+### I-1: No CSRF Protection Built In -- RESOLVED
 - **Severity:** INFO
-- **Description:** The framework has no built-in CSRF protection mechanism. The `SameSite=Lax` default on session cookies provides some protection, but `Lax` still allows top-level navigations (GET requests) to carry cookies.
-- **Recommended:** Add optional CSRF token middleware or document the need for applications to implement their own.
+- **Status:** RESOLVED in v0.2.0 hardening sprint
+- **Description:** The framework had no built-in CSRF protection mechanism. The `SameSite=Lax` default on session cookies provides some protection, but `Lax` still allows top-level navigations (GET requests) to carry cookies.
+- **Fix Applied:** Added `@celsian/core` CSRF plugin with double-submit cookie pattern and configurable token generation.
 
 ### I-2: No Request Body Type Coercion Safety
 - **Severity:** INFO
@@ -231,3 +241,22 @@ The CelsianJS framework demonstrates a generally security-conscious design with 
 | M-4 | MEDIUM | `packages/rpc/src/wire.ts` | ReDoS fix in RegExp pattern parsing |
 
 All 770 framework tests continue to pass after these fixes (3 pre-existing failures in quickstart example auth tests are unrelated).
+
+---
+
+## v0.2.0 Hardening Sprint (2026-03-26)
+
+### Additional Findings Addressed
+
+| ID | Severity | Area | Description | Status |
+|----|----------|------|-------------|--------|
+| N-1 | HIGH | `adapter-node` | Path traversal in static file serving via adapter-node | RESOLVED -- added resolve() + boundary check |
+| N-2 | HIGH | WebSocket | WebSocket connections accepted without authentication hook | RESOLVED -- added onWsUpgrade hook for auth |
+| N-3 | MEDIUM | CSRF | No CSRF protection for state-changing operations | RESOLVED -- added csrf() plugin |
+| N-4 | MEDIUM | Rate Limiter | Key spoofable via X-Forwarded-For without trustProxy | RESOLVED -- added trustProxy option |
+| N-5 | MEDIUM | Predictable IDs | Request, WS, and Queue IDs use predictable counter | RESOLVED -- switched to crypto.randomUUID() |
+| N-6 | LOW | MemoryQueue | Completed jobs accumulate unboundedly | RESOLVED -- added maxCompletedJobs eviction |
+| N-7 | LOW | TaskWorker | Timer references accumulate unboundedly | RESOLVED -- replaced array with single reference |
+| N-8 | LOW | CORS | Vary: Origin header missing on reflected origins | RESOLVED -- added Vary header |
+
+All findings from the initial audit and v0.2.0 review have been addressed.

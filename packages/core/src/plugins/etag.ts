@@ -1,7 +1,4 @@
-// @celsian/server — ETag caching middleware
-
-import type { PluginFunction, HookHandler } from '../types.js';
-import { fp } from '../types.js';
+// @celsian/core — ETag utility for conditional requests
 
 export interface ETagOptions {
   /** Use weak ETags (default: true) */
@@ -23,56 +20,20 @@ function simpleHash(str: string): string {
 }
 
 /**
- * ETag middleware — adds ETag headers for conditional requests.
- * Supports If-None-Match for 304 Not Modified responses.
- *
- * Usage:
- * ```ts
- * app.register(etag);
- * ```
- */
-export const etag: PluginFunction = fp(async (app, options) => {
-  const weak = (options as ETagOptions).weak !== false;
-
-  const etagHook: HookHandler = async (request, reply) => {
-    // Only handle GET/HEAD requests
-    if (request.method !== 'GET' && request.method !== 'HEAD') return;
-
-    // Store original send to intercept response
-    // We use onSend hook instead, which runs after the handler
-  };
-
-  // onSend hook to add ETag headers after handler generates response
-  app.addHook('onSend', async (request, reply) => {
-    if (request.method !== 'GET' && request.method !== 'HEAD') return;
-
-    // Check if the handler already set an ETag
-    if (reply.headers['etag']) return;
-
-    // We can't easily intercept the Response body in onSend.
-    // Instead, this middleware is best used as route-level helper.
-    // For automatic ETag, use the reply decorator.
-  });
-
-  // Decorate reply with etag helper
-  app.decorateRequest('__etag_enabled', true);
-});
-
-/**
  * Helper to create a conditional response with ETag support.
  * Use this in route handlers for fine-grained control:
  *
  * ```ts
  * app.get('/data', (req, reply) => {
  *   const data = getExpensiveData();
- *   return withETag(req, reply, data);
+ *   return withETag(req, data);
  * });
  * ```
  */
 export function withETag(
   request: Request,
   data: unknown,
-  options?: { weak?: boolean },
+  options?: ETagOptions,
 ): Response {
   const weak = options?.weak !== false;
   const body = typeof data === 'string' ? data : JSON.stringify(data);

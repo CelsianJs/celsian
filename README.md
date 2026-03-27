@@ -4,7 +4,7 @@ TypeScript backend framework built on Web Standard APIs. Runs everywhere -- Node
 
 - **Multi-runtime** -- Write once, deploy to any JavaScript runtime. Built on `Request`/`Response`, not `req`/`res`.
 - **1.7x faster than Express** -- Radix-tree router, zero-copy request building, pre-stringified error paths.
-- **Built-in everything** -- Background tasks, cron, WebSocket, CORS, security headers, DB analytics, rate limiting, JWT, caching, compression, OpenAPI docs.
+- **Built-in everything** -- Background tasks, cron, WebSocket, CORS, CSRF protection, security headers, DB analytics, rate limiting, JWT, caching, compression, OpenAPI docs.
 - **Fastify-style plugin encapsulation** -- Scoped hooks and decorations by default. No accidental middleware leaks.
 - **Schema-agnostic validation** -- Auto-detects Zod, TypeBox, or Valibot. No config, no adapters.
 
@@ -83,6 +83,7 @@ No hunting for middleware packages:
 ```typescript
 await app.register(security(), { encapsulate: false });  // Helmet-style headers
 await app.register(cors({ origin: 'https://myapp.com' }));
+await app.register(csrf(), { encapsulate: false });      // CSRF token protection
 await app.register(rateLimit({ max: 100, window: 60_000 }));
 await app.register(compress());
 await app.register(jwt({ secret: process.env.JWT_SECRET! }));
@@ -152,7 +153,7 @@ app.route({
 | **Plugins** | Scoped encapsulation, app/request/reply decorators |
 | **Validation** | Zod, TypeBox, Valibot auto-detect; body, querystring, params schemas |
 | **Reply** | json, html, stream, redirect, sendFile, download, cookies, 9 error helpers |
-| **Security** | Helmet-style headers, CORS, JWT, sliding-window rate limiting |
+| **Security** | Helmet-style headers, CORS, CSRF protection, JWT, sliding-window rate limiting |
 | **Background** | Task queue with retries, cron scheduling, Redis queue backend |
 | **Real-time** | WebSocket with broadcast and connection management |
 | **Database** | Connection pool plugin, transactions, query analytics, Server-Timing |

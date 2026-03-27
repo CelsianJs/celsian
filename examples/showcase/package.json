@@ -9,7 +9,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@celsian/server": "workspace:*",
+    "@celsian/core": "workspace:*",
     "@celsian/rpc": "workspace:*",
     "@celsian/cache": "workspace:*",
     "@celsian/schema": "workspace:*"

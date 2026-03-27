@@ -236,7 +236,9 @@ export function createCrudApp() {
   return app;
 }
 
-// Start server if run directly
-const app = createCrudApp();
-await app.ready();
-serve(app, { port: parseInt(process.env.PORT ?? '3000', 10) });
+// Start server only when run directly (not when imported by tests)
+if (!process.env.VITEST) {
+  const app = createCrudApp();
+  await app.ready();
+  serve(app, { port: parseInt(process.env.PORT ?? '3000', 10) });
+}

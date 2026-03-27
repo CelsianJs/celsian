@@ -1,7 +1,7 @@
 # CelsianJS QA Report
 
-**Date:** 2026-02-16
-**Framework Version:** 0.1.0
+**Date:** 2026-02-16 (updated 2026-03-26)
+**Framework Version:** 0.1.0 (bugs resolved in v0.2.0)
 **Tester:** QA Engineer (automated)
 **Node.js:** v22.13.1
 **Runtime:** macOS Darwin 25.2.0
@@ -102,8 +102,9 @@ All 29 test files pass with 227 total tests. No failures, no flaky tests.
 
 ## 3. Bugs Found
 
-### BUG-1: `serve()` crashes with `require is not defined` in ESM context (CRITICAL)
+### BUG-1: `serve()` crashes with `require is not defined` in ESM context (CRITICAL) -- RESOLVED
 
+**Status:** RESOLVED in v0.2.0 hardening sprint
 **Severity:** P0 -- Blocks all Node.js server usage
 **File:** `packages/core/src/serve.ts` lines 34-36
 **Reproduction:**
@@ -124,8 +125,9 @@ Or convert `serveNode` to async and use top-level imports.
 
 ---
 
-### BUG-2: TypeBox schema adapter uses `require()` in ESM (CRITICAL)
+### BUG-2: TypeBox schema adapter uses `require()` in ESM (CRITICAL) -- RESOLVED
 
+**Status:** RESOLVED in v0.2.0 hardening sprint
 **Severity:** P0 -- Blocks all TypeBox schema validation
 **File:** `packages/schema/src/adapters/typebox.ts` line 13
 **Reproduction:**
@@ -147,8 +149,9 @@ Note: This changes `validate()` to be async, which requires propagating that cha
 
 ---
 
-### BUG-3: Multiple Set-Cookie headers lost in Node.js response (HIGH)
+### BUG-3: Multiple Set-Cookie headers lost in Node.js response (HIGH) -- RESOLVED
 
+**Status:** RESOLVED in v0.2.0 hardening sprint
 **Severity:** P1 -- Cookie handling broken for multiple cookies
 **File:** `packages/core/src/serve.ts` lines 237-239
 **Reproduction:**
@@ -183,8 +186,9 @@ export async function writeWebResponse(res: ServerResponse, response: Response):
 
 ---
 
-### BUG-4: Plugin `decorate()` does not set property on CelsianApp instance (MEDIUM)
+### BUG-4: Plugin `decorate()` does not set property on CelsianApp instance (MEDIUM) -- RESOLVED
 
+**Status:** RESOLVED in v0.2.0 hardening sprint
 **Severity:** P2 -- Confusing API, documentation gap
 **File:** `packages/core/src/app.ts` line 110-113, `packages/core/src/context.ts` line 111
 **Reproduction:**
@@ -208,8 +212,9 @@ const jwtInstance = app.getDecoration('jwt'); // JWTNamespace
 
 ---
 
-### BUG-5: `onSend` hook headers do not apply to already-created Response (HIGH)
+### BUG-5: `onSend` hook headers do not apply to already-created Response (HIGH) -- RESOLVED
 
+**Status:** RESOLVED in v0.2.0 hardening sprint
 **Severity:** P1 -- CORS headers missing on all non-preflight requests
 **File:** `packages/core/src/app.ts` lines 329-333
 **Reproduction:**
@@ -244,8 +249,9 @@ if (Object.keys(reply.headers).length > 0) {
 
 ---
 
-### BUG-6: CORS headers missing on non-preflight requests (HIGH)
+### BUG-6: CORS headers missing on non-preflight requests (HIGH) -- RESOLVED
 
+**Status:** RESOLVED in v0.2.0 hardening sprint (fixed via BUG-5 fix)
 **Severity:** P1 -- CORS completely broken for actual API calls
 **Depends on:** BUG-5
 
@@ -255,8 +261,9 @@ The CORS plugin registers an `onSend` hook to add `access-control-allow-origin` 
 
 ---
 
-### BUG-7: Router returns 404 instead of 405 for wrong HTTP method (LOW)
+### BUG-7: Router returns 404 instead of 405 for wrong HTTP method (LOW) -- RESOLVED
 
+**Status:** RESOLVED in v0.2.0 hardening sprint
 **Severity:** P3 -- Incorrect HTTP semantics
 **File:** `packages/core/src/router.ts` line 88, `packages/core/src/app.ts` lines 216-222
 **Reproduction:**
@@ -271,8 +278,9 @@ curl -X POST http://localhost:3456/api/health
 
 ---
 
-### BUG-8: HEAD requests return 404 (LOW)
+### BUG-8: HEAD requests return 404 (LOW) -- RESOLVED
 
+**Status:** RESOLVED in v0.2.0 hardening sprint
 **Severity:** P3 -- Incorrect HTTP semantics
 **File:** `packages/core/src/router.ts`
 **Reproduction:**
@@ -287,8 +295,9 @@ curl -X HEAD http://localhost:3456/api/health
 
 ---
 
-### BUG-9: RPC POST body already consumed by app body parser (HIGH)
+### BUG-9: RPC POST body already consumed by app body parser (HIGH) -- RESOLVED
 
+**Status:** RESOLVED in v0.2.0 hardening sprint
 **Severity:** P1 -- RPC mutations completely broken when using CelsianJS routes
 **File:** `packages/rpc/src/router.ts` line 99, `packages/core/src/app.ts` line 302
 **Reproduction:**
@@ -316,8 +325,9 @@ if (request.method === 'POST') {
 
 ---
 
-### BUG-10: Malformed JSON body silently returns 200 (LOW)
+### BUG-10: Malformed JSON body silently returns 200 (LOW) -- RESOLVED
 
+**Status:** RESOLVED in v0.2.0 hardening sprint
 **Severity:** P3 -- Could mask errors
 **File:** `packages/core/src/app.ts` lines 378-388
 **Reproduction:**
@@ -335,8 +345,9 @@ curl -X POST http://localhost:3456/api/echo \
 
 ---
 
-### BUG-11: Path params not URL-decoded (LOW)
+### BUG-11: Path params not URL-decoded (LOW) -- RESOLVED
 
+**Status:** RESOLVED in v0.2.0 hardening sprint
 **Severity:** P3
 **File:** `packages/core/src/router.ts` line 129, `packages/core/src/request.ts`
 **Reproduction:**
@@ -357,8 +368,9 @@ params[node.paramName] = decodeURIComponent(seg);
 
 ---
 
-### BUG-12: CORS preflight returns allow-methods/headers for disallowed origins (LOW)
+### BUG-12: CORS preflight returns allow-methods/headers for disallowed origins (LOW) -- RESOLVED
 
+**Status:** RESOLVED in v0.2.0 hardening sprint
 **Severity:** P3
 **File:** `packages/core/src/plugins/cors.ts` lines 48-76
 **Reproduction:**
@@ -378,8 +390,9 @@ curl -X OPTIONS http://localhost:3456/api/health \
 
 ---
 
-### BUG-13: Duplicate query params only keep last value (LOW)
+### BUG-13: Duplicate query params only keep last value (LOW) -- RESOLVED
 
+**Status:** RESOLVED in v0.2.0 hardening sprint
 **Severity:** P3 -- Design decision, but undocumented
 **File:** `packages/core/src/request.ts` lines 10-13
 **Reproduction:**
@@ -521,3 +534,25 @@ Actual throughput: ~17,841 req/sec (though most are 429 responses)
 - **QA test app:** `/Users/macbookpro-kirby/Desktop/Coding/celsian/examples/qa-test/src/index.ts`
 - **Benchmark app:** `/Users/macbookpro-kirby/Desktop/Coding/celsian/examples/qa-test/src/bench.ts`
 - **This report:** `/Users/macbookpro-kirby/Desktop/Coding/celsian/QA-REPORT.md`
+
+---
+
+## 9. v0.2.0 Resolution Summary
+
+All 13 bugs identified in the initial QA report have been resolved in the v0.2.0 hardening sprint:
+
+| Bug | Severity | Status |
+|-----|----------|--------|
+| BUG-1 | P0 (CRITICAL) | RESOLVED -- replaced require() with dynamic import() |
+| BUG-2 | P0 (CRITICAL) | RESOLVED -- replaced require() with dynamic import() |
+| BUG-3 | P1 (HIGH) | RESOLVED -- fixed Set-Cookie header handling |
+| BUG-4 | P2 (MEDIUM) | RESOLVED -- propagated plugin decorations |
+| BUG-5 | P1 (HIGH) | RESOLVED -- onSend headers merged into Response |
+| BUG-6 | P1 (HIGH) | RESOLVED -- fixed via BUG-5 fix |
+| BUG-7 | P3 (LOW) | RESOLVED -- router returns 405 with Allow header |
+| BUG-8 | P3 (LOW) | RESOLVED -- HEAD-to-GET fallback added |
+| BUG-9 | P1 (HIGH) | RESOLVED -- RPC uses parsedBody when available |
+| BUG-10 | P3 (LOW) | RESOLVED -- malformed JSON returns 400 |
+| BUG-11 | P3 (LOW) | RESOLVED -- decodeURIComponent() applied to params |
+| BUG-12 | P3 (LOW) | RESOLVED -- CORS skips headers for disallowed origins |
+| BUG-13 | P3 (LOW) | RESOLVED -- duplicate query params now produce arrays |

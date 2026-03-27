@@ -39,7 +39,7 @@ export interface TaskWorkerOptions {
 
 export class TaskWorker {
   private running = false;
-  private timers: ReturnType<typeof setTimeout>[] = [];
+  private pollTimer: ReturnType<typeof setTimeout> | null = null;
   private activeJobs = 0;
   private readonly concurrency: number;
   private readonly pollInterval: number;
@@ -62,10 +62,10 @@ export class TaskWorker {
 
   async stop(): Promise<void> {
     this.running = false;
-    for (const timer of this.timers) {
-      clearTimeout(timer);
+    if (this.pollTimer !== null) {
+      clearTimeout(this.pollTimer);
+      this.pollTimer = null;
     }
-    this.timers = [];
 
     // Wait for active jobs to finish
     while (this.activeJobs > 0) {
@@ -89,8 +89,8 @@ export class TaskWorker {
       }
 
       if (this.running) {
-        const timer = setTimeout(() => tick(), this.pollInterval);
-        this.timers.push(timer);
+        // Replace previous timer reference to prevent unbounded growth
+        this.pollTimer = setTimeout(() => tick(), this.pollInterval);
       }
     };
 

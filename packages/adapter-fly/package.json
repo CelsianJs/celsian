@@ -1,6 +1,6 @@
 {
   "name": "@celsian/adapter-fly",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "CelsianJS adapter for Fly.io — generates fly.toml, Dockerfile, and multi-region config",
   "type": "module",
   "license": "MIT",
@@ -21,7 +21,7 @@
     "prepublishOnly": "tsc -b"
   },
   "dependencies": {
-    "@celsian/server": "workspace:*"
+    "@celsian/core": "workspace:*"
   },
   "publishConfig": {
     "access": "public"
