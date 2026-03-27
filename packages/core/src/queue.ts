@@ -18,11 +18,8 @@ export interface QueueBackend {
   size(): Promise<number>;
 }
 
-let _queueIdCounter = 0;
-
 export function generateQueueId(): string {
-  _queueIdCounter = (_queueIdCounter + 1) % 0x7FFFFFFF;
-  return Date.now().toString(36) + '-' + _queueIdCounter.toString(36);
+  return crypto.randomUUID();
 }
 
 export interface MemoryQueueOptions {

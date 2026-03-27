@@ -59,6 +59,7 @@ app.health();
 
 // ─── REST: Auth ───
 const JWT_SECRET = process.env.JWT_SECRET ?? (() => { throw new Error('Set JWT_SECRET env var'); })();
+const PASSWORD_SALT = process.env.PASSWORD_SALT ?? (() => { throw new Error('Set PASSWORD_SALT env var'); })();
 
 app.post('/api/auth/register', async (req, reply) => {
   const { email, name, password } = req.parsedBody as any;
@@ -71,7 +72,6 @@ app.post('/api/auth/register', async (req, reply) => {
 
   const id = crypto.randomUUID();
   // Simple hash for demo -- use bcrypt or argon2 in production
-  const PASSWORD_SALT = process.env.PASSWORD_SALT ?? 'demo-salt';
   const encoder = new TextEncoder();
   const data = encoder.encode(password + PASSWORD_SALT);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
@@ -87,7 +87,6 @@ app.post('/api/auth/login', async (req, reply) => {
   if (!user) return reply.status(401).json({ error: 'Invalid credentials' });
 
   // Simple hash for demo -- use bcrypt or argon2 in production
-  const PASSWORD_SALT = process.env.PASSWORD_SALT ?? 'demo-salt';
   const encoder = new TextEncoder();
   const data = encoder.encode(password + PASSWORD_SALT);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
