@@ -54,6 +54,7 @@ export type {
   HookFunction,
   RouteMethod,
   RouteHandler,
+  TypedRouteHandler,
   RouteOptions,
   RouteMatch,
   InternalRoute,
@@ -62,4 +63,5 @@ export type {
   PluginFunction,
   PluginOptions,
   PluginContext,
+  ExtractRouteParams,
 } from './types.js';

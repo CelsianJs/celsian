@@ -81,6 +81,8 @@ export class EncapsulationContext {
       );
     };
 
+    // Cast to PluginContext: the generic route method signatures are type-level only.
+    // At runtime, handlers always receive CelsianRequest<Record<string, string>>.
     return {
       async register(plugin: PluginFunction, options: PluginOptions = {}) {
         if (options.encapsulate === false) {
@@ -137,6 +139,6 @@ export class EncapsulationContext {
       getRoutes() {
         return ctx.router.getAllRoutes();
       },
-    };
+    } as unknown as PluginContext;
   }
 }

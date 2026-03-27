@@ -28,6 +28,8 @@ import type {
   PluginContext,
   InternalRoute,
   RouteManifestEntry,
+  ExtractRouteParams,
+  TypedRouteHandler,
 } from './types.js';
 
 export class CelsianApp {
@@ -113,23 +115,23 @@ export class CelsianApp {
     this.pluginContext.route(options);
   }
 
-  get(url: string, handler: RouteHandler): void {
+  get<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void {
     this.pluginContext.get(url, handler);
   }
 
-  post(url: string, handler: RouteHandler): void {
+  post<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void {
     this.pluginContext.post(url, handler);
   }
 
-  put(url: string, handler: RouteHandler): void {
+  put<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void {
     this.pluginContext.put(url, handler);
   }
 
-  patch(url: string, handler: RouteHandler): void {
+  patch<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void {
     this.pluginContext.patch(url, handler);
   }
 
-  delete(url: string, handler: RouteHandler): void {
+  delete<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void {
     this.pluginContext.delete(url, handler);
   }
 

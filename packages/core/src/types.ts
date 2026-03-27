@@ -1,5 +1,25 @@
 // @celsian/core — Type definitions
 
+// ─── Route Parameter Extraction (Hono/Elysia-style) ───
+
+/**
+ * Extract route parameter names from a route string pattern.
+ *
+ * Examples:
+ *   ExtractRouteParams<'/users/:id'>           → { id: string }
+ *   ExtractRouteParams<'/users/:id/posts/:pid'> → { id: string; pid: string }
+ *   ExtractRouteParams<'/static/*'>             → { '*': string }
+ *   ExtractRouteParams<'/no-params'>            → {}
+ */
+export type ExtractRouteParams<T extends string> =
+  T extends `${string}:${infer Param}/${infer Rest}`
+    ? { [K in Param | keyof ExtractRouteParams<`/${Rest}`>]: string }
+    : T extends `${string}:${infer Param}`
+      ? { [K in Param]: string }
+      : T extends `${string}*`
+        ? { '*': string }
+        : {};
+
 // ─── Hook Types ───
 
 export type HookName =
@@ -27,8 +47,8 @@ export type HookFunction = HookHandler<void | Response> | OnErrorHandler;
 
 // ─── Request / Reply ───
 
-export interface CelsianRequest extends Request {
-  params: Record<string, string>;
+export interface CelsianRequest<TParams = Record<string, string>> extends Request {
+  params: TParams;
   query: Record<string, string | string[]>;
   parsedBody: unknown;
   /** Populated by plugins */
@@ -76,6 +96,12 @@ export type RouteMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' |
 
 export type RouteHandler = (
   request: CelsianRequest,
+  reply: CelsianReply,
+) => Response | Promise<Response> | void | Promise<void>;
+
+/** Route handler with typed params inferred from route string */
+export type TypedRouteHandler<TParams = Record<string, string>> = (
+  request: CelsianRequest<TParams>,
   reply: CelsianReply,
 ) => Response | Promise<Response> | void | Promise<void>;
 
@@ -137,11 +163,11 @@ export interface PluginOptions {
 export interface PluginContext {
   register(plugin: PluginFunction, options?: PluginOptions): Promise<void>;
   route(options: RouteOptions): void;
-  get(url: string, handler: RouteHandler): void;
-  post(url: string, handler: RouteHandler): void;
-  put(url: string, handler: RouteHandler): void;
-  patch(url: string, handler: RouteHandler): void;
-  delete(url: string, handler: RouteHandler): void;
+  get<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void;
+  post<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void;
+  put<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void;
+  patch<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void;
+  delete<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void;
 
   addHook(name: 'onRequest', handler: HookHandler): void;
   addHook(name: 'preParsing', handler: HookHandler): void;
