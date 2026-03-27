@@ -850,7 +850,7 @@
           <span class="code-filename">app.ts</span>
         </div>
         <div class="code-content">
-<pre><span class="kw">import</span> { createApp, cors, rateLimit } <span class="kw">from</span> <span class="str">'@celsian/server'</span>;
+<pre><span class="kw">import</span> { createApp, cors, rateLimit } <span class="kw">from</span> <span class="str">'@celsian/core'</span>;
 
 <span class="kw">const</span> app = <span class="fn">createApp</span>();
 
@@ -990,7 +990,7 @@ Deno.<span class="fn">serve</span>(app.fetch);</pre>
         </div>
         <div class="example-code">
 <pre><span class="kw">import</span> { createSSEStream, createSSEHub }
-  <span class="kw">from</span> <span class="str">'@celsian/server'</span>;
+  <span class="kw">from</span> <span class="str">'@celsian/core'</span>;
 
 <span class="cmt">// Single client stream</span>
 app.<span class="fn">get</span>(<span class="str">'/api/events'</span>, (req) => {
@@ -1019,7 +1019,7 @@ hub.<span class="fn">broadcast</span>({ event: <span class="str">'update'</span>
         </div>
         <div class="example-code">
 <pre><span class="kw">import</span> { createTaskQueue, createCronScheduler }
-  <span class="kw">from</span> <span class="str">'@celsian/server'</span>;
+  <span class="kw">from</span> <span class="str">'@celsian/core'</span>;
 
 <span class="kw">const</span> queue = <span class="fn">createTaskQueue</span>({ concurrency: <span class="num">5</span> });
 
@@ -1183,7 +1183,7 @@ app.<span class="fn">post</span>(<span class="str">'/api/login'</span>, <span cl
 
     <div class="ecosystem-grid">
       <div class="eco-card">
-        <h4>@celsian/server</h4>
+        <h4>@celsian/core</h4>
         <p>Hook-based server runtime with routing, plugins, middleware, SSE, WebSockets, and task queues.</p>
       </div>
       <div class="eco-card">
@@ -1289,7 +1289,7 @@ app.<span class="fn">post</span>(<span class="str">'/api/login'</span>, <span cl
           <span class="code-filename">server.ts</span>
         </div>
         <div class="code-content">
-<pre><span class="kw">import</span> { createApp, cors, jwtAuth } <span class="kw">from</span> <span class="str">'@celsian/server'</span>;
+<pre><span class="kw">import</span> { createApp, cors, jwtAuth } <span class="kw">from</span> <span class="str">'@celsian/core'</span>;
 <span class="kw">import</span> { procedure, router } <span class="kw">from</span> <span class="str">'@celsian/rpc'</span>;
 <span class="kw">import</span> { z } <span class="kw">from</span> <span class="str">'zod'</span>;
 

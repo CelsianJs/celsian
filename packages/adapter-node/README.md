@@ -8,7 +8,7 @@ Node.js deployment adapter for CelsianJS. Generates a standalone `node:http` ser
 npm install @celsian/adapter-node
 ```
 
-Peer dependencies: `@celsian/server`, `@celsian/build`.
+Peer dependencies: `@celsian/core`, `@celsian/build`.
 
 ## Usage
 
@@ -45,7 +45,7 @@ node dist/server/entry-server.js
 Use `serve()` to start a Node HTTP server from a `CelsianApp` instance directly (useful for custom setups):
 
 ```typescript
-import { createApp } from '@celsian/server';
+import { createApp } from '@celsian/core';
 import { serve } from '@celsian/adapter-node';
 
 const app = createApp();
