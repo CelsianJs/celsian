@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CelsianJS — The Backend Framework Built on Standards</title>
-  <meta name="description" content="Hook-based server runtime, type-safe RPC, real-time streaming, caching, and task queues — all on Web Standard APIs. 590 tests. Zero lock-in.">
+  <title>CelsianJS — The Batteries-Included Backend Framework for Every Runtime</title>
+  <meta name="description" content="Fastify's architecture. Hono's portability. Plugin encapsulation, background tasks, cron, RPC, and OpenAPI — all on Web Standard APIs. Part of the WhatStack ecosystem.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -796,7 +796,7 @@
   <nav>
     <a href="/" class="logo">
       Celsian<span class="logo-accent">JS</span>
-      <span class="logo-badge">v0.1</span>
+      <span class="logo-badge">v0.2</span>
     </a>
     <div class="nav-links">
       <a href="#features">Features</a>
@@ -814,11 +814,11 @@
     <div class="hero-inner">
       <div>
         <h1 class="animate">
-          The backend framework<br>
-          <span class="gradient">built on standards</span>
+          The batteries-included<br>
+          <span class="gradient">backend for every runtime</span>
         </h1>
         <p class="hero-subtitle animate delay-1">
-          Hook-based server, type-safe RPC, real-time streaming, caching, and task queues. Built entirely on Web Standard APIs. Deploy to Node, Bun, Deno, Cloudflare, or Lambda.
+          Fastify's architecture. Hono's portability. Everything included. Plugin encapsulation, background tasks, cron, schema-agnostic validation, RPC, and OpenAPI generation — all on Web Standard APIs. Only 2 external dependencies.
         </p>
         <div class="hero-actions animate delay-2">
           <a href="#get-started" class="btn btn-primary">Get Started</a>
@@ -884,34 +884,34 @@ Deno.<span class="fn">serve</span>(app.fetch);</pre>
 
     <div class="features-grid">
       <div class="feature">
-        <div class="feature-icon">&#x2693;</div>
-        <h3>Hook-Based Lifecycle</h3>
-        <p>8 lifecycle hooks give you control over every stage: onRequest, preParsing, preValidation, preHandler, preSerialization, onSend, onResponse, onError.</p>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">&#x1F50C;</div>
-        <h3>Type-Safe RPC</h3>
-        <p>Build procedures with input/output schema validation, compose routers, call from the client with full TypeScript inference and auto-generated OpenAPI.</p>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">&#x26A1;</div>
-        <h3>Real-Time Streaming</h3>
-        <p>First-class SSE with createSSEStream() and fan-out hubs. WebSocket abstractions with rooms, broadcasting, and registry-based routing.</p>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">&#x1F4E6;</div>
-        <h3>Caching &amp; Sessions</h3>
-        <p>Response caching with HIT/MISS headers, KV store abstraction with TTL and atomic counters, cookie-based session management.</p>
+        <div class="feature-icon">&#x1F9E9;</div>
+        <h3>Plugin Encapsulation on Web Standards</h3>
+        <p>Fastify-style scoped plugins built on Request/Response, not req/res. Hooks and decorations never leak across boundaries. Works on every runtime.</p>
       </div>
       <div class="feature">
         <div class="feature-icon">&#x23F0;</div>
-        <h3>Task Queues &amp; Cron</h3>
-        <p>Background job processing with retry/backoff, concurrency control, and delayed jobs. Cron scheduler with human-readable schedules like "every 5m".</p>
+        <h3>Background Tasks &amp; Cron Built In</h3>
+        <p>Job queues with retry/backoff and cron scheduling out of the box. No external packages needed. Swap to Redis for production with one line.</p>
       </div>
       <div class="feature">
-        <div class="feature-icon">&#x1F9E9;</div>
-        <h3>Plugin System</h3>
-        <p>Encapsulated plugins with inherited hooks and decorators. Build composable middleware that doesn't leak across boundaries.</p>
+        <div class="feature-icon">&#x1F50D;</div>
+        <h3>Schema-Agnostic Validation</h3>
+        <p>Auto-detects Zod, TypeBox, or Valibot. No config, no adapters. Just pass your schema and get validated input with structured error responses.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x1F50C;</div>
+        <h3>RPC + OpenAPI Generation</h3>
+        <p>Type-safe procedures with input/output validation, compose routers, call from the client with full TypeScript inference. OpenAPI 3.1 and Swagger UI generated automatically.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x1F6E1;</div>
+        <h3>Security &amp; Middleware First-Party</h3>
+        <p>CSRF protection, rate limiting, JWT, compression, CORS, and Helmet-style security headers. All built in. No hunting for third-party middleware.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x1F680;</div>
+        <h3>6 Deployment Adapters</h3>
+        <p>Node, Bun, Cloudflare Workers, AWS Lambda, Vercel, and Fly.io. One codebase, any runtime. Adapters auto-generate deployment configs.</p>
       </div>
     </div>
   </section>
@@ -1217,29 +1217,29 @@ app.<span class="fn">post</span>(<span class="str">'/api/login'</span>, <span cl
     </div>
   </section>
 
-  <!-- Stack -->
+  <!-- WhatStack -->
   <section class="section stack-section">
     <div class="section-header section-center" style="margin-left: auto; margin-right: auto;">
-      <p class="section-label">Part of a stack</p>
-      <h2 class="section-title">Three frameworks, one vision</h2>
-      <p class="section-desc">CelsianJS is the backend layer of a full-stack TypeScript ecosystem. Use it standalone or with ThenJS for a complete framework.</p>
+      <p class="section-label">Part of WhatStack</p>
+      <h2 class="section-title">The agent-first full stack</h2>
+      <p class="section-desc">CelsianJS is the backend framework for the WhatStack ecosystem. WhatFW for the frontend, CelsianJS for the backend. One stack. Any runtime. Agent-ready.</p>
     </div>
 
     <div class="stack-grid">
       <div class="stack-card">
         <div class="stack-type">Frontend</div>
-        <h4>What Framework</h4>
-        <p>Signals-based reactivity with fine-grained DOM updates. No virtual DOM. Components that render at the speed of vanilla JS.</p>
+        <h4><a href="https://whatfw.com" style="color: inherit; text-decoration: none; border-bottom: 1px solid var(--accent);">WhatFW</a></h4>
+        <p>Signals-based reactivity, fine-grained rendering, MCP DevTools. The frontend framework built for AI agents.</p>
       </div>
       <div class="stack-card current">
         <div class="stack-type">Backend</div>
         <h4>CelsianJS</h4>
-        <p>Hook-based server, RPC, caching, real-time, task queues. Built on Web Standard APIs. You are here.</p>
+        <p>Hooks, plugins, tasks, cron, RPC, multi-runtime. The backend framework for every runtime. You are here.</p>
       </div>
       <div class="stack-card">
-        <div class="stack-type">Meta-framework</div>
-        <h4>ThenJS</h4>
-        <p>Combines What + CelsianJS with file-based routing, SSR, hybrid rendering, and build tooling. Like Next.js for this stack.</p>
+        <div class="stack-type">Deploy</div>
+        <h4>Vura</h4>
+        <p>The deployment platform for WhatStack apps. Coming soon.</p>
       </div>
     </div>
   </section>
@@ -1320,7 +1320,7 @@ Bun.<span class="fn">serve</span>({ fetch: app.fetch, port: <span class="num">30
   <footer>
     <div class="footer-content">
       <div class="footer-left">
-        CelsianJS v0.1.0 &mdash; MIT License &mdash; Part of the ThenJS Stack
+        CelsianJS v0.2.0 &mdash; MIT License &mdash; Part of <a href="https://whatfw.com" style="color: var(--accent); text-decoration: none;">WhatStack</a>
       </div>
       <div class="footer-links">
         <a href="/docs">Documentation</a>

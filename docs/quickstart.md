@@ -247,6 +247,31 @@ flyctl deploy
 git push  # Railway auto-detects Node.js
 ```
 
+## Full Stack with WhatFW
+
+Use CelsianJS as the API backend for a [WhatFW](https://whatfw.com) frontend:
+
+```bash
+# Backend
+npx create-celsian my-api
+cd my-api && npm run dev  # localhost:3000
+
+# Frontend (in another terminal)
+npm create what@latest my-app
+cd my-app && npm run dev  # localhost:5173
+```
+
+Configure CORS in your CelsianJS app to accept requests from the frontend dev server:
+
+```typescript
+await app.register(cors({
+  origin: 'http://localhost:5173',
+  credentials: true,
+}), { encapsulate: false });
+```
+
+CelsianJS and WhatFW are both part of the [WhatStack](https://whatfw.com) ecosystem -- the agent-first full stack.
+
 ## Next Steps
 
 - [Hooks Lifecycle](hooks.md) -- Understanding the 8-hook request lifecycle

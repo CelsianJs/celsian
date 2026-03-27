@@ -398,6 +398,16 @@ export default defineConfig({
 - [Deployment Guide](docs/deployment.md)
 - [Database Plugin](docs/database.md)
 
+## WhatStack
+
+CelsianJS is the backend half of [WhatStack](https://whatfw.com) — the agent-first full-stack framework:
+
+| Layer | Framework | What It Does |
+|-------|-----------|-------------|
+| Frontend | [WhatFW](https://whatfw.com) | Signals, fine-grained rendering, MCP DevTools |
+| Backend | **CelsianJS** | Hooks, plugins, tasks, cron, RPC, multi-runtime |
+| Deploy | [Vura](https://github.com/zvndev/vura) | Platform deployment (coming soon) |
+
 ## Contributing
 
 ```bash
