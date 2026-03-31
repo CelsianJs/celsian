@@ -233,13 +233,25 @@ function generateSpec(routes: InternalRoute[], options: OpenAPIOptions): OpenAPI
 
 // ─── Swagger UI HTML ───
 
+/** Escape a string for safe interpolation into HTML content and attributes. */
+export function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function swaggerHTML(jsonPath: string, title: string): string {
+  const safeTitle = escapeHtml(title);
+  const safeJsonPath = escapeHtml(jsonPath);
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${title} — API Docs</title>
+  <title>${safeTitle} — API Docs</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist/swagger-ui.css" />
 </head>
 <body>
@@ -247,7 +259,7 @@ function swaggerHTML(jsonPath: string, title: string): string {
   <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist/swagger-ui-bundle.js"></script>
   <script>
     SwaggerUIBundle({
-      url: '${jsonPath}',
+      url: '${safeJsonPath}',
       dom_id: '#swagger-ui',
       presets: [
         SwaggerUIBundle.presets.apis,
