@@ -10,6 +10,7 @@ import { randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import type { PluginFunction } from "@celsian/core";
 import { HttpError } from "@celsian/core";
+import { z } from "zod";
 import { authGuard, getJwt } from "../middleware/auth.js";
 
 const scryptAsync = promisify(scrypt);
@@ -52,19 +53,22 @@ function findUserByEmail(email: string): User | undefined {
   }
 }
 
+// ─── Validation Schemas ───
+
+const authCredentialsSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+});
+
 // ─── Plugin ───
 
 export const authRoutes: PluginFunction = (app) => {
   // POST /auth/register — Create a new account and return a JWT
-  app.post("/auth/register", async (req, reply) => {
-    const { email, password } = req.parsedBody as { email: string; password: string };
+  app.post("/auth/register", {
+    schema: { body: authCredentialsSchema },
+  }, async (req, reply) => {
+    const { email, password } = req.parsedBody;
 
-    if (!email || !password) {
-      throw new HttpError(400, "Email and password are required");
-    }
-    if (password.length < 8) {
-      throw new HttpError(400, "Password must be at least 8 characters");
-    }
     if (findUserByEmail(email)) {
       throw new HttpError(409, "Email already registered");
     }
@@ -86,8 +90,10 @@ export const authRoutes: PluginFunction = (app) => {
   });
 
   // POST /auth/login — Authenticate and return a JWT
-  app.post("/auth/login", async (req, reply) => {
-    const { email, password } = req.parsedBody as { email: string; password: string };
+  app.post("/auth/login", {
+    schema: { body: authCredentialsSchema },
+  }, async (req, reply) => {
+    const { email, password } = req.parsedBody;
 
     const user = findUserByEmail(email);
     if (!user || !(await verifyPassword(password, user.passwordHash))) {

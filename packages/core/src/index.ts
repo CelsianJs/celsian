@@ -67,7 +67,10 @@ export type {
   RouteMatch,
   RouteMethod,
   RouteOptions,
+  RouteSchemaOptions,
+  TypedCelsianRequest,
   TypedRouteHandler,
+  TypedSchemaHandler,
 } from "./types.js";
 export type { WSConnection, WSHandler } from "./websocket.js";
 export { createWSConnection, WSRegistry } from "./websocket.js";

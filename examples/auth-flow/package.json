@@ -10,7 +10,9 @@
   "dependencies": {
     "@celsian/core": "workspace:*",
     "@celsian/jwt": "workspace:*",
-    "@celsian/rate-limit": "workspace:*"
+    "@celsian/rate-limit": "workspace:*",
+    "@celsian/schema": "workspace:*",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
     "tsx": "^4.21.0",

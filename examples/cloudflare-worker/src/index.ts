@@ -9,6 +9,7 @@
 import type { CloudflareEnv } from "@celsian/adapter-cloudflare";
 import { createCloudflareHandler } from "@celsian/adapter-cloudflare";
 import { cors, createApp, security } from "@celsian/core";
+import { Type } from "@sinclair/typebox";
 
 // ─── Env Bindings ───────────────────────────────────────────────
 
@@ -65,7 +66,7 @@ app.get("/api/info", (req, reply) => {
 // GET /kv/:key — read a value from CACHE KV
 app.get("/kv/:key", async (req, reply) => {
   const env = (req as unknown as Record<string, unknown>).env as Env;
-  const { key } = req.params as { key: string };
+  const { key } = req.params;
 
   const value = await env.CACHE.get(key);
   if (value === null) {
@@ -83,16 +84,23 @@ app.get("/kv/:key", async (req, reply) => {
   }
 });
 
-// PUT /kv/:key — write a value to CACHE KV
-app.put("/kv/:key", async (req, reply) => {
+// PUT /kv/:key — write a value to CACHE KV (typed body from schema)
+const KVPutSchema = Type.Object({
+  value: Type.Unknown(),
+  ttl: Type.Optional(Type.Number({ minimum: 0 })),
+});
+
+app.put("/kv/:key", {
+  schema: { body: KVPutSchema },
+}, async (req, reply) => {
   const env = (req as unknown as Record<string, unknown>).env as Env;
   const ctx = (req as unknown as Record<string, unknown>).ctx as {
     waitUntil(p: Promise<unknown>): void;
   };
-  const { key } = req.params as { key: string };
-  const body = req.parsedBody as { value: unknown; ttl?: number } | undefined;
+  const { key } = req.params;
+  const body = req.parsedBody;
 
-  if (!body || body.value === undefined) {
+  if (body.value === undefined) {
     return reply.status(400).json({
       error: "Bad Request",
       message: 'Request body must include a "value" field',
@@ -122,7 +130,7 @@ app.delete("/kv/:key", async (req, reply) => {
   const ctx = (req as unknown as Record<string, unknown>).ctx as {
     waitUntil(p: Promise<unknown>): void;
   };
-  const { key } = req.params as { key: string };
+  const { key } = req.params;
 
   ctx.waitUntil(env.CACHE.delete(key));
 

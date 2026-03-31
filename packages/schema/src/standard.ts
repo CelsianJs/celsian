@@ -21,3 +21,17 @@ export interface StandardSchema<Input = unknown, Output = Input> {
   /** The TypeScript output type (phantom) */
   _output: Output;
 }
+
+/**
+ * Infer the output type from a schema.
+ * Supports StandardSchema (`_output`), Zod-style (`_output`),
+ * and TypeBox-style (`_type` / `static`) schemas.
+ */
+export type InferOutput<T> =
+  T extends StandardSchema<unknown, infer O>
+    ? O
+    : T extends { _output: infer O }
+      ? O
+      : T extends { _type: infer O }
+        ? O
+        : unknown;

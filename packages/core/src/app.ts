@@ -28,7 +28,9 @@ import type {
   RouteHandler,
   RouteManifestEntry,
   RouteOptions,
+  RouteSchemaOptions,
   TypedRouteHandler,
+  TypedSchemaHandler,
 } from "./types.js";
 import { type WSHandler, WSRegistry } from "./websocket.js";
 
@@ -128,24 +130,114 @@ export class CelsianApp {
     this.pluginContext.route(options);
   }
 
-  get<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void {
-    this.pluginContext.get(url, handler);
+  // Overloaded route methods: (path, handler) and (path, options, handler)
+  get<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void;
+  get<T extends string, TBody, TQuery>(
+    url: T,
+    options: RouteSchemaOptions<TBody, TQuery>,
+    handler: TypedSchemaHandler<ExtractRouteParams<T>>,
+  ): void;
+  get<T extends string>(
+    url: T,
+    handlerOrOpts: TypedRouteHandler<ExtractRouteParams<T>> | RouteSchemaOptions,
+    handler?: TypedSchemaHandler,
+  ): void {
+    if (typeof handlerOrOpts === "function") {
+      this.pluginContext.get(url, handlerOrOpts);
+    } else {
+      this._routeWithSchema("GET", url, handlerOrOpts, handler!);
+    }
   }
 
-  post<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void {
-    this.pluginContext.post(url, handler);
+  post<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void;
+  post<T extends string, TBody, TQuery>(
+    url: T,
+    options: RouteSchemaOptions<TBody, TQuery>,
+    handler: TypedSchemaHandler<ExtractRouteParams<T>>,
+  ): void;
+  post<T extends string>(
+    url: T,
+    handlerOrOpts: TypedRouteHandler<ExtractRouteParams<T>> | RouteSchemaOptions,
+    handler?: TypedSchemaHandler,
+  ): void {
+    if (typeof handlerOrOpts === "function") {
+      this.pluginContext.post(url, handlerOrOpts);
+    } else {
+      this._routeWithSchema("POST", url, handlerOrOpts, handler!);
+    }
   }
 
-  put<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void {
-    this.pluginContext.put(url, handler);
+  put<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void;
+  put<T extends string, TBody, TQuery>(
+    url: T,
+    options: RouteSchemaOptions<TBody, TQuery>,
+    handler: TypedSchemaHandler<ExtractRouteParams<T>>,
+  ): void;
+  put<T extends string>(
+    url: T,
+    handlerOrOpts: TypedRouteHandler<ExtractRouteParams<T>> | RouteSchemaOptions,
+    handler?: TypedSchemaHandler,
+  ): void {
+    if (typeof handlerOrOpts === "function") {
+      this.pluginContext.put(url, handlerOrOpts);
+    } else {
+      this._routeWithSchema("PUT", url, handlerOrOpts, handler!);
+    }
   }
 
-  patch<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void {
-    this.pluginContext.patch(url, handler);
+  patch<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void;
+  patch<T extends string, TBody, TQuery>(
+    url: T,
+    options: RouteSchemaOptions<TBody, TQuery>,
+    handler: TypedSchemaHandler<ExtractRouteParams<T>>,
+  ): void;
+  patch<T extends string>(
+    url: T,
+    handlerOrOpts: TypedRouteHandler<ExtractRouteParams<T>> | RouteSchemaOptions,
+    handler?: TypedSchemaHandler,
+  ): void {
+    if (typeof handlerOrOpts === "function") {
+      this.pluginContext.patch(url, handlerOrOpts);
+    } else {
+      this._routeWithSchema("PATCH", url, handlerOrOpts, handler!);
+    }
   }
 
-  delete<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void {
-    this.pluginContext.delete(url, handler);
+  delete<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void;
+  delete<T extends string, TBody, TQuery>(
+    url: T,
+    options: RouteSchemaOptions<TBody, TQuery>,
+    handler: TypedSchemaHandler<ExtractRouteParams<T>>,
+  ): void;
+  delete<T extends string>(
+    url: T,
+    handlerOrOpts: TypedRouteHandler<ExtractRouteParams<T>> | RouteSchemaOptions,
+    handler?: TypedSchemaHandler,
+  ): void {
+    if (typeof handlerOrOpts === "function") {
+      this.pluginContext.delete(url, handlerOrOpts);
+    } else {
+      this._routeWithSchema("DELETE", url, handlerOrOpts, handler!);
+    }
+  }
+
+  /** Internal: register a route with schema options from the typed overload */
+  private _routeWithSchema(
+    method: import("./types.js").RouteMethod,
+    url: string,
+    opts: RouteSchemaOptions,
+    handler: TypedSchemaHandler,
+  ): void {
+    this.pluginContext.route({
+      method,
+      url,
+      // Safe cast: at runtime, the request object will have parsedBody/parsedQuery
+      // populated by validateRequest before the handler is called
+      handler: handler as unknown as RouteHandler,
+      schema: opts.schema,
+      onRequest: opts.onRequest,
+      preHandler: opts.preHandler,
+    });
   }
 
   addHook(name: "onError", handler: OnErrorHandler): void;
@@ -652,6 +744,7 @@ export class CelsianApp {
       if (!result.success) {
         throw new ValidationError(result.issues ?? []);
       }
+      (request as Record<string, unknown>).parsedQuery = result.data;
     }
 
     if (schema.params) {

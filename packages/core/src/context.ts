@@ -98,20 +98,40 @@ export class EncapsulationContext {
         }
       },
 
-      get(url: string, handler: RouteHandler) {
-        addRoute("GET", url, handler);
+      get(url: string, handlerOrOpts: RouteHandler | Record<string, unknown>, handler?: RouteHandler) {
+        if (typeof handlerOrOpts === "function") {
+          addRoute("GET", url, handlerOrOpts);
+        } else {
+          addRoute("GET", url, handler as RouteHandler, handlerOrOpts as Partial<RouteOptions>);
+        }
       },
-      post(url: string, handler: RouteHandler) {
-        addRoute("POST", url, handler);
+      post(url: string, handlerOrOpts: RouteHandler | Record<string, unknown>, handler?: RouteHandler) {
+        if (typeof handlerOrOpts === "function") {
+          addRoute("POST", url, handlerOrOpts);
+        } else {
+          addRoute("POST", url, handler as RouteHandler, handlerOrOpts as Partial<RouteOptions>);
+        }
       },
-      put(url: string, handler: RouteHandler) {
-        addRoute("PUT", url, handler);
+      put(url: string, handlerOrOpts: RouteHandler | Record<string, unknown>, handler?: RouteHandler) {
+        if (typeof handlerOrOpts === "function") {
+          addRoute("PUT", url, handlerOrOpts);
+        } else {
+          addRoute("PUT", url, handler as RouteHandler, handlerOrOpts as Partial<RouteOptions>);
+        }
       },
-      patch(url: string, handler: RouteHandler) {
-        addRoute("PATCH", url, handler);
+      patch(url: string, handlerOrOpts: RouteHandler | Record<string, unknown>, handler?: RouteHandler) {
+        if (typeof handlerOrOpts === "function") {
+          addRoute("PATCH", url, handlerOrOpts);
+        } else {
+          addRoute("PATCH", url, handler as RouteHandler, handlerOrOpts as Partial<RouteOptions>);
+        }
       },
-      delete(url: string, handler: RouteHandler) {
-        addRoute("DELETE", url, handler);
+      delete(url: string, handlerOrOpts: RouteHandler | Record<string, unknown>, handler?: RouteHandler) {
+        if (typeof handlerOrOpts === "function") {
+          addRoute("DELETE", url, handlerOrOpts);
+        } else {
+          addRoute("DELETE", url, handler as RouteHandler, handlerOrOpts as Partial<RouteOptions>);
+        }
       },
 
       addHook(name: HookName, handler: HookHandler | OnErrorHandler) {

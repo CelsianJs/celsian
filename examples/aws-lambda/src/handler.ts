@@ -1,5 +1,6 @@
 import { createLambdaHandler } from "@celsian/adapter-lambda";
 import { createApp } from "@celsian/core";
+import { Type } from "@sinclair/typebox";
 
 // ─── App Setup ───
 
@@ -45,20 +46,20 @@ app.get("/users/:id", (req, reply) => {
   });
 });
 
-app.post("/users", (req, reply) => {
-  const body = req.parsedBody as { name?: string; email?: string } | undefined;
+const CreateUserSchema = Type.Object({
+  name: Type.String({ minLength: 1 }),
+  email: Type.String({ minLength: 1 }),
+});
 
-  if (!body?.name || !body?.email) {
-    return reply.status(400).json({
-      error: "Missing required fields: name, email",
-      statusCode: 400,
-    });
-  }
+app.post("/users", {
+  schema: { body: CreateUserSchema },
+}, (req, reply) => {
+  const { name, email } = req.parsedBody;
 
   return reply.status(201).json({
     id: Math.floor(Math.random() * 10000),
-    name: body.name,
-    email: body.email,
+    name,
+    email,
     createdAt: new Date().toISOString(),
   });
 });

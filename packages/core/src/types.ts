@@ -1,5 +1,7 @@
 // @celsian/core — Type definitions
 
+import type { InferOutput } from "@celsian/schema";
+
 // ─── Route Parameter Extraction (Hono/Elysia-style) ───
 
 /**
@@ -67,8 +69,8 @@ export interface CelsianReply {
   cookie(name: string, value: string, options?: import("./cookie.js").CookieOptions): CelsianReply;
   /** Clear a cookie by setting maxAge=0 */
   clearCookie(name: string, options?: import("./cookie.js").CookieOptions): CelsianReply;
-  /** Read a file and send it with the correct MIME type */
-  sendFile(filePath: string): Promise<Response>;
+  /** Read a file and send it with the correct MIME type. When options.root is set, filePath is resolved relative to root and path traversal is rejected with 403. */
+  sendFile(filePath: string, options?: { root?: string }): Promise<Response>;
   /** Send a file as a download with Content-Disposition: attachment */
   download(filePath: string, filename?: string): Promise<Response>;
   /** Has a response already been sent? */
@@ -98,6 +100,43 @@ export type RouteHandler = (
 /** Route handler with typed params inferred from route string */
 export type TypedRouteHandler<TParams = Record<string, string>> = (
   request: CelsianRequest<TParams>,
+  reply: CelsianReply,
+) => Response | Promise<Response> | void | Promise<void>;
+
+// ─── Typed Schema Route Support ───
+
+/** Schema options for route registration with type inference */
+export interface RouteSchemaOptions<TBody = unknown, TQuery = unknown> {
+  schema?: {
+    body?: TBody;
+    querystring?: TQuery;
+    params?: unknown;
+    response?: Record<number, unknown>;
+  };
+  onRequest?: HookHandler | HookHandler[];
+  preHandler?: HookHandler | HookHandler[];
+}
+
+/**
+ * CelsianRequest with typed parsedBody and parsedQuery inferred from schemas.
+ * Extends the base CelsianRequest — used in typed route overloads.
+ */
+export interface TypedCelsianRequest<
+  TParams = Record<string, string>,
+  TBody = unknown,
+  TQuery = Record<string, string | string[]>,
+> extends CelsianRequest<TParams> {
+  parsedBody: TBody;
+  parsedQuery: TQuery;
+}
+
+/** Route handler with typed params, body, and query inferred from schemas */
+export type TypedSchemaHandler<
+  TParams = Record<string, string>,
+  TBody = unknown,
+  TQuery = Record<string, string | string[]>,
+> = (
+  request: TypedCelsianRequest<TParams, TBody, TQuery>,
   reply: CelsianReply,
 ) => Response | Promise<Response> | void | Promise<void>;
 
@@ -156,11 +195,62 @@ export interface PluginOptions {
 export interface PluginContext {
   register(plugin: PluginFunction, options?: PluginOptions): Promise<void>;
   route(options: RouteOptions): void;
+
+  // Overloaded: (path, handler) for backwards compat, (path, options, handler) for typed schemas
   get<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void;
+  get<T extends string, TBody, TQuery>(
+    url: T,
+    options: RouteSchemaOptions<TBody, TQuery>,
+    handler: TypedSchemaHandler<
+      ExtractRouteParams<T>,
+      InferOutput<TBody>,
+      TQuery extends unknown ? Record<string, string | string[]> : InferOutput<TQuery>
+    >,
+  ): void;
+
   post<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void;
+  post<T extends string, TBody, TQuery>(
+    url: T,
+    options: RouteSchemaOptions<TBody, TQuery>,
+    handler: TypedSchemaHandler<
+      ExtractRouteParams<T>,
+      InferOutput<TBody>,
+      TQuery extends unknown ? Record<string, string | string[]> : InferOutput<TQuery>
+    >,
+  ): void;
+
   put<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void;
+  put<T extends string, TBody, TQuery>(
+    url: T,
+    options: RouteSchemaOptions<TBody, TQuery>,
+    handler: TypedSchemaHandler<
+      ExtractRouteParams<T>,
+      InferOutput<TBody>,
+      TQuery extends unknown ? Record<string, string | string[]> : InferOutput<TQuery>
+    >,
+  ): void;
+
   patch<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void;
+  patch<T extends string, TBody, TQuery>(
+    url: T,
+    options: RouteSchemaOptions<TBody, TQuery>,
+    handler: TypedSchemaHandler<
+      ExtractRouteParams<T>,
+      InferOutput<TBody>,
+      TQuery extends unknown ? Record<string, string | string[]> : InferOutput<TQuery>
+    >,
+  ): void;
+
   delete<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void;
+  delete<T extends string, TBody, TQuery>(
+    url: T,
+    options: RouteSchemaOptions<TBody, TQuery>,
+    handler: TypedSchemaHandler<
+      ExtractRouteParams<T>,
+      InferOutput<TBody>,
+      TQuery extends unknown ? Record<string, string | string[]> : InferOutput<TQuery>
+    >,
+  ): void;
 
   addHook(name: "onRequest", handler: HookHandler): void;
   addHook(name: "preParsing", handler: HookHandler): void;

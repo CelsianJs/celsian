@@ -38,10 +38,27 @@ export const restApiTemplate = {
     null,
     2,
   ),
-  "src/index.ts": `import { createApp, serve } from 'celsian';
+  "src/index.ts": `import { createApp, serve, cors, security } from 'celsian';
 import { Type } from '@sinclair/typebox';
 
 const app = createApp();
+
+// ─── Security (CORS + security headers) ───
+
+const CORS_ORIGIN = process.env.CORS_ORIGIN ?? 'http://localhost:3000';
+
+await app.register(cors({
+  origin: CORS_ORIGIN,
+  credentials: true,
+  maxAge: 86400,
+}));
+
+await app.register(security({
+  hsts: { maxAge: 31536000, includeSubDomains: true },
+  referrerPolicy: 'strict-origin-when-cross-origin',
+}));
+
+// ─── Routes ───
 
 const CreateUserSchema = Type.Object({
   name: Type.String(),
@@ -55,16 +72,13 @@ app.get('/users', (req, reply) => {
   return reply.json(users);
 });
 
-app.route({
-  method: 'POST',
-  url: '/users',
+app.post('/users', {
   schema: { body: CreateUserSchema },
-  handler(req, reply) {
-    const { name, email } = req.parsedBody as { name: string; email: string };
-    const user = { id: nextId++, name, email };
-    users.push(user);
-    return reply.status(201).json(user);
-  },
+}, (req, reply) => {
+  const { name, email } = req.parsedBody;
+  const user = { id: nextId++, name, email };
+  users.push(user);
+  return reply.status(201).json(user);
 });
 
 app.get('/users/:id', (req, reply) => {

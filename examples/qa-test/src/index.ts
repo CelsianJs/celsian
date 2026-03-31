@@ -119,14 +119,10 @@ const CreateUserSchema = Type.Object({
   age: Type.Optional(Type.Number({ minimum: 0 })),
 });
 
-app.route({
-  method: "POST",
-  url: "/api/users",
+app.post("/api/users", {
   schema: { body: CreateUserSchema },
-  handler(req, reply) {
-    const body = req.parsedBody as { name: string; email: string; age?: number };
-    return reply.status(201).json({ id: 1, ...body });
-  },
+}, (req, reply) => {
+  return reply.status(201).json({ id: 1, ...req.parsedBody });
 });
 
 // 7. Cookie handling
@@ -152,13 +148,18 @@ app.get("/api/cookies/clear", (_req, reply) => {
 });
 
 // 8. JWT sign and verify
-app.post("/api/auth/login", async (req, reply) => {
-  const body = req.parsedBody as { username: string } | undefined;
+const LoginSchema = Type.Object({
+  username: Type.String(),
+});
+
+app.post("/api/auth/login", {
+  schema: { body: LoginSchema },
+}, async (req, reply) => {
   const jwtInstance = app.getDecoration("jwt") as any;
   if (!jwtInstance) {
     return reply.status(500).json({ error: "JWT not configured (getDecoration returned undefined)" });
   }
-  const token = await jwtInstance.sign({ sub: body?.username ?? "anonymous", role: "user" }, { expiresIn: "1h" });
+  const token = await jwtInstance.sign({ sub: req.parsedBody.username ?? "anonymous", role: "user" }, { expiresIn: "1h" });
   return reply.json({ token });
 });
 
@@ -256,9 +257,15 @@ app.task({
   timeout: 5000,
 });
 
-app.post("/api/tasks/enqueue", async (req, reply) => {
-  const body = req.parsedBody as { to: string; subject: string };
-  const taskId = await app.enqueue("send-email", body);
+const EnqueueEmailSchema = Type.Object({
+  to: Type.String(),
+  subject: Type.String(),
+});
+
+app.post("/api/tasks/enqueue", {
+  schema: { body: EnqueueEmailSchema },
+}, async (req, reply) => {
+  const taskId = await app.enqueue("send-email", req.parsedBody);
   return reply.status(202).json({ taskId, message: "Task enqueued" });
 });
 
@@ -285,13 +292,13 @@ app.get("/api/cron/status", (_req, reply) => {
 // 20. RPC procedures
 const appRouter = router({
   greeting: {
-    hello: procedure.input(Type.Object({ name: Type.String() })).query(({ input }) => {
-      return { message: `Hello, ${(input as any).name}!` };
+    hello: procedure.input<{ name: string }>(Type.Object({ name: Type.String() })).query(({ input }) => {
+      return { message: `Hello, ${input.name}!` };
     }),
   },
   math: {
-    add: procedure.input(Type.Object({ a: Type.Number(), b: Type.Number() })).mutation(({ input }) => {
-      return { result: (input as any).a + (input as any).b };
+    add: procedure.input<{ a: number; b: number }>(Type.Object({ a: Type.Number(), b: Type.Number() })).mutation(({ input }) => {
+      return { result: input.a + input.b };
     }),
   },
 });

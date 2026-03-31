@@ -15,16 +15,13 @@ app.get("/users", (_req, reply) => {
   return reply.json(users);
 });
 
-app.route({
-  method: "POST",
-  url: "/users",
+app.post("/users", {
   schema: { body: CreateUserSchema },
-  handler(req, reply) {
-    const { name, email } = req.parsedBody as { name: string; email: string };
-    const user = { id: nextId++, name, email };
-    users.push(user);
-    return reply.status(201).json(user);
-  },
+}, (req, reply) => {
+  const { name, email } = req.parsedBody;
+  const user = { id: nextId++, name, email };
+  users.push(user);
+  return reply.status(201).json(user);
 });
 
 app.get("/users/:id", (req, reply) => {

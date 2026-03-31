@@ -10,7 +10,9 @@
   },
   "dependencies": {
     "@celsian/core": "workspace:*",
-    "@celsian/adapter-cloudflare": "workspace:*"
+    "@celsian/adapter-cloudflare": "workspace:*",
+    "@celsian/schema": "workspace:*",
+    "@sinclair/typebox": "^0.34.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241205.0",

@@ -69,11 +69,21 @@ const PASSWORD_SALT =
     throw new Error("Set PASSWORD_SALT env var");
   })();
 
-app.post("/api/auth/register", async (req, reply) => {
-  const { email, name, password } = req.parsedBody as any;
-  if (!email || !password || !name) {
-    return reply.status(400).json({ error: "email, name, and password required" });
-  }
+const RegisterSchema = z.object({
+  email: z.string().email(),
+  name: z.string().min(1),
+  password: z.string().min(1),
+});
+
+const LoginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+});
+
+app.post("/api/auth/register", {
+  schema: { body: RegisterSchema },
+}, async (req, reply) => {
+  const { email, name, password } = req.parsedBody;
   if (users.has(email)) {
     return reply.status(409).json({ error: "User already exists" });
   }
@@ -91,8 +101,10 @@ app.post("/api/auth/register", async (req, reply) => {
   return reply.status(201).json({ id, email, name });
 });
 
-app.post("/api/auth/login", async (req, reply) => {
-  const { email, password } = req.parsedBody as any;
+app.post("/api/auth/login", {
+  schema: { body: LoginSchema },
+}, async (req, reply) => {
+  const { email, password } = req.parsedBody;
   const user = users.get(email);
   if (!user) return reply.status(401).json({ error: "Invalid credentials" });
 
@@ -143,9 +155,23 @@ app.get("/api/tasks/:id", (req, reply) => {
   return reply.json(task);
 });
 
-app.post("/api/tasks", async (req, reply) => {
-  const { title, priority = "medium", assignee } = req.parsedBody as any;
-  if (!title) return reply.status(400).json({ error: "title is required" });
+const CreateTaskSchema = z.object({
+  title: z.string().min(1, "title is required"),
+  priority: z.enum(["low", "medium", "high"]).default("medium"),
+  assignee: z.string().optional(),
+});
+
+const UpdateTaskSchema = z.object({
+  title: z.string().min(1).optional(),
+  status: z.enum(["todo", "in-progress", "done"]).optional(),
+  priority: z.enum(["low", "medium", "high"]).optional(),
+  assignee: z.string().optional(),
+});
+
+app.post("/api/tasks", {
+  schema: { body: CreateTaskSchema },
+}, async (req, reply) => {
+  const { title, priority, assignee } = req.parsedBody;
 
   const task: Task = {
     id: crypto.randomUUID(),
@@ -166,11 +192,13 @@ app.post("/api/tasks", async (req, reply) => {
   return reply.status(201).json(task);
 });
 
-app.put("/api/tasks/:id", async (req, reply) => {
+app.put("/api/tasks/:id", {
+  schema: { body: UpdateTaskSchema },
+}, async (req, reply) => {
   const task = tasks.get(req.params.id);
   if (!task) return reply.status(404).json({ error: "Task not found" });
 
-  const { title, status, priority, assignee } = req.parsedBody as any;
+  const { title, status, priority, assignee } = req.parsedBody;
   if (title) task.title = title;
   if (status) task.status = status;
   if (priority) task.priority = priority;

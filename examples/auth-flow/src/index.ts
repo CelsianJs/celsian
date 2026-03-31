@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { cors, createApp, HttpError, security, serve } from "@celsian/core";
 import { createJWTGuard, type JWTNamespace, jwt } from "@celsian/jwt";
 import { rateLimit } from "@celsian/rate-limit";
+import { z } from "zod";
 
 const scryptAsync = promisify(scrypt);
 
@@ -57,18 +58,23 @@ export function createAuthApp() {
 
   const jwtGuard = createJWTGuard({ secret: JWT_SECRET });
 
+  // ─── Validation Schemas ───
+
+  const CredentialsSchema = z.object({
+    email: z.string().email(),
+    password: z.string().min(8, "Password must be at least 8 characters"),
+  });
+
+  const RefreshTokenSchema = z.object({
+    refreshToken: z.string().min(1),
+  });
+
   // ─── Public Routes ───
 
-  app.post("/auth/register", async (req, reply) => {
-    const { email, password } = req.parsedBody as { email: string; password: string };
-
-    if (!email || !password) {
-      throw new HttpError(400, "Email and password are required");
-    }
-
-    if (password.length < 8) {
-      throw new HttpError(400, "Password must be at least 8 characters");
-    }
+  app.post("/auth/register", {
+    schema: { body: CredentialsSchema },
+  }, async (req, reply) => {
+    const { email, password } = req.parsedBody;
 
     // Check duplicate
     for (const user of users.values()) {
@@ -100,8 +106,10 @@ export function createAuthApp() {
     });
   });
 
-  app.post("/auth/login", async (req, reply) => {
-    const { email, password } = req.parsedBody as { email: string; password: string };
+  app.post("/auth/login", {
+    schema: { body: CredentialsSchema },
+  }, async (req, reply) => {
+    const { email, password } = req.parsedBody;
 
     let foundUser: User | undefined;
     for (const user of users.values()) {
@@ -130,8 +138,10 @@ export function createAuthApp() {
     });
   });
 
-  app.post("/auth/refresh", async (req, reply) => {
-    const { refreshToken } = req.parsedBody as { refreshToken: string };
+  app.post("/auth/refresh", {
+    schema: { body: RefreshTokenSchema },
+  }, async (req, reply) => {
+    const { refreshToken } = req.parsedBody;
 
     const stored = refreshTokens.get(refreshToken);
     if (!stored || stored.expiresAt < Date.now()) {
@@ -162,8 +172,10 @@ export function createAuthApp() {
     });
   });
 
-  app.post("/auth/logout", async (req, reply) => {
-    const { refreshToken } = req.parsedBody as { refreshToken: string };
+  app.post("/auth/logout", {
+    schema: { body: RefreshTokenSchema },
+  }, async (req, reply) => {
+    const { refreshToken } = req.parsedBody;
     refreshTokens.delete(refreshToken);
     return reply.json({ message: "Logged out" });
   });

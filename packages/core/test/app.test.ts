@@ -321,4 +321,177 @@ describe("CelsianApp", () => {
     const response = await app.handle(new Request("http://localhost/nope"));
     expect(response.status).toBe(404);
   });
+
+  // ─── Schema Overload (3-arg) Tests ───
+
+  it("should accept (path, schemaOptions, handler) overload and validate body", async () => {
+    const app = createApp();
+
+    // Use a Zod-like mock schema for validation
+    const bodySchema = {
+      safeParse(input: unknown) {
+        const data = input as Record<string, unknown>;
+        if (typeof data?.name === "string") {
+          return { success: true, data };
+        }
+        return {
+          success: false,
+          error: { issues: [{ message: "name must be a string", path: ["name"] }] },
+        };
+      },
+      parse(input: unknown) {
+        return input;
+      },
+    };
+
+    app.post(
+      "/users",
+      {
+        schema: { body: bodySchema },
+      },
+      (req, reply) => {
+        return reply.status(201).json({ created: req.parsedBody });
+      },
+    );
+
+    // Valid body
+    const valid = await app.handle(
+      new Request("http://localhost/users", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Alice" }),
+      }),
+    );
+    expect(valid.status).toBe(201);
+    const body = await valid.json();
+    expect(body).toEqual({ created: { name: "Alice" } });
+
+    // Invalid body — should return 400 from schema validation
+    const invalid = await app.handle(
+      new Request("http://localhost/users", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: 123 }),
+      }),
+    );
+    expect(invalid.status).toBe(400);
+  });
+
+  it("should support schema overload with route params", async () => {
+    const app = createApp();
+
+    const bodySchema = {
+      safeParse(input: unknown) {
+        return { success: true, data: input };
+      },
+      parse(input: unknown) {
+        return input;
+      },
+    };
+
+    app.put(
+      "/users/:id",
+      {
+        schema: { body: bodySchema },
+      },
+      (req, reply) => {
+        return reply.json({ id: req.params.id, body: req.parsedBody });
+      },
+    );
+
+    const response = await app.handle(
+      new Request("http://localhost/users/42", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Updated" }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toEqual({ id: "42", body: { name: "Updated" } });
+  });
+
+  it("should support schema overload with onRequest hook", async () => {
+    const app = createApp();
+    let hookRan = false;
+
+    const bodySchema = {
+      safeParse(input: unknown) {
+        return { success: true, data: input };
+      },
+      parse(input: unknown) {
+        return input;
+      },
+    };
+
+    app.post(
+      "/hooked",
+      {
+        schema: { body: bodySchema },
+        onRequest: () => {
+          hookRan = true;
+        },
+      },
+      (req, reply) => {
+        return reply.json({ received: req.parsedBody });
+      },
+    );
+
+    const response = await app.handle(
+      new Request("http://localhost/hooked", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ test: true }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(hookRan).toBe(true);
+  });
+
+  it("should still work with old 2-arg signature alongside new 3-arg", async () => {
+    const app = createApp();
+
+    // Old API
+    app.post("/old", (req, reply) => {
+      return reply.json({ old: true, body: req.parsedBody });
+    });
+
+    // New API
+    const bodySchema = {
+      safeParse(input: unknown) {
+        return { success: true, data: input };
+      },
+      parse(input: unknown) {
+        return input;
+      },
+    };
+
+    app.post(
+      "/new",
+      { schema: { body: bodySchema } },
+      (req, reply) => {
+        return reply.json({ new: true, body: req.parsedBody });
+      },
+    );
+
+    const oldRes = await app.handle(
+      new Request("http://localhost/old", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ data: "old" }),
+      }),
+    );
+    expect(oldRes.status).toBe(200);
+    expect(await oldRes.json()).toEqual({ old: true, body: { data: "old" } });
+
+    const newRes = await app.handle(
+      new Request("http://localhost/new", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ data: "new" }),
+      }),
+    );
+    expect(newRes.status).toBe(200);
+    expect(await newRes.json()).toEqual({ new: true, body: { data: "new" } });
+  });
 });

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { createProcedure, procedure } from "../src/procedure.js";
 
 describe("ProcedureBuilder", () => {
@@ -85,5 +85,56 @@ describe("ProcedureBuilder", () => {
 
     expect(proc1.middlewares).toHaveLength(1);
     expect(proc2.middlewares).toHaveLength(1);
+  });
+});
+
+// ─── RPC Type Inference Tests ───
+
+describe("RPC procedure type inference", () => {
+  it("should type input in query handler via .input<T>()", () => {
+    const zodLike = {
+      safeParse(input: unknown) {
+        return { success: true, data: input };
+      },
+      parse(input: unknown) {
+        return input;
+      },
+    };
+
+    const proc = procedure.input<{ name: string }>(zodLike).query(async ({ input }) => {
+      expectTypeOf(input).toEqualTypeOf<{ name: string }>();
+      return { greeting: `Hello, ${input.name}` };
+    });
+
+    expectTypeOf(proc.type).toEqualTypeOf<"query">();
+  });
+
+  it("should type output in mutation handler via .output<T>()", () => {
+    const zodLike = {
+      safeParse(input: unknown) {
+        return { success: true, data: input };
+      },
+      parse(input: unknown) {
+        return input;
+      },
+    };
+
+    const proc = procedure
+      .input<{ a: number; b: number }>(zodLike)
+      .output<{ result: number }>(zodLike)
+      .mutation(async ({ input }) => {
+        expectTypeOf(input).toEqualTypeOf<{ a: number; b: number }>();
+        return { result: input.a + input.b };
+      });
+
+    expectTypeOf(proc.type).toEqualTypeOf<"mutation">();
+  });
+
+  it("should default to unknown input when no .input() is called", () => {
+    const proc = procedure.query(async ({ input }) => {
+      expectTypeOf(input).toEqualTypeOf<unknown>();
+      return { ok: true };
+    });
+    expect(proc.inputSchema).toBeUndefined();
   });
 });
