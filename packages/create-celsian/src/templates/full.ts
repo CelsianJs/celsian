@@ -57,7 +57,7 @@ export const fullTemplate: Record<string, string> = {
   ".env.example": `# Server
 PORT=3000
 HOST=0.0.0.0
-CORS_ORIGIN=*
+CORS_ORIGIN=http://localhost:3000
 
 # Auth
 JWT_SECRET=change-me-to-a-real-secret-at-least-32-chars
@@ -155,6 +155,15 @@ import type { PluginFunction, HookHandler } from '@celsian/core';
 
 const JWT_SECRET = process.env.JWT_SECRET ?? 'dev-secret-change-me';
 
+// Refuse to start in production with the default dev secret
+if (process.env.NODE_ENV === 'production' && JWT_SECRET === 'dev-secret-change-me') {
+  throw new Error(
+    '[celsian] FATAL: JWT_SECRET is set to the default dev value. ' +
+    'Set a strong, unique JWT_SECRET environment variable before running in production. ' +
+    'Generate one with: node -e "console.log(require(\\'crypto\\').randomBytes(32).toString(\\'base64\\'))"'
+  );
+}
+
 /**
  * Register the JWT plugin. After this, \`app.jwt\` is available for
  * signing and verifying tokens.
@@ -180,12 +189,23 @@ import { cors, security, csrf } from '@celsian/core';
 import { rateLimit } from '@celsian/rate-limit';
 import type { PluginFunction } from '@celsian/core';
 
-const CORS_ORIGIN = process.env.CORS_ORIGIN ?? '*';
+const CORS_ORIGIN = process.env.CORS_ORIGIN ?? 'http://localhost:3000';
 
 /**
  * Register all security-related plugins in one call.
  */
 export function securityPlugins(): PluginFunction[] {
+  // WARNING: credentials:true is incompatible with origin:'*'.
+  // Browsers will reject Set-Cookie headers when the CORS origin is a wildcard.
+  // Always set CORS_ORIGIN to a specific origin (e.g. 'http://localhost:3000')
+  // when credentials:true is enabled.
+  if (CORS_ORIGIN === '*') {
+    console.warn(
+      '[celsian] WARNING: CORS_ORIGIN=* with credentials:true is insecure and will not work in browsers. ' +
+      'Set CORS_ORIGIN to a specific origin.'
+    );
+  }
+
   return [
     // CORS — allow cross-origin requests
     cors({

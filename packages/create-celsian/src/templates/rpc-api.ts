@@ -39,11 +39,28 @@ export const rpcApiTemplate = {
     null,
     2,
   ),
-  "src/index.ts": `import { createApp, serve } from 'celsian';
+  "src/index.ts": `import { createApp, serve, cors, security } from 'celsian';
 import { procedure, router, RPCHandler } from '@celsian/rpc';
 import { Type } from '@sinclair/typebox';
 
 const app = createApp();
+
+// ─── Security (CORS + security headers) ───
+
+const CORS_ORIGIN = process.env.CORS_ORIGIN ?? 'http://localhost:3000';
+
+await app.register(cors({
+  origin: CORS_ORIGIN,
+  credentials: true,
+  maxAge: 86400,
+}));
+
+await app.register(security({
+  hsts: { maxAge: 31536000, includeSubDomains: true },
+  referrerPolicy: 'strict-origin-when-cross-origin',
+}));
+
+// ─── Routes ───
 
 const appRouter = router({
   greeting: {
