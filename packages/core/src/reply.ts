@@ -153,14 +153,30 @@ export function createReply(): CelsianReply {
       return reply;
     },
 
-    async sendFile(filePath: string): Promise<Response> {
+    async sendFile(filePath: string, options?: { root?: string }): Promise<Response> {
       sent = true;
       try {
         // Lazy import — keeps reply.ts edge-compatible when sendFile isn't used
         const { readFile, stat } = await import("node:fs/promises");
         const { extname, resolve } = await import("node:path");
-        // Resolve to absolute path to prevent path traversal
-        const resolvedPath = resolve(filePath);
+
+        let resolvedPath: string;
+        if (options?.root) {
+          // When root is provided, resolve filePath relative to root and
+          // verify the result stays within root to prevent path traversal.
+          const resolvedRoot = resolve(options.root);
+          resolvedPath = resolve(resolvedRoot, filePath);
+          if (!resolvedPath.startsWith(resolvedRoot)) {
+            return new Response(JSON.stringify({ error: "Forbidden", statusCode: 403, code: "PATH_TRAVERSAL" }), {
+              status: 403,
+              headers: buildHeaders({ "content-type": "application/json; charset=utf-8" }),
+            });
+          }
+        } else {
+          // Resolve to absolute path to prevent path traversal
+          resolvedPath = resolve(filePath);
+        }
+
         await stat(resolvedPath);
         const data = await readFile(resolvedPath);
         const ext = extname(resolvedPath).toLowerCase();

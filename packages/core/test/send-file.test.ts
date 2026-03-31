@@ -73,6 +73,50 @@ describe("reply.sendFile", () => {
   });
 });
 
+describe("reply.sendFile with root option", () => {
+  it("should serve a file relative to root", async () => {
+    const app = createApp();
+    app.get("/file", async (_req, reply) => reply.sendFile("hello.txt", { root: TMP_DIR }));
+
+    const response = await app.handle(new Request("http://localhost/file"));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+    const body = await response.text();
+    expect(body).toBe("Hello World");
+  });
+
+  it("should return 403 for path traversal attempts", async () => {
+    const app = createApp();
+    app.get("/file", async (_req, reply) => reply.sendFile("../../etc/passwd", { root: TMP_DIR }));
+
+    const response = await app.handle(new Request("http://localhost/file"));
+    expect(response.status).toBe(403);
+    const body = await response.json();
+    expect(body.code).toBe("PATH_TRAVERSAL");
+  });
+
+  it("should return 403 for absolute path traversal outside root", async () => {
+    const app = createApp();
+    app.get("/file", async (_req, reply) => reply.sendFile("/etc/passwd", { root: TMP_DIR }));
+
+    const response = await app.handle(new Request("http://localhost/file"));
+    // /etc/passwd won't start with TMP_DIR, so this should be 403
+    expect(response.status).toBe(403);
+    const body = await response.json();
+    expect(body.code).toBe("PATH_TRAVERSAL");
+  });
+
+  it("should return 404 for non-existent file within root", async () => {
+    const app = createApp();
+    app.get("/file", async (_req, reply) => reply.sendFile("nonexistent.txt", { root: TMP_DIR }));
+
+    const response = await app.handle(new Request("http://localhost/file"));
+    expect(response.status).toBe(404);
+    const body = await response.json();
+    expect(body.code).toBe("NOT_FOUND");
+  });
+});
+
 describe("reply.download", () => {
   it("should send file with Content-Disposition: attachment", async () => {
     const app = createApp();

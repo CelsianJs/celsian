@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
-import { openapi } from "../src/plugins/openapi.js";
+import { escapeHtml, openapi } from "../src/plugins/openapi.js";
 
 describe("OpenAPI Plugin", () => {
   it("should generate spec with registered routes", async () => {
@@ -240,5 +240,55 @@ describe("OpenAPI Plugin", () => {
     // Routes without schemas should have at least a default 200 response
     expect(spec.paths["/simple"].get.responses["200"]).toBeDefined();
     expect(spec.paths["/simple/{id}"].delete.responses["200"]).toBeDefined();
+  });
+
+  it("should HTML-escape title to prevent XSS in Swagger UI", async () => {
+    const xssTitle = '<script>alert("xss")</script>';
+    const app = createApp();
+    app.get("/test", (_req, reply) => reply.json({ ok: true }));
+    await app.register(openapi({ title: xssTitle }));
+
+    const response = await app.inject({ url: "/docs" });
+    const html = await response.text();
+
+    // The raw <script> tag must NOT appear in the output
+    expect(html).not.toContain("<script>alert");
+    // The escaped version must appear
+    expect(html).toContain("&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;");
+  });
+
+  it("should HTML-escape jsonPath to prevent XSS in Swagger UI", async () => {
+    const xssPath = "'/></script><script>alert('xss')</script><script x='";
+    const app = createApp();
+    app.get("/test", (_req, reply) => reply.json({ ok: true }));
+    await app.register(openapi({ jsonPath: xssPath }));
+
+    const response = await app.inject({ url: "/docs" });
+    const html = await response.text();
+
+    // The raw <script> injection must NOT appear
+    expect(html).not.toContain("<script>alert");
+  });
+});
+
+describe("escapeHtml", () => {
+  it("should escape all dangerous HTML characters", () => {
+    expect(escapeHtml("<")).toBe("&lt;");
+    expect(escapeHtml(">")).toBe("&gt;");
+    expect(escapeHtml("&")).toBe("&amp;");
+    expect(escapeHtml('"')).toBe("&quot;");
+    expect(escapeHtml("'")).toBe("&#39;");
+  });
+
+  it("should escape a full XSS payload", () => {
+    const input = '<script>alert("xss")</script>';
+    const escaped = escapeHtml(input);
+    expect(escaped).toBe("&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;");
+    expect(escaped).not.toContain("<script>");
+  });
+
+  it("should leave safe strings unchanged", () => {
+    expect(escapeHtml("Hello World")).toBe("Hello World");
+    expect(escapeHtml("my-api-v2")).toBe("my-api-v2");
   });
 });
