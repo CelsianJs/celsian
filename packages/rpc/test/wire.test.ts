@@ -59,13 +59,25 @@ describe("Wire protocol", () => {
     expect(decoded.get("b")).toBe(2);
   });
 
-  it("should encode/decode RegExp", () => {
+  it("should encode RegExp and decode as string (security: no RegExp construction from wire)", () => {
     const regex = /hello/gi;
     const encoded = encode(regex);
-    const decoded = decode(encoded) as RegExp;
-    expect(decoded).toBeInstanceOf(RegExp);
-    expect(decoded.source).toBe("hello");
-    expect(decoded.flags).toBe("gi");
+    // Encoding still tags as RegExp
+    expect((encoded as Record<string, unknown>).__t).toBe("RegExp");
+    // But decoding returns a string, NOT a RegExp (prevents ReDoS from untrusted input)
+    const decoded = decode(encoded);
+    expect(decoded).not.toBeInstanceOf(RegExp);
+    expect(typeof decoded).toBe("string");
+    expect(decoded).toBe("/hello/gi");
+  });
+
+  it("should not construct RegExp from malicious ReDoS patterns on the wire", () => {
+    // Simulate a crafted wire payload with a ReDoS pattern
+    const maliciousPayload = { __t: "RegExp", v: "/(a+)+$/" };
+    const decoded = decode(maliciousPayload);
+    // Must be a string, not a RegExp
+    expect(typeof decoded).toBe("string");
+    expect(decoded).not.toBeInstanceOf(RegExp);
   });
 
   it("should encode/decode arrays recursively", () => {

@@ -73,19 +73,10 @@ export function decode(value: unknown): unknown {
           );
           return new Map(entries);
         }
-        case TAG_REGEXP: {
-          // Use lastIndexOf to avoid ReDoS with crafted patterns
-          const lastSlash = v.lastIndexOf("/");
-          if (lastSlash > 0 && v.charCodeAt(0) === 47 /* '/' */) {
-            const pattern = v.slice(1, lastSlash);
-            const flags = v.slice(lastSlash + 1);
-            // Validate flags contain only valid characters
-            if (/^[gimsuy]*$/.test(flags)) {
-              return new RegExp(pattern, flags);
-            }
-          }
-          return new RegExp(v);
-        }
+        case TAG_REGEXP:
+          // Security: do NOT construct RegExp from untrusted wire data (ReDoS risk).
+          // Return the raw string representation instead.
+          return v;
         default:
           return obj;
       }
