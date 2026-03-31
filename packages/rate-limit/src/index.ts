@@ -60,6 +60,8 @@ export class MemoryRateLimitStore implements RateLimitStore {
   }
 }
 
+let warnedNoKey = false;
+
 function createDefaultKeyGenerator(trustProxy: boolean): (req: CelsianRequest) => string {
   if (trustProxy) {
     return (req: CelsianRequest): string => {
@@ -70,9 +72,17 @@ function createDefaultKeyGenerator(trustProxy: boolean): (req: CelsianRequest) =
       );
     };
   }
-  // Without trustProxy, do NOT trust forwarded headers — use a per-request identifier
-  // to avoid shared-bucket DoS from the 'unknown' fallback
+  // Without trustProxy and no custom keyGenerator, every request gets a unique key,
+  // effectively disabling rate limiting. Warn developers once.
   return (_req: CelsianRequest): string => {
+    if (!warnedNoKey) {
+      warnedNoKey = true;
+      console.warn(
+        "[@celsian/rate-limit] WARNING: trustProxy is false and no custom keyGenerator was provided. " +
+          "Each request gets a unique key, so rate limiting is effectively disabled. " +
+          "Set trustProxy:true (behind a reverse proxy) or provide a custom keyGenerator.",
+      );
+    }
     return `anonymous-${Date.now().toString(36)}`;
   };
 }
