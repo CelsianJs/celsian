@@ -67,8 +67,8 @@ export interface CelsianReply {
   cookie(name: string, value: string, options?: import("./cookie.js").CookieOptions): CelsianReply;
   /** Clear a cookie by setting maxAge=0 */
   clearCookie(name: string, options?: import("./cookie.js").CookieOptions): CelsianReply;
-  /** Read a file and send it with the correct MIME type */
-  sendFile(filePath: string): Promise<Response>;
+  /** Read a file and send it with the correct MIME type. When options.root is set, filePath is resolved relative to root and path traversal is rejected with 403. */
+  sendFile(filePath: string, options?: { root?: string }): Promise<Response>;
   /** Send a file as a download with Content-Disposition: attachment */
   download(filePath: string, filename?: string): Promise<Response>;
   /** Has a response already been sent? */
