@@ -12,5 +12,8 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250306.0",
     "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

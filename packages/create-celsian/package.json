@@ -13,5 +13,8 @@
   "scripts": {
     "build": "tsc -b"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  }
 }

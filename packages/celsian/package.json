@@ -23,5 +23,8 @@
     "@celsian/rpc": "workspace:*",
     "@celsian/cli": "workspace:*"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  }
 }
