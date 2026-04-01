@@ -14,7 +14,7 @@
     "@celsian/jwt": "workspace:*",
     "@celsian/rate-limit": "workspace:*",
     "@celsian/schema": "workspace:*",
-    "zod": "^3.23.0"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "tsx": "^4.21.0",

@@ -10,7 +10,7 @@
   "dependencies": {
     "@celsian/core": "workspace:*",
     "@celsian/jwt": "workspace:*",
-    "zod": "^3.23.0"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "tsx": "^4.19.0",
