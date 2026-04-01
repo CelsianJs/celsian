@@ -40,6 +40,23 @@ describe("@celsian/jwt", () => {
     await expect(jwtInstance.verify("invalid.token.here")).rejects.toThrow();
   });
 
+  it("should work without encapsulate: false (default encapsulation)", async () => {
+    const app = createApp();
+    // Register JWT without { encapsulate: false } — the common user pattern
+    await app.register(jwt({ secret: SECRET }));
+
+    // app.jwt should be accessible via getDecoration
+    const jwtInstance = app.getDecoration("jwt") as JWTNamespace;
+    expect(jwtInstance).toBeDefined();
+
+    // app.jwt should also be directly accessible on the app instance
+    expect((app as any).jwt).toBeDefined();
+
+    const token = await jwtInstance.sign({ sub: "user456" });
+    const payload = await jwtInstance.verify(token);
+    expect(payload.sub).toBe("user456");
+  });
+
   it("should reject tokens with wrong secret", async () => {
     const app1 = createApp();
     await app1.register(jwt({ secret: SECRET }), { encapsulate: false });

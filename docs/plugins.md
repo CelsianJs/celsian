@@ -240,11 +240,13 @@ Serves an OpenAPI 3.1 JSON spec at `/docs/openapi.json` and a Swagger UI at `/do
 
 ## Ecosystem Plugins
 
-| Package | Registration |
-| ------- | ------------ |
-| `@celsian/jwt` | `app.register(jwt({ secret }))` |
-| `@celsian/rate-limit` | `app.register(rateLimit({ max: 100, window: 60_000 }))` |
-| `@celsian/compress` | `app.register(compress({ threshold: 1024 }))` |
+| Package | Global Registration | Scoped Registration |
+| ------- | ------------------- | ------------------- |
+| `@celsian/jwt` | `app.register(jwt({ secret }))` | N/A |
+| `@celsian/rate-limit` | `app.register(rateLimit({ max: 100, window: 60_000 }), { encapsulate: false })` | `app.register(rateLimit({ max: 50, window: 60_000 }))` (inside a feature plugin) |
+| `@celsian/compress` | `app.register(compress({ threshold: 1024 }), { encapsulate: false })` | `app.register(compress())` (inside a feature plugin) |
+
+**Important:** Rate-limit and compress add `onRequest` hooks that only apply to routes registered in the same encapsulation scope. To apply them globally (all routes), pass `{ encapsulate: false }`. For scoped usage (per-feature rate limits), register them inside a feature plugin alongside the routes they should protect.
 
 ## Pattern: Feature Plugin
 
