@@ -267,7 +267,7 @@ CelsianJS is 1.7x Express, 0.6x Fastify, 0.8x Hono on Node. "Faster than Express
 ### What's strong
 
 - **The application infrastructure story is real.** Built-in task queue with retry, cron scheduling, DB analytics, SSE hub, sessions — this is genuinely more than an HTTP framework. The combination of these features in a lightweight, multi-runtime package doesn't exist elsewhere.
-- **Engineering quality is above average** for a pre-1.0 project. 709 tests, strict TypeScript, performance-optimized hot path, zero-dep core, proper CI, semantic versioning with Changesets.
+- **Engineering quality is above average** for a pre-1.0 project. 709 tests, strict TypeScript, performance-optimized hot path, no external runtime deps, proper CI, semantic versioning with Changesets.
 - **Security posture is thoughtful.** Prototype pollution prevention, CRLF injection prevention, timing-safe CSRF, path traversal guards — these show someone who reads OWASP, not just someone who writes HTTP handlers.
 - **Error messages are best-in-class.** `wrapNonError()`, descriptive plugin assertions, structured validation errors with dot-notation paths. This is better than Express, Fastify, and Hono.
 - **The scaffolder's "full" template is substantial.** Routes, auth, CORS, CSRF, security headers, rate limiting, tasks, cron, RPC, OpenAPI, Dockerfile, tests — this gets you closer to "Rails of JS" than any Express/Hono scaffolder.

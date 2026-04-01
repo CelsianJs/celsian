@@ -166,7 +166,7 @@ app.route({
 | **Plugins** | Scoped encapsulation, app/request/reply decorators |
 | **Validation** | Zod, TypeBox, Valibot auto-detect; body, querystring, params schemas |
 | **Reply** | json, html, stream, redirect, sendFile, download, cookies, 9 error helpers |
-| **Security** | Helmet-style headers, CORS, CSRF protection, JWT, sliding-window rate limiting |
+| **Security** | Helmet-style headers, CORS, CSRF protection, JWT, fixed-window rate limiting |
 | **Background** | Task queue with retries, cron scheduling, Redis queue backend |
 | **Real-time** | WebSocket with broadcast and connection management |
 | **Database** | Connection pool plugin, transactions, query analytics, Server-Timing |
@@ -276,7 +276,7 @@ const appRouter = router({
 });
 
 const rpc = new RPCHandler(appRouter);
-app.all('/_rpc/*path', (req) => rpc.handle(req));
+app.route({ method: ['GET', 'POST'], url: '/_rpc/*path', handler: (req) => rpc.handle(req) });
 export type AppRouter = typeof appRouter;
 
 // client.ts
@@ -296,7 +296,7 @@ const newUser = await client.users.create.mutate({ name: 'Bob', email: 'bob@exam
 | `@celsian/rpc` | Type-safe RPC procedures, middleware, OpenAPI generation, typed client |
 | `@celsian/jwt` | JWT sign/verify plugin with route guard helper |
 | `@celsian/cache` | KV store, response caching, session management |
-| `@celsian/rate-limit` | Sliding-window rate limiter with pluggable store |
+| `@celsian/rate-limit` | Fixed-window rate limiter with pluggable store |
 | `@celsian/compress` | Response compression (gzip/deflate via CompressionStream) |
 | `@celsian/queue-redis` | Redis-backed task queue for production |
 

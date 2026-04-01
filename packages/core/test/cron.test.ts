@@ -97,7 +97,7 @@ describe("CronScheduler", () => {
     scheduler.stop();
   });
 
-  it("should integrate with app", async () => {
+  it("should register cron jobs via app", async () => {
     const { createApp } = await import("../src/app.js");
     const app = createApp();
     let _called = false;

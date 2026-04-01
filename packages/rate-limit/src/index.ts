@@ -1,4 +1,4 @@
-// @celsian/rate-limit — Sliding window rate limiter plugin
+// @celsian/rate-limit — Fixed-window rate limiter with pluggable store
 
 import type { CelsianReply, CelsianRequest, HookHandler, PluginFunction } from "@celsian/core";
 
@@ -22,7 +22,7 @@ interface WindowEntry {
   resetAt: number;
 }
 
-/** In-memory sliding window store with periodic cleanup. Single-process only. */
+/** In-memory fixed-window store with periodic cleanup. Single-process only. */
 export class MemoryRateLimitStore implements RateLimitStore {
   private entries = new Map<string, WindowEntry>();
   private cleanupTimer: ReturnType<typeof setInterval> | null = null;
@@ -91,7 +91,7 @@ function createDefaultKeyGenerator(trustProxy: boolean): (req: CelsianRequest) =
 }
 
 /**
- * Sliding-window rate limiter plugin. Adds `x-ratelimit-*` headers and returns 429 when exceeded.
+ * Fixed-window rate limiter plugin. Adds `x-ratelimit-*` headers and returns 429 when exceeded.
  *
  * @example
  * ```ts

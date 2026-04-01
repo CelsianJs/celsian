@@ -98,7 +98,7 @@
 | **Graceful shutdown** | ✅ Full support | SIGTERM/SIGINT handling, in-flight request drain, configurable timeout, `onShutdown` hook |
 | **Testing (inject)** | ✅ Full support | `app.inject({ method, url, payload, headers, query })` — no real server needed |
 | **TypeScript support** | ✅ Full support | Written entirely in TypeScript with full type exports |
-| **Rate limiting** | ✅ Full support | `@celsian/rate-limit` — sliding window, pluggable store, custom key generator |
+| **Rate limiting** | ✅ Full support | `@celsian/rate-limit` — fixed window, pluggable store, custom key generator |
 | **CORS** | ✅ Full support | Built-in `cors()` plugin with origin allow-list, credentials, preflight |
 | **JWT auth** | ✅ Full support | `@celsian/jwt` — sign/verify via `jose`, route guard helper |
 | **Multipart/form-data** | ✅ Full support | Parsed automatically via `request.formData()` (Web API) |

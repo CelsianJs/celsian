@@ -198,44 +198,10 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
           return;
         }
 
-        // --- Origin validation ---
-        // If CORS is configured (app has allowedOrigins), validate the Origin header
-        const origin = req.headers.origin;
-        const appOptions = (app as any)._options ?? {};
-        const corsOrigin = appOptions.cors?.origin;
-        if (corsOrigin && corsOrigin !== "*") {
-          const allowed = Array.isArray(corsOrigin) ? corsOrigin : [corsOrigin];
-          if (!origin || !allowed.includes(origin)) {
-            socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
-            socket.destroy();
-            return;
-          }
-        }
-
-        // --- Run onRequest hooks (auth, etc.) ---
-        try {
-          const { createReply } = await import("./reply.js");
-          const webReq = nodeToWebRequest(req, url);
-          const celsianReq = buildRequest(webReq, url, {});
-          const reply = createReply();
-
-          // Run all onRequest hooks — if any return a Response, reject the upgrade
-          const hookStore = (app as any)._hookStore ?? (app as any).hookStore;
-          if (hookStore?.onRequest?.length) {
-            const { runHooks } = await import("./hooks.js");
-            const hookResult = await runHooks(hookStore.onRequest, celsianReq, reply);
-            if (hookResult instanceof Response) {
-              const statusCode = hookResult.status || 403;
-              socket.write(`HTTP/1.1 ${statusCode} ${hookResult.statusText || "Forbidden"}\r\n\r\n`);
-              socket.destroy();
-              return;
-            }
-          }
-        } catch {
-          socket.write("HTTP/1.1 500 Internal Server Error\r\n\r\n");
-          socket.destroy();
-          return;
-        }
+        // TODO: Origin validation and auth for WebSocket upgrades should be done
+        // in the WS handler's open() callback. The app's internal hooks and options
+        // are not accessible here (private properties), so upgrade-time auth
+        // requires the handler to implement its own checks.
 
         wss.handleUpgrade(req, socket, head, (ws: any) => {
           const conn = createWSConnection({

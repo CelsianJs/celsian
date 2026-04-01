@@ -490,7 +490,7 @@
 **Tasks:**
 - Create `packages/rate-limit-redis/` package (or add Redis store to existing package)
 - Implement `RedisRateLimitStore` satisfying `RateLimitStore` interface
-- Use Redis `INCR` + `EXPIRE` for sliding window (or `MULTI`/`EXEC` for atomic increment-and-check)
+- Use Redis `INCR` + `EXPIRE` for fixed window (or `MULTI`/`EXEC` for atomic increment-and-check)
 - Accept existing Redis client
 - Tests using real Redis (skip if `REDIS_URL` not set) or mock
 

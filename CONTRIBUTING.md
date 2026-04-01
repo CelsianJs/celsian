@@ -50,7 +50,7 @@ packages/
 - **TypeScript** for all source code
 - **Biome** for linting and formatting: `pnpm lint` / `pnpm lint:fix`
 - **2-space indentation**, no tabs
-- **No external runtime dependencies** in `@celsian/core` (zero-dep core)
+- **No external runtime dependencies** in `@celsian/core` (depends only on `@celsian/schema`, an internal workspace package)
 - Use `CelsianError` or `HttpError` instead of bare `throw new Error()` in library code
 - Prefer explicit types over `any` where possible
 

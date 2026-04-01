@@ -17,8 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **SSE support** (`@celsian/core`): Server-Sent Events with hub/channel pattern
 - **JWT plugin** (`@celsian/jwt`): JSON Web Token authentication via `jose`
 - **Cache plugin** (`@celsian/cache`): Response caching, session store, and pluggable cache backends
-- **Compression plugin** (`@celsian/compress`): Gzip/Brotli/Deflate response compression
-- **Rate limiting** (`@celsian/rate-limit`): Token bucket rate limiter with sliding window
+- **Compression plugin** (`@celsian/compress`): Gzip/Deflate response compression
+- **Rate limiting** (`@celsian/rate-limit`): Fixed-window rate limiter with pluggable store
 - **CSRF plugin** (`@celsian/core`): Double-submit cookie CSRF protection
 - **ETag plugin** (`@celsian/core`): Automatic ETag generation and `304 Not Modified` responses
 - **Security headers plugin** (`@celsian/core`): Configurable HTTP security headers (CSP, HSTS, etc.)

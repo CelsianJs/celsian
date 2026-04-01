@@ -2,7 +2,7 @@
 
 ## What is CelsianJS?
 
-CelsianJS is a TypeScript-first, zero-dependency-core web framework. It uses a hook-based lifecycle (inspired by Fastify), plugin encapsulation, and runs on Node.js, Cloudflare Workers, AWS Lambda, Vercel, Fly.io, and Railway.
+CelsianJS is a TypeScript-first web framework with no external runtime dependencies. It uses a hook-based lifecycle (inspired by Fastify), plugin encapsulation, and runs on Node.js, Cloudflare Workers, AWS Lambda, Vercel, Fly.io, and Railway.
 
 ## Repository Layout
 
@@ -14,8 +14,8 @@ packages/
   cli/         -- Dev server, build, scaffolding, route listing
   jwt/         -- JWT auth plugin (jose)
   cache/       -- Response cache, session store
-  compress/    -- Gzip/Brotli/Deflate middleware
-  rate-limit/  -- Token bucket rate limiter
+  compress/    -- Gzip/Deflate compression middleware
+  rate-limit/  -- Fixed-window rate limiter
   adapter-*/   -- Platform-specific HTTP adapters
   platform/    -- Deployment providers (stub implementations)
   queue-redis/ -- Redis-backed task queue
@@ -25,7 +25,7 @@ packages/
 
 ## Key Architecture Decisions
 
-- **Zero-dep core**: `@celsian/core` has no runtime dependencies. Keep it that way.
+- **No external runtime deps**: `@celsian/core` depends only on `@celsian/schema` (internal workspace package). No npm third-party runtime dependencies. Keep it that way.
 - **ESM only**: All packages use `"type": "module"`. Use `.js` extensions in imports.
 - **Plugin encapsulation**: Plugins register in an `EncapsulationContext`. Decorations and hooks are scoped.
 - **Hook lifecycle**: `onRequest` -> `preHandler` -> handler -> `onSend` -> `onResponse`. Errors go to `onError`.
