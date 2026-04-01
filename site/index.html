@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CelsianJS — The Batteries-Included Backend Framework for Every Runtime</title>
-  <meta name="description" content="Fastify's architecture. Hono's portability. Plugin encapsulation, background tasks, cron, RPC, and OpenAPI — all on Web Standard APIs. Part of the WhatStack ecosystem.">
+  <title>CelsianJS — The Application Framework for Every Runtime</title>
+  <meta name="description" content="1.7x faster than Express with batteries included. Task queues, cron, RPC, OpenAPI, multi-runtime — all on Web Standard APIs. Part of the WhatStack ecosystem.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -796,7 +796,7 @@
   <nav>
     <a href="/" class="logo">
       Celsian<span class="logo-accent">JS</span>
-      <span class="logo-badge">v0.2</span>
+      <span class="logo-badge">v0.3</span>
     </a>
     <div class="nav-links">
       <a href="#features">Features</a>
@@ -814,11 +814,11 @@
     <div class="hero-inner">
       <div>
         <h1 class="animate">
-          The batteries-included<br>
-          <span class="gradient">backend for every runtime</span>
+          The application framework<br>
+          <span class="gradient">for every runtime</span>
         </h1>
         <p class="hero-subtitle animate delay-1">
-          Fastify's architecture. Hono's portability. Everything included. Plugin encapsulation, background tasks, cron, schema-agnostic validation, RPC, and OpenAPI generation — all on Web Standard APIs. Only 2 external dependencies.
+          1.7x faster than Express with batteries included. Task queues, cron scheduling, background jobs, RPC, OpenAPI, schema-agnostic validation — all on Web Standard APIs. One codebase runs on Node, Bun, Deno, Workers, Lambda, and Vercel.
         </p>
         <div class="hero-actions animate delay-2">
           <a href="#get-started" class="btn btn-primary">Get Started</a>
@@ -826,15 +826,15 @@
         </div>
         <div class="hero-stats animate delay-3">
           <div class="stat">
-            <span class="stat-value">125K</span>
+            <span class="stat-value">28K</span>
             <span class="stat-label">req/sec</span>
           </div>
           <div class="stat">
-            <span class="stat-value">0.46&mu;s</span>
-            <span class="stat-label">route matching</span>
+            <span class="stat-value">1.7x</span>
+            <span class="stat-label">faster than Express</span>
           </div>
           <div class="stat">
-            <span class="stat-value">590</span>
+            <span class="stat-value">770+</span>
             <span class="stat-label">passing tests</span>
           </div>
         </div>
@@ -850,13 +850,14 @@
           <span class="code-filename">app.ts</span>
         </div>
         <div class="code-content">
-<pre><span class="kw">import</span> { createApp, cors, rateLimit } <span class="kw">from</span> <span class="str">'@celsian/core'</span>;
+<pre><span class="kw">import</span> { createApp, cors } <span class="kw">from</span> <span class="str">'@celsian/core'</span>;
+<span class="kw">import</span> { rateLimit } <span class="kw">from</span> <span class="str">'@celsian/rate-limit'</span>;
 
 <span class="kw">const</span> app = <span class="fn">createApp</span>();
 
 <span class="cmt">// Register middleware</span>
-<span class="kw">await</span> app.<span class="fn">register</span>(cors, { origin: <span class="str">'*'</span> });
-<span class="kw">await</span> app.<span class="fn">register</span>(rateLimit, { max: <span class="num">100</span> });
+<span class="kw">await</span> app.<span class="fn">register</span>(<span class="fn">cors</span>({ origin: <span class="str">'*'</span> }));
+<span class="kw">await</span> app.<span class="fn">register</span>(<span class="fn">rateLimit</span>({ max: <span class="num">100</span>, window: <span class="num">60_000</span> }));
 
 <span class="cmt">// Routes</span>
 app.<span class="fn">get</span>(<span class="str">'/api/users/:id'</span>, (req, reply) <span class="kw">=></span> {
@@ -879,7 +880,7 @@ Deno.<span class="fn">serve</span>(app.fetch);</pre>
     <div class="section-header">
       <p class="section-label">Features</p>
       <h2 class="section-title">Everything you need for production backends</h2>
-      <p class="section-desc">A complete server toolkit built from the ground up on Web Standard APIs. No Express, no Fastify &mdash; just standards.</p>
+      <p class="section-desc">A complete application framework built on Web Standard APIs. Task queues, cron, multi-runtime &mdash; not just routing.</p>
     </div>
 
     <div class="features-grid">
@@ -1117,57 +1118,57 @@ app.<span class="fn">post</span>(<span class="str">'/api/login'</span>, <span cl
       <div class="section-header section-center" style="margin-left: auto; margin-right: auto;">
         <p class="section-label">Performance</p>
         <h2 class="section-title">Measured, not promised</h2>
-        <p class="section-desc">Real numbers from our test suite. 590 tests across 54 files. Zero flaky.</p>
+        <p class="section-desc">Real benchmarks on Node.js v22, Apple Silicon, 10 connections, 10s per scenario. 1.7x faster than Express with batteries included.</p>
       </div>
 
       <div class="benchmarks-grid">
         <div class="bench-card">
-          <div class="bench-value">125K</div>
+          <div class="bench-value">28K</div>
           <div class="bench-unit">req/sec</div>
-          <div class="bench-label">Server throughput</div>
-          <div class="bench-detail">with hooks enabled</div>
+          <div class="bench-label">JSON response</div>
+          <div class="bench-detail">1.7x faster than Express</div>
         </div>
         <div class="bench-card">
-          <div class="bench-value">0.46&mu;s</div>
-          <div class="bench-unit">per match</div>
-          <div class="bench-label">Static route lookup</div>
-          <div class="bench-detail">O(1) cache + radix tree</div>
-        </div>
-        <div class="bench-card">
-          <div class="bench-value">1.2M</div>
-          <div class="bench-unit">ops/sec</div>
-          <div class="bench-label">KV store throughput</div>
-          <div class="bench-detail">in-memory with TTL</div>
-        </div>
-        <div class="bench-card">
-          <div class="bench-value">229K</div>
+          <div class="bench-value">27K</div>
           <div class="bench-unit">req/sec</div>
-          <div class="bench-label">Response cache HIT</div>
-          <div class="bench-detail">4.37&mu;s average latency</div>
+          <div class="bench-label">Route params</div>
+          <div class="bench-detail">radix-tree router</div>
         </div>
         <div class="bench-card">
-          <div class="bench-value">974K</div>
-          <div class="bench-unit">loads/sec</div>
-          <div class="bench-label">Session load</div>
-          <div class="bench-detail">1.03&mu;s p50 latency</div>
-        </div>
-        <div class="bench-card">
-          <div class="bench-value">165K</div>
+          <div class="bench-value">24.4K</div>
           <div class="bench-unit">req/sec</div>
-          <div class="bench-label">RPC with middleware</div>
-          <div class="bench-detail">3 middleware chain</div>
+          <div class="bench-label">Middleware chain (5)</div>
+          <div class="bench-detail">1.6x faster than Express</div>
         </div>
         <div class="bench-card">
-          <div class="bench-value">2.2M</div>
-          <div class="bench-unit">ops/sec</div>
-          <div class="bench-label">Wire encode</div>
-          <div class="bench-detail">type-preserving JSON</div>
-        </div>
-        <div class="bench-card">
-          <div class="bench-value">214K</div>
+          <div class="bench-value">19K</div>
           <div class="bench-unit">req/sec</div>
-          <div class="bench-label">RPC 200 procedures</div>
-          <div class="bench-detail">lookup + handle</div>
+          <div class="bench-label">JSON body parsing</div>
+          <div class="bench-detail">1.3x faster than Express</div>
+        </div>
+        <div class="bench-card">
+          <div class="bench-value">18.5K</div>
+          <div class="bench-unit">req/sec</div>
+          <div class="bench-label">Error handling</div>
+          <div class="bench-detail">structured 500 responses</div>
+        </div>
+        <div class="bench-card">
+          <div class="bench-value">0</div>
+          <div class="bench-unit">external deps</div>
+          <div class="bench-label">No external runtime deps</div>
+          <div class="bench-detail">only internal workspace packages</div>
+        </div>
+        <div class="bench-card">
+          <div class="bench-value">6</div>
+          <div class="bench-unit">runtimes</div>
+          <div class="bench-label">Multi-runtime</div>
+          <div class="bench-detail">Node, Bun, Deno, Workers, Lambda, Vercel</div>
+        </div>
+        <div class="bench-card">
+          <div class="bench-value">770+</div>
+          <div class="bench-unit">tests</div>
+          <div class="bench-label">Test coverage</div>
+          <div class="bench-detail">68 test files, zero flaky</div>
         </div>
       </div>
     </div>
@@ -1320,7 +1321,7 @@ Bun.<span class="fn">serve</span>({ fetch: app.fetch, port: <span class="num">30
   <footer>
     <div class="footer-content">
       <div class="footer-left">
-        CelsianJS v0.2.0 &mdash; MIT License &mdash; Part of <a href="https://whatfw.com" style="color: var(--accent); text-decoration: none;">WhatStack</a>
+        CelsianJS v0.3.0 &mdash; MIT License &mdash; Part of <a href="https://whatfw.com" style="color: var(--accent); text-decoration: none;">WhatStack</a>
       </div>
       <div class="footer-links">
         <a href="/docs">Documentation</a>
