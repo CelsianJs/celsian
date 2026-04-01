@@ -4,7 +4,7 @@
 // Zero external dependencies. Interactive prompts via raw stdin.
 
 import { mkdirSync, writeFileSync } from "node:fs";
-import { basename, dirname, isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { basicTemplate } from "./templates/basic.js";
 import { fullTemplate } from "./templates/full.js";
@@ -95,7 +95,22 @@ function scaffold(name: string, template: string, pm: string): void {
     process.exit(1);
   }
 
-  const dir = isAbsolute(name) ? name : join(process.cwd(), name);
+  // Sanitize: reject names containing path traversal
+  if (name.includes("..")) {
+    console.error("\n  Invalid project name: must not contain '..'.\n");
+    process.exit(1);
+  }
+
+  const cwd = process.cwd();
+  const dir = isAbsolute(name) ? name : join(cwd, name);
+  const resolved = resolve(dir);
+
+  // Ensure the resolved path is a child of cwd
+  if (!resolved.startsWith(cwd + "/") && resolved !== cwd) {
+    console.error("\n  Invalid project name: resolved path must be inside the current directory.\n");
+    process.exit(1);
+  }
+
   const projectName = basename(dir);
 
   console.log(`\n  Creating Celsian project: ${projectName}`);

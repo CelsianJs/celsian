@@ -12,11 +12,11 @@ export const fullTemplate: Record<string, string> = {
         lint: "npx tsc --noEmit",
       },
       dependencies: {
-        celsian: "^0.2.0",
-        "@celsian/core": "^0.2.0",
-        "@celsian/jwt": "^0.2.0",
-        "@celsian/rpc": "^0.2.0",
-        "@celsian/rate-limit": "^0.2.0",
+        celsian: "latest",
+        "@celsian/core": "latest",
+        "@celsian/jwt": "latest",
+        "@celsian/rpc": "latest",
+        "@celsian/rate-limit": "latest",
         "@sinclair/typebox": "^0.34.0",
       },
       devDependencies: {
@@ -471,12 +471,12 @@ const app = createApp({ logger: true });
 // ─── Security (CORS, CSRF, headers, rate limiting) ───
 
 for (const plugin of securityPlugins()) {
-  await app.register(plugin);
+  await app.register(plugin, { encapsulate: false });
 }
 
 // ─── Auth (JWT signing & verification) ───
 
-await app.register(authPlugin());
+await app.register(authPlugin(), { encapsulate: false });
 
 // ─── API Documentation (OpenAPI + Swagger UI) ───
 

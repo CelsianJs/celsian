@@ -34,6 +34,16 @@ import type {
 } from "./types.js";
 import { type WSHandler, WSRegistry } from "./websocket.js";
 
+/**
+ * The main application class. Provides routing, hooks, plugins, task queues, cron,
+ * WebSocket, and request handling -- all built on Web Standard APIs.
+ *
+ * @example
+ * ```ts
+ * const app = new CelsianApp({ logger: true });
+ * app.get('/hello', (req, reply) => reply.json({ hi: true }));
+ * ```
+ */
 export class CelsianApp {
   // Pre-stringified error responses (avoid JSON.stringify on every miss)
   private static readonly NOT_FOUND_BODY = JSON.stringify({ error: "Not Found", statusCode: 404, code: "NOT_FOUND" });
@@ -111,6 +121,7 @@ export class CelsianApp {
 
   // ─── Registration (delegate to plugin context) ───
 
+  /** Register a plugin with optional prefix and encapsulation settings. */
   async register(plugin: PluginFunction, options?: PluginOptions): Promise<void> {
     assertPlugin(plugin);
     const before = new Set(this.rootContext.decorations.keys());
@@ -126,6 +137,7 @@ export class CelsianApp {
     return p;
   }
 
+  /** Register a route with full options (method, url, schema, hooks, handler). */
   route(options: RouteOptions): void {
     this.pluginContext.route(options);
   }
@@ -240,12 +252,14 @@ export class CelsianApp {
     });
   }
 
+  /** Add a lifecycle hook (onRequest, preHandler, onSend, onError, etc.). */
   addHook(name: "onError", handler: OnErrorHandler): void;
   addHook(name: Exclude<HookName, "onError">, handler: HookHandler): void;
   addHook(name: HookName, handler: HookHandler | OnErrorHandler): void {
     this.pluginContext.addHook(name, handler as HookHandler);
   }
 
+  /** Add a named property to the app instance, accessible from all routes and plugins. */
   decorate(name: string, value: unknown): void {
     this.pluginContext.decorate(name, value);
     Object.defineProperty(this, name, { value, writable: true, configurable: true, enumerable: true });
@@ -255,18 +269,22 @@ export class CelsianApp {
     return this.rootContext.decorations.get(name);
   }
 
+  /** Add a named property to every incoming CelsianRequest. */
   decorateRequest(name: string, value: unknown): void {
     this.pluginContext.decorateRequest(name, value);
   }
 
+  /** Add a named property to every CelsianReply. */
   decorateReply(name: string, value: unknown): void {
     this.rootContext.replyDecorations.set(name, value);
   }
 
+  /** Set a custom handler for 404 responses. */
   setNotFoundHandler(handler: RouteHandler): void {
     this.notFoundHandler = handler;
   }
 
+  /** Set a custom error handler that receives thrown errors before the default handler. */
   setErrorHandler(
     handler: (error: Error, request: CelsianRequest, reply: CelsianReply) => Response | Promise<Response>,
   ): void {
@@ -275,16 +293,26 @@ export class CelsianApp {
 
   // ─── Content-Type Parsers ───
 
+  /** Register a custom body parser for a content-type (exact or prefix match). */
   addContentTypeParser(contentType: string, parser: (request: Request) => Promise<unknown>): void {
     this.contentTypeParsers.set(contentType, parser);
   }
 
   // ─── Task System ───
 
+  /**
+   * Register a background task definition.
+   *
+   * @example
+   * ```ts
+   * app.task({ name: 'email', handler: async (input) => sendEmail(input), retries: 3 });
+   * ```
+   */
   task<TInput = unknown>(definition: TaskDefinition<TInput>): void {
     this.taskRegistry.register(definition);
   }
 
+  /** Enqueue a background task by name. Returns the task ID. */
   async enqueue(taskName: string, input: unknown): Promise<string> {
     return createEnqueue(this._queue, this.taskRegistry)(taskName, input);
   }
@@ -297,16 +325,19 @@ export class CelsianApp {
     return this._queue;
   }
 
+  /** Configure task worker concurrency and poll interval. */
   setTaskWorkerOptions(options: TaskWorkerOptions): void {
     this.taskWorkerOptions = options;
   }
 
+  /** Start the background task worker (idempotent). */
   startWorker(): void {
     if (this.taskWorker) return;
     this.taskWorker = new TaskWorker(this.taskRegistry, this._queue, this.log, this.taskWorkerOptions);
     this.taskWorker.start();
   }
 
+  /** Stop the task worker and wait for in-flight jobs to finish. */
   async stopWorker(): Promise<void> {
     if (this.taskWorker) {
       await this.taskWorker.stop();
@@ -316,34 +347,55 @@ export class CelsianApp {
 
   // ─── Cron ───
 
+  /**
+   * Register a cron job with a 5-field unix cron expression.
+   *
+   * @example
+   * ```ts
+   * app.cron('cleanup', '0 3 * * *', async () => { await db.deleteExpired(); });
+   * ```
+   */
   cron(name: string, schedule: string, handler: () => Promise<void> | void): void {
     this.cronScheduler.add({ name, schedule, handler });
   }
 
+  /** Start the cron scheduler (called automatically by `serve()`). */
   startCron(): void {
     this.cronScheduler.start();
   }
 
+  /** Stop the cron scheduler. */
   stopCron(): void {
     this.cronScheduler.stop();
   }
 
+  /** Return all registered cron job definitions. */
   getCronJobs(): CronJob[] {
     return this.cronScheduler.getJobs();
   }
 
   // ─── WebSocket ───
 
+  /**
+   * Register a WebSocket handler on a path.
+   *
+   * @example
+   * ```ts
+   * app.ws('/chat', { open(ws) { ws.send('welcome'); }, message(ws, data) { ... } });
+   * ```
+   */
   ws(path: string, handler: WSHandler): void {
     this.wsRegistry.register(path, handler);
   }
 
+  /** Broadcast a message to all WebSocket connections on a path. */
   wsBroadcast(path: string, data: string | ArrayBuffer, exclude?: string): void {
     this.wsRegistry.broadcast(path, data, exclude);
   }
 
   // ─── Health Check ───
 
+  /** Register `/health` and `/ready` endpoints with an optional liveness check. */
   health(options: { path?: string; readyPath?: string; check?: () => Promise<boolean> | boolean } = {}): void {
     const healthPath = options.path ?? "/health";
     const readyPath = options.readyPath ?? "/ready";
@@ -369,6 +421,7 @@ export class CelsianApp {
 
   // ─── Lifecycle ───
 
+  /** Wait for all pending plugin registrations to complete. */
   async ready(): Promise<void> {
     if (!this.readyPromise && this.pendingPlugins.length > 0) {
       const pending = this.pendingPlugins;
@@ -382,12 +435,21 @@ export class CelsianApp {
 
   // ─── Test Injection ───
 
+  /**
+   * Send a synthetic request without starting a server (for testing).
+   *
+   * @example
+   * ```ts
+   * const res = await app.inject({ method: 'GET', url: '/hello' });
+   * ```
+   */
   async inject(options: InjectOptions): Promise<Response> {
     return createInject(this)(options);
   }
 
   // ─── Request Handling ───
 
+  /** Handle an incoming Web Standard Request and return a Response. */
   async handle(request: Request): Promise<Response> {
     // Ensure all registered plugins are loaded before handling
     // Skip the async call entirely when no pending plugins and no active ready promise
@@ -483,7 +545,8 @@ export class CelsianApp {
           if (result instanceof Response) return result;
           if (reply.sent) return new Response(null, { status: reply.statusCode });
           return new Response(null, { status: 404 });
-        } catch {
+        } catch (error) {
+          console.error("[celsian]", error);
           return new Response(CelsianApp.NOT_FOUND_BODY, {
             status: 404,
             headers: CelsianApp.JSON_CONTENT_TYPE,
@@ -576,10 +639,12 @@ export class CelsianApp {
     }
   }
 
+  /** Bound `handle` method, compatible with Bun.serve and Deno.serve. */
   get fetch(): (request: Request) => Promise<Response> {
     return this.handle.bind(this);
   }
 
+  /** Return all registered routes, optionally filtered by deployment kind. */
   getRoutes(filter?: { kind?: "serverless" | "hot" | "task" }): InternalRoute[] {
     const routes = this.router.getAllRoutes();
     if (filter?.kind) {
@@ -829,7 +894,8 @@ export class CelsianApp {
       }
     } catch (e) {
       if (e instanceof HttpError) throw e;
-      // Body parsing failed for other reasons — leave as undefined
+      // Body parsing failed for other reasons — log and leave as undefined
+      console.error("[celsian]", e);
     }
   }
 
@@ -839,7 +905,8 @@ export class CelsianApp {
       try {
         const result = await this.errorHandler(error, request, reply);
         if (result instanceof Response) return result;
-      } catch {
+      } catch (handlerError) {
+        console.error("[celsian]", handlerError);
         // Fall through to hooks / default
       }
     }
@@ -850,7 +917,8 @@ export class CelsianApp {
         if (result instanceof Response) {
           return result;
         }
-      } catch {
+      } catch (hookError) {
+        console.error("[celsian]", hookError);
         // Error in error handler — continue to default
       }
     }
@@ -891,6 +959,16 @@ export class CelsianApp {
   }
 }
 
+/**
+ * Create a new CelsianJS application.
+ *
+ * @example
+ * ```ts
+ * const app = createApp({ logger: true });
+ * app.get('/hello', (req, reply) => reply.json({ message: 'Hello!' }));
+ * serve(app, { port: 3000 });
+ * ```
+ */
 export function createApp(options?: CelsianAppOptions): CelsianApp {
   return new CelsianApp(options);
 }

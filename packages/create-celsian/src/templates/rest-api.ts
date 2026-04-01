@@ -5,12 +5,12 @@ export const restApiTemplate = {
       version: "0.0.1",
       type: "module",
       scripts: {
-        dev: "npx celsian dev",
+        dev: "npx tsx --watch src/index.ts",
         build: "tsc",
         start: "node dist/index.js",
       },
       dependencies: {
-        celsian: "^0.1.0",
+        celsian: "latest",
         "@sinclair/typebox": "^0.34.0",
       },
       devDependencies: {
