@@ -4,6 +4,7 @@ import { CelsianError } from "./errors.js";
 import type { Logger } from "./logger.js";
 import { generateQueueId, type QueueBackend, type QueueMessage } from "./queue.js";
 
+/** Definition for a background task: name, handler, optional retries and timeout. */
 export interface TaskDefinition<TInput = unknown> {
   name: string;
   handler: (input: TInput, ctx: TaskContext) => Promise<void>;
@@ -11,12 +12,14 @@ export interface TaskDefinition<TInput = unknown> {
   timeout?: number;
 }
 
+/** Context passed to a task handler: task ID, current attempt number, and a child logger. */
 export interface TaskContext {
   taskId: string;
   attempt: number;
   log: Logger;
 }
 
+/** Registry mapping task names to their definitions. */
 export class TaskRegistry {
   private tasks = new Map<string, TaskDefinition>();
 
@@ -33,11 +36,16 @@ export class TaskRegistry {
   }
 }
 
+/** Configuration for the task worker: concurrency and poll interval. */
 export interface TaskWorkerOptions {
   concurrency?: number;
   pollInterval?: number;
 }
 
+/**
+ * Background worker that polls the queue and executes tasks with retry logic.
+ * Supports configurable concurrency and exponential backoff on failure.
+ */
 export class TaskWorker {
   private running = false;
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
@@ -148,6 +156,7 @@ export class TaskWorker {
   }
 }
 
+/** Create an enqueue function bound to a queue backend and task registry. */
 export function createEnqueue(queue: QueueBackend, registry: TaskRegistry) {
   return async function enqueue(taskName: string, input: unknown): Promise<string> {
     if (!registry.has(taskName)) {

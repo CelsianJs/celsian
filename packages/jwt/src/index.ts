@@ -3,11 +3,13 @@
 import type { CelsianReply, CelsianRequest, HookHandler, PluginFunction } from "@celsian/core";
 import * as jose from "jose";
 
+/** Options for the JWT plugin: shared secret and allowed algorithms. */
 export interface JWTOptions {
   secret: string;
   algorithms?: string[];
 }
 
+/** JWT payload with standard claims (iss, sub, exp, etc.) plus custom fields. */
 export interface JWTPayload {
   [key: string]: unknown;
   iss?: string;
@@ -17,11 +19,21 @@ export interface JWTPayload {
   iat?: number;
 }
 
+/** Sign and verify methods exposed on `app.jwt` after registering the plugin. */
 export interface JWTNamespace {
   sign(payload: JWTPayload, options?: { expiresIn?: string | number }): Promise<string>;
   verify(token: string): Promise<JWTPayload>;
 }
 
+/**
+ * JWT authentication plugin. Decorates `app.jwt` with `sign()` and `verify()`.
+ *
+ * @example
+ * ```ts
+ * await app.register(jwt({ secret: process.env.JWT_SECRET! }));
+ * const token = await app.jwt.sign({ sub: userId });
+ * ```
+ */
 export function jwt(options: JWTOptions): PluginFunction {
   const algorithms = options.algorithms ?? ["HS256"];
   const secretKey = new TextEncoder().encode(options.secret);
@@ -56,6 +68,14 @@ export function jwt(options: JWTOptions): PluginFunction {
   };
 }
 
+/**
+ * Create a preHandler hook that verifies Bearer tokens and populates `request.user`.
+ *
+ * @example
+ * ```ts
+ * app.addHook('preHandler', createJWTGuard({ secret: process.env.JWT_SECRET! }));
+ * ```
+ */
 export function createJWTGuard(options: JWTOptions): HookHandler {
   const algorithms = options.algorithms ?? ["HS256"];
   const secretKey = new TextEncoder().encode(options.secret);

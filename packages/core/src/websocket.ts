@@ -2,12 +2,14 @@
 
 import type { CelsianRequest } from "./types.js";
 
+/** WebSocket event handler with optional open, message, and close callbacks. */
 export interface WSHandler {
   open?: (ws: WSConnection, req: CelsianRequest) => void;
   message?: (ws: WSConnection, data: string | ArrayBuffer) => void;
   close?: (ws: WSConnection, code: number, reason: string) => void;
 }
 
+/** A single WebSocket connection with send/close methods and a metadata bag. */
 export interface WSConnection {
   id: string;
   send(data: string | ArrayBuffer): void;
@@ -22,6 +24,10 @@ function generateWSId(): string {
   return `ws-${Date.now().toString(36)}-${_wsIdCounter.toString(36)}`;
 }
 
+/**
+ * Registry of WebSocket handlers and active connections, keyed by path.
+ * Supports per-path and global broadcast.
+ */
 export class WSRegistry {
   private handlers = new Map<string, WSHandler>();
   private connections = new Map<string, Set<WSConnection>>();
@@ -91,6 +97,7 @@ export class WSRegistry {
   }
 }
 
+/** Wrap a raw WebSocket (send/close) into a WSConnection with a generated ID and metadata bag. */
 export function createWSConnection(rawWs: {
   send(data: string | ArrayBuffer): void;
   close(code?: number, reason?: string): void;

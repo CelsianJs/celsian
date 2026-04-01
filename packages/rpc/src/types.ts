@@ -4,17 +4,20 @@ import type { StandardSchema } from "@celsian/schema";
 
 // ─── Context ───
 
+/** Request context passed to every procedure handler and middleware. */
 export interface RPCContext {
   request: Request;
   [key: string]: unknown;
 }
 
+/** Factory function that creates an RPCContext from the raw Request (e.g., to inject auth). */
 export type ContextFactory = (request: Request) => RPCContext | Promise<RPCContext>;
 
 // ─── Procedure Types ───
 
 export type ProcedureType = "query" | "mutation";
 
+/** Fully resolved procedure with type, schemas, handler, and middleware chain. */
 export interface ProcedureDefinition<TInput = unknown, TOutput = unknown> {
   type: ProcedureType;
   inputSchema?: StandardSchema<TInput>;
@@ -23,14 +26,17 @@ export interface ProcedureDefinition<TInput = unknown, TOutput = unknown> {
   middlewares: MiddlewareFunction[];
 }
 
+/** RPC middleware -- receives context and a `next()` function for the chain. */
 export type MiddlewareFunction = (opts: { ctx: RPCContext; next: () => Promise<unknown> }) => Promise<unknown>;
 
 // ─── Router Types ───
 
+/** Nested object of procedures and sub-routers. */
 export interface RouterDefinition {
   [key: string]: ProcedureDefinition | RouterDefinition;
 }
 
+/** JSON-serializable manifest listing all procedures with their types and schemas. */
 export interface RPCManifest {
   procedures: Record<
     string,

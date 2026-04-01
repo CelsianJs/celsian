@@ -2,6 +2,7 @@
 
 import type { CelsianReply, CelsianRequest, HookHandler, OnErrorHandler } from "./types.js";
 
+/** Storage for all lifecycle hook arrays in the 8-hook pipeline. */
 export interface HookStore {
   onRequest: HookHandler[];
   preParsing: HookHandler[];
@@ -13,6 +14,7 @@ export interface HookStore {
   onError: OnErrorHandler[];
 }
 
+/** Create an empty hook store with all lifecycle slots initialized. */
 export function createHookStore(): HookStore {
   return {
     onRequest: [],
@@ -26,6 +28,7 @@ export function createHookStore(): HookStore {
   };
 }
 
+/** Shallow-clone a hook store for child plugin encapsulation contexts. */
 export function cloneHookStore(source: HookStore): HookStore {
   return {
     onRequest: [...source.onRequest],
@@ -39,6 +42,7 @@ export function cloneHookStore(source: HookStore): HookStore {
   };
 }
 
+/** Run hooks sequentially; short-circuit if any returns a Response or sets reply.sent. */
 export async function runHooks(
   hooks: HookHandler[],
   request: CelsianRequest,
@@ -71,6 +75,7 @@ export async function runOnSendHooks(
   }
 }
 
+/** Run hooks without awaiting -- errors are logged, not thrown. Used for onResponse. */
 export function runHooksFireAndForget(hooks: HookHandler[], request: CelsianRequest, reply: CelsianReply): void {
   for (const hook of hooks) {
     try {

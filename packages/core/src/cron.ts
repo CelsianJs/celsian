@@ -2,6 +2,7 @@
 
 import { CelsianError } from "./errors.js";
 
+/** Definition for a cron job: name, schedule expression, and handler function. */
 export interface CronJob {
   name: string;
   schedule: string;
@@ -17,6 +18,7 @@ interface ParsedCron {
   daysOfWeek: Set<number>;
 }
 
+/** Parse a 5-field unix cron expression into sets of matching values per field. */
 export function parseCronExpression(expr: string): ParsedCron {
   const parts = expr.trim().split(/\s+/);
   if (parts.length !== 5) {
@@ -56,6 +58,7 @@ function parseField(field: string, min: number, max: number): Set<number> {
   return values;
 }
 
+/** Check whether a parsed cron expression matches a given date (minute-level). */
 export function shouldRun(parsed: ParsedCron, date: Date): boolean {
   return (
     parsed.minutes.has(date.getMinutes()) &&
@@ -66,6 +69,10 @@ export function shouldRun(parsed: ParsedCron, date: Date): boolean {
   );
 }
 
+/**
+ * Scheduler that ticks every second and fires registered jobs on minute boundaries.
+ * Zero external dependencies -- uses a simple interval timer.
+ */
 export class CronScheduler {
   private jobs: Array<{ job: CronJob; parsed: ParsedCron }> = [];
   private timer: ReturnType<typeof setInterval> | null = null;

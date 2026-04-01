@@ -5,6 +5,7 @@ const isDev =
     ? process.env.NODE_ENV === "development" || process.env.CELSIAN_ENV === "development"
     : false;
 
+/** Base error class for all CelsianJS errors. Use instead of bare `Error` in library code. */
 export class CelsianError extends Error {
   constructor(message: string) {
     super(message);
@@ -12,6 +13,16 @@ export class CelsianError extends Error {
   }
 }
 
+/**
+ * HTTP error with status code, machine-readable code, and JSON serialization.
+ * Stack traces are stripped in production; included in development.
+ *
+ * @example
+ * ```ts
+ * throw new HttpError(403, 'Forbidden');
+ * // => { "error": "Forbidden", "statusCode": 403, "code": "FORBIDDEN" }
+ * ```
+ */
 export class HttpError extends CelsianError {
   readonly statusCode: number;
   readonly code: string;
@@ -82,6 +93,14 @@ export class HttpError extends CelsianError {
   }
 }
 
+/**
+ * Schema validation error (400). Carries structured issue details with paths and messages.
+ *
+ * @example
+ * ```ts
+ * throw new ValidationError([{ message: 'Required', path: ['email'] }]);
+ * ```
+ */
 export class ValidationError extends CelsianError {
   readonly statusCode = 400;
   readonly code = "VALIDATION_FAILED";

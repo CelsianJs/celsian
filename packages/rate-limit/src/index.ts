@@ -2,6 +2,7 @@
 
 import type { CelsianReply, CelsianRequest, HookHandler, PluginFunction } from "@celsian/core";
 
+/** Options for the rate limiter: max requests, window size, key generation, and store. */
 export interface RateLimitOptions {
   max: number;
   window: number;
@@ -11,6 +12,7 @@ export interface RateLimitOptions {
   trustProxy?: boolean;
 }
 
+/** Pluggable store for rate limit counters (implement for Redis, etc.). */
 export interface RateLimitStore {
   increment(key: string, window: number): Promise<{ count: number; resetAt: number }>;
 }
@@ -20,6 +22,7 @@ interface WindowEntry {
   resetAt: number;
 }
 
+/** In-memory sliding window store with periodic cleanup. Single-process only. */
 export class MemoryRateLimitStore implements RateLimitStore {
   private entries = new Map<string, WindowEntry>();
   private cleanupTimer: ReturnType<typeof setInterval> | null = null;
@@ -87,6 +90,14 @@ function createDefaultKeyGenerator(trustProxy: boolean): (req: CelsianRequest) =
   };
 }
 
+/**
+ * Sliding-window rate limiter plugin. Adds `x-ratelimit-*` headers and returns 429 when exceeded.
+ *
+ * @example
+ * ```ts
+ * await app.register(rateLimit({ max: 100, window: 60_000 }));
+ * ```
+ */
 export function rateLimit(options: RateLimitOptions): PluginFunction {
   const max = options.max;
   const window = options.window;

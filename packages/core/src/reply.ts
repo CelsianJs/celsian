@@ -25,6 +25,10 @@ const MIME_TYPES: Record<string, string> = {
   ".ico": "image/x-icon",
 };
 
+/**
+ * Create a new reply builder. Provides chainable methods for setting status, headers,
+ * cookies, and sending JSON/HTML/stream/file responses plus structured error helpers.
+ */
 export function createReply(): CelsianReply {
   let statusCode = 200;
   const headers: Record<string, string> = {};

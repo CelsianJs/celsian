@@ -4,6 +4,7 @@ import type { CelsianReply, CelsianRequest, HookHandler, PluginFunction } from "
 
 export type CompressionEncoding = "gzip" | "deflate";
 
+/** Options for the compression plugin: byte threshold and allowed encodings. */
 export interface CompressOptions {
   threshold?: number;
   encodings?: CompressionEncoding[];
@@ -46,6 +47,15 @@ function compressBody(
   });
 }
 
+/**
+ * Response compression plugin using Web Standard CompressionStream.
+ * Wraps `reply.json()`, `.send()`, and `.html()` to compress responses above threshold.
+ *
+ * @example
+ * ```ts
+ * await app.register(compress({ threshold: 1024 }));
+ * ```
+ */
 export function compress(options: CompressOptions = {}): PluginFunction {
   const threshold = options.threshold ?? DEFAULT_THRESHOLD;
   const encodings = options.encodings ?? DEFAULT_ENCODINGS;

@@ -2,12 +2,22 @@
 
 import { decode, encode } from "./wire.js";
 
+/** Options for `createRPCClient` -- base URL, custom fetch, and default headers. */
 export interface RPCClientOptions {
   baseUrl?: string;
   fetch?: typeof globalThis.fetch;
   headers?: Record<string, string>;
 }
 
+/**
+ * Create a type-safe RPC client proxy. Calls `.query()` or `.mutate()` on nested paths.
+ *
+ * @example
+ * ```ts
+ * const client = createRPCClient<AppRouter>({ baseUrl: 'http://localhost:3000/_rpc' });
+ * const users = await client.users.list.query({ limit: 10 });
+ * ```
+ */
 export function createRPCClient<TRouter>(options: RPCClientOptions = {}): RPCClientProxy<TRouter> {
   const baseUrl = options.baseUrl ?? "http://localhost:3000/_rpc";
   const fetchFn = options.fetch ?? globalThis.fetch;
@@ -79,6 +89,7 @@ export function createRPCClient<TRouter>(options: RPCClientOptions = {}): RPCCli
   return createProxy() as RPCClientProxy<TRouter>;
 }
 
+/** Error thrown by the RPC client when the server returns an error response. */
 export class RPCError extends Error {
   code: string;
   issues?: Array<{ message: string; path?: (string | number)[] }>;

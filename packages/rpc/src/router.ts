@@ -11,10 +11,21 @@ import type {
 } from "./types.js";
 import { decode, encode } from "./wire.js";
 
+/** Define an RPC router from a nested object of procedures. Identity function for type inference. */
 export function router<T extends RouterDefinition>(routes: T): T {
   return routes;
 }
 
+/**
+ * Server-side RPC handler. Flattens a router definition, validates input/output,
+ * runs middleware, and serves OpenAPI and manifest endpoints.
+ *
+ * @example
+ * ```ts
+ * const rpc = new RPCHandler(appRouter);
+ * app.all('/_rpc/*path', (req) => rpc.handle(req));
+ * ```
+ */
 export class RPCHandler {
   private flatRoutes = new Map<string, ProcedureDefinition>();
   private contextFactory: ContextFactory;

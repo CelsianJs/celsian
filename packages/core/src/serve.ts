@@ -3,6 +3,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { CelsianApp } from "./app.js";
 
+/** Options for `serve()` -- port, host, static files, graceful shutdown. */
 export interface ServeOptions {
   port?: number;
   host?: string;
@@ -15,10 +16,20 @@ export interface ServeOptions {
   onShutdown?: () => Promise<void> | void;
 }
 
+/** Handle returned by `serve()` for programmatic shutdown. */
 export interface ServeResult {
   close: () => Promise<void>;
 }
 
+/**
+ * Start the HTTP server with automatic runtime detection (Node.js, Bun, Deno).
+ * Starts the task worker and cron scheduler, registers graceful shutdown handlers.
+ *
+ * @example
+ * ```ts
+ * const { close } = await serve(app, { port: 3000 });
+ * ```
+ */
 export async function serve(app: CelsianApp, options: ServeOptions = {}): Promise<ServeResult> {
   // Wait for all plugins to load
   await app.ready();
@@ -317,6 +328,7 @@ function serveDeno(app: CelsianApp, port: number, host: string, options: ServeOp
 
 // ─── Conversion Helpers ───
 
+/** Convert a Node.js IncomingMessage to a Web Standard Request. */
 export function nodeToWebRequest(req: IncomingMessage, url: URL): Request {
   const headers = new Headers();
   for (const [key, value] of Object.entries(req.headers)) {
@@ -366,6 +378,7 @@ function nodeToWebRequestFast(req: IncomingMessage, rawPath: string, baseUrl: st
   });
 }
 
+/** Write a Web Standard Response back to a Node.js ServerResponse, preserving Set-Cookie headers. */
 export async function writeWebResponse(res: ServerResponse, response: Response): Promise<void> {
   res.statusCode = response.status;
 

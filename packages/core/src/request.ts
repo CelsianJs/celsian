@@ -8,6 +8,10 @@ const EMPTY_QUERY: Record<string, string | string[]> = Object.freeze(Object.crea
 // Keys that must never be set via user input (prototype pollution prevention)
 const BLOCKED_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
+/**
+ * Build a CelsianRequest from a Web Standard Request, parsed URL, and route params.
+ * Body-consuming methods are bound to the original Request to preserve internal slots.
+ */
 export function buildRequest(request: Request, url: URL, params: Record<string, string>): CelsianRequest {
   // Use frozen empty object when there's no query string to avoid per-request allocation
   let query: Record<string, string | string[]>;
