@@ -275,7 +275,7 @@ describe("CelsianApp", () => {
     expect(app.getDecoration("myService")).toEqual({ active: true });
   });
 
-  it("should NOT leak encapsulated plugin decorations to app instance", async () => {
+  it("should propagate encapsulated plugin decorations to app instance", async () => {
     const app = createApp();
     await app.register(
       (ctx) => {
@@ -285,7 +285,10 @@ describe("CelsianApp", () => {
     );
     await app.ready();
 
-    expect((app as any).secret).toBeUndefined();
+    // Decorations from encapsulated plugins are accessible on the app instance
+    // so plugins like JWT work without requiring { encapsulate: false }
+    expect((app as any).secret).toBe(42);
+    expect(app.getDecoration("secret")).toBe(42);
   });
 
   // ─── BUG-5/6: onSend hook headers applied to Response ───

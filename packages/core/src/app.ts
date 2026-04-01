@@ -124,10 +124,12 @@ export class CelsianApp {
   /** Register a plugin with optional prefix and encapsulation settings. */
   async register(plugin: PluginFunction, options?: PluginOptions): Promise<void> {
     assertPlugin(plugin);
-    const before = new Set(this.rootContext.decorations.keys());
+    const before = new Set(this.rootContext.collectAllDecorations().keys());
     const p = this.pluginContext.register(plugin, options).then(() => {
-      // Sync new decorations from plugin context to app instance (BUG-4 fix)
-      for (const [name, value] of this.rootContext.decorations) {
+      // Sync new decorations from plugin context and all child contexts to app instance.
+      // This ensures decorations from encapsulated plugins (e.g. jwt) are accessible
+      // on the app instance even without { encapsulate: false }.
+      for (const [name, value] of this.rootContext.collectAllDecorations()) {
         if (!before.has(name) && !(name in this)) {
           Object.defineProperty(this, name, { value, writable: true, configurable: true, enumerable: true });
         }
@@ -266,7 +268,7 @@ export class CelsianApp {
   }
 
   getDecoration(name: string): unknown {
-    return this.rootContext.decorations.get(name);
+    return this.rootContext.collectAllDecorations().get(name);
   }
 
   /** Add a named property to every incoming CelsianRequest. */

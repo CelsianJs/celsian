@@ -84,15 +84,17 @@ describe("BUG-4: Plugin decorations accessible on app instance", () => {
     expect(app.getDecoration("dbPool")).toEqual({ connected: true });
   });
 
-  it("should NOT expose encapsulated plugin decorations on app instance", async () => {
+  it("should expose encapsulated plugin decorations on app instance", async () => {
     const app = createApp();
     await app.register(async (ctx) => {
       ctx.decorate("secretUtil", "hidden");
     });
     await app.ready();
 
-    // Encapsulated plugins keep decorations scoped -- they should NOT leak
-    expect((app as any).secretUtil).toBeUndefined();
+    // Decorations from encapsulated plugins propagate to the app instance
+    // so plugins like JWT, database etc. are accessible via app.jwt, app.db
+    expect((app as any).secretUtil).toBe("hidden");
+    expect(app.getDecoration("secretUtil")).toBe("hidden");
   });
 
   it("direct app.decorate() should appear as property", () => {

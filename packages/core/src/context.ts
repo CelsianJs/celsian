@@ -52,6 +52,19 @@ export class EncapsulationContext {
     return child;
   }
 
+  /** Collect all decorations from this context and all descendants (depth-first). */
+  collectAllDecorations(): Map<string, unknown> {
+    const result = new Map(this.decorations);
+    for (const child of this.children) {
+      for (const [name, value] of child.collectAllDecorations()) {
+        if (!result.has(name)) {
+          result.set(name, value);
+        }
+      }
+    }
+    return result;
+  }
+
   toPluginContext(): PluginContext {
     const ctx = this;
 

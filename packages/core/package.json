@@ -9,6 +9,41 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./plugins/cors": {
+      "types": "./dist/plugins/cors.d.ts",
+      "import": "./dist/plugins/cors.js",
+      "default": "./dist/plugins/cors.js"
+    },
+    "./plugins/csrf": {
+      "types": "./dist/plugins/csrf.d.ts",
+      "import": "./dist/plugins/csrf.js",
+      "default": "./dist/plugins/csrf.js"
+    },
+    "./plugins/openapi": {
+      "types": "./dist/plugins/openapi.d.ts",
+      "import": "./dist/plugins/openapi.js",
+      "default": "./dist/plugins/openapi.js"
+    },
+    "./plugins/security": {
+      "types": "./dist/plugins/security.d.ts",
+      "import": "./dist/plugins/security.js",
+      "default": "./dist/plugins/security.js"
+    },
+    "./plugins/database": {
+      "types": "./dist/plugins/database.d.ts",
+      "import": "./dist/plugins/database.js",
+      "default": "./dist/plugins/database.js"
+    },
+    "./plugins/etag": {
+      "types": "./dist/plugins/etag.d.ts",
+      "import": "./dist/plugins/etag.js",
+      "default": "./dist/plugins/etag.js"
+    },
+    "./plugins/analytics": {
+      "types": "./dist/plugins/analytics.d.ts",
+      "import": "./dist/plugins/analytics.js",
+      "default": "./dist/plugins/analytics.js"
     }
   },
   "files": [
