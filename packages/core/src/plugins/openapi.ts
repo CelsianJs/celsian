@@ -1,5 +1,6 @@
 // @celsian/core — OpenAPI 3.1 documentation plugin for REST routes
 
+import { fromSchema, type StandardSchema } from "@celsian/schema";
 import type { InternalRoute, PluginFunction } from "../types.js";
 
 export interface OpenAPIOptions {
@@ -25,7 +26,8 @@ interface OpenAPISpec {
 /**
  * Extract a JSON Schema-compatible object from a schema definition.
  * Supports TypeBox schemas (which have `type` and `properties` directly),
- * plain JSON Schema objects, and objects with a `toJsonSchema()` method.
+ * plain JSON Schema objects, objects with a `toJsonSchema()` method,
+ * and Zod/Valibot schemas (auto-detected via @celsian/schema adapters).
  */
 function extractJsonSchema(schema: unknown): Record<string, unknown> | null {
   if (schema == null || typeof schema !== "object") return null;
@@ -45,6 +47,17 @@ function extractJsonSchema(schema: unknown): Record<string, unknown> | null {
   // If it has `properties`, treat it as an object schema missing `type`
   if ("properties" in s) {
     return { type: "object", ...s };
+  }
+
+  // Try wrapping through @celsian/schema (handles Zod, Valibot, etc.)
+  // These schemas have _def (Zod) or other internal markers that fromSchema detects.
+  try {
+    const wrapped: StandardSchema = fromSchema(s);
+    if (typeof wrapped.toJsonSchema === "function") {
+      return wrapped.toJsonSchema() as Record<string, unknown>;
+    }
+  } catch {
+    // Not a recognized schema library — fall through
   }
 
   return null;

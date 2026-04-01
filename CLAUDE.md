@@ -82,6 +82,28 @@ expect(res.statusCode).toBe(200);
 - `packages/schema/src/detect.ts` -- Auto-detect schema library
 - `packages/rpc/src/router.ts` -- RPC router
 
+## Common API Notes
+
+### Task Worker Lifecycle
+`serve()` automatically calls `app.startWorker()` and `app.startCron()`. If NOT using `serve()` (tests, serverless), call `app.startWorker()` manually or tasks will silently never run.
+
+### SSE API
+The SSE hub uses `hub.subscribe(request)` which returns an `SSEChannel` with a `.response` property:
+```ts
+const channel = hub.subscribe(req);
+return channel.response;
+```
+There is NO `hub.connect()` method.
+
+### JWT Plugin Types
+`@celsian/jwt` uses declaration merging to type `app.jwt` and `request.user`. After `import { jwt } from '@celsian/jwt'`, TypeScript knows `app.jwt.sign()` and `app.jwt.verify()` exist. `createJWTGuard()` can be called with no arguments if the JWT plugin is registered.
+
+### Reply Helpers
+`CelsianReply` has: `json()`, `html()`, `stream()`, `redirect()`, `sendFile()`, `download()`, `cookie()`, `clearCookie()`, and error helpers: `notFound()`, `badRequest()`, `unauthorized()`, `forbidden()`, `conflict()`, `gone()`, `tooManyRequests()`, `internalServerError()`, `serviceUnavailable()`.
+
+### OpenAPI + Schemas
+The OpenAPI plugin auto-detects Zod, TypeBox, and Valibot schemas on routes and includes them in the spec. Define `schema.body`, `schema.querystring`, or `schema.response` on routes and they flow into Swagger UI.
+
 ## Adding a New Package
 
 1. Create `packages/<name>/` with `package.json`, `tsconfig.json`, `src/index.ts`

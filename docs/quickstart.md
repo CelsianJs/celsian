@@ -118,29 +118,29 @@ npm install @celsian/jwt
 ```typescript
 import { jwt, createJWTGuard } from '@celsian/jwt';
 
-// Register the JWT plugin
+// Register the JWT plugin -- decorates app.jwt with sign() and verify()
 await app.register(jwt({ secret: process.env.JWT_SECRET! }));
 
 // Public route -- sign tokens
 app.post('/login', async (req, reply) => {
   const body = req.parsedBody as { email: string; password: string };
   // ... validate credentials ...
-  const token = await (app as any).jwt.sign(
+  const token = await app.jwt.sign(
     { sub: 'user-1', email: body.email },
     { expiresIn: '7d' }
   );
   return reply.json({ token });
 });
 
-// Protected routes -- use the guard as a preHandler hook
-const requireAuth = createJWTGuard({ secret: process.env.JWT_SECRET! });
+// Protected routes -- createJWTGuard() reads the secret from the registered plugin
+const requireAuth = createJWTGuard();
 
 app.route({
   method: 'GET',
   url: '/me',
   preHandler: [requireAuth],
   handler(req, reply) {
-    return reply.json({ user: (req as any).user });
+    return reply.json({ user: req.user });
   },
 });
 ```
@@ -169,7 +169,9 @@ app.post('/users', async (req, reply) => {
 });
 ```
 
-The task worker starts automatically with `serve()`. For production, swap the in-memory queue for Redis:
+The task worker starts automatically when you call `serve()`. If you are NOT using `serve()` (e.g. in tests or serverless), call `app.startWorker()` manually to begin processing enqueued tasks.
+
+For production, swap the in-memory queue for Redis:
 
 ```bash
 npm install @celsian/queue-redis
