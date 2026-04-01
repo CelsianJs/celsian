@@ -75,19 +75,21 @@ export const handler = createLambdaHandler(app);      // AWS Lambda
 export default createVercelEdgeHandler(app);           // Vercel Edge
 ```
 
-### Significantly Faster Than Express
+### Honest Benchmarks
 
 Benchmarked on Node.js v22, Apple Silicon, 10 connections for 10 seconds per scenario:
 
-| Scenario              | CelsianJS (req/s) | Express (req/s) | Delta  |
-| --------------------- | -----------------: | --------------: | -----: |
-| JSON response         |             27,996 |          16,321 | +1.7x  |
-| Route params          |             27,026 |          16,288 | +1.7x  |
-| Middleware (5 layers)  |             24,445 |          15,751 | +1.6x  |
-| JSON body parsing     |             19,074 |          14,648 | +1.3x  |
-| Error handling        |             18,542 |          14,765 | +1.3x  |
+| Scenario              | Fastify (req/s) | CelsianJS (req/s) | Express (req/s) |
+| --------------------- | ---------------: | -----------------: | --------------: |
+| JSON response         |           45,866 |             27,996 |          16,321 |
+| Route params          |           45,440 |             27,026 |          16,288 |
+| Middleware (5 layers)  |           41,380 |             24,445 |          15,751 |
+| JSON body parsing     |           29,998 |             19,074 |          14,648 |
+| Error handling        |           32,398 |             18,542 |          14,765 |
 
-CelsianJS beats Express across every scenario while shipping batteries included (tasks, cron, WebSocket, compression, JWT, rate limiting). On edge runtimes, performance is comparable to Hono.
+**Fastify is faster.** It operates directly on Node.js internals with `fast-json-stringify` — hard to beat. CelsianJS pays a performance tax for Web Standard API compatibility (`Request`/`Response` object creation per request).
+
+**CelsianJS is 1.3-1.7x faster than Express** while shipping batteries that neither Fastify nor Express include: background task queues, cron scheduling, multi-runtime deployment, and DB analytics. If raw throughput is your only concern, use Fastify. If you need application infrastructure in a single framework, that's where CelsianJS fits.
 
 ### Built-In Everything
 
@@ -404,15 +406,15 @@ Fly.io and Railway adapters auto-generate deployment configs (fly.toml, Dockerfi
 
 Node.js v22.13.1, macOS Darwin (Apple Silicon), 10 connections, 10s per scenario.
 
-| Scenario              | CelsianJS (req/s) | Express (req/s) | Delta  |
-| --------------------- | -----------------: | --------------: | -----: |
-| JSON response         |             27,996 |          16,321 | +1.7x  |
-| Route params          |             27,026 |          16,288 | +1.7x  |
-| Middleware (5)        |             24,445 |          15,751 | +1.6x  |
-| JSON body parsing     |             19,074 |          14,648 | +1.3x  |
-| Error handling        |             18,542 |          14,765 | +1.3x  |
+| Scenario              | Fastify (req/s) | CelsianJS (req/s) | Express (req/s) |
+| --------------------- | ---------------: | -----------------: | --------------: |
+| JSON response         |           45,866 |             27,996 |          16,321 |
+| Route params          |           45,440 |             27,026 |          16,288 |
+| Middleware (5)        |           41,380 |             24,445 |          15,751 |
+| JSON body parsing     |           29,998 |             19,074 |          14,648 |
+| Error handling        |           32,398 |             18,542 |          14,765 |
 
-CelsianJS is 1.3x-1.7x faster than Express across all scenarios with batteries included. On edge runtimes (Cloudflare Workers, Vercel Edge), performance is comparable to Hono.
+Fastify is the fastest Node.js framework. CelsianJS is 1.3-1.7x faster than Express. The gap with Fastify comes from Web Standard API overhead (`Request`/`Response` per request). CelsianJS trades some throughput for multi-runtime portability and built-in application infrastructure.
 
 ## Configuration
 
