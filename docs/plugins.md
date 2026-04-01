@@ -254,8 +254,9 @@ A common pattern is to group routes, hooks, and services into a feature plugin:
 
 ```typescript
 async function usersFeature(app) {
-  // Scoped rate limit
-  await app.register(rateLimit({ max: 50, window: 60_000 }));
+  // Scoped rate limit — use { encapsulate: false } so the onRequest hook
+  // applies to routes registered in this plugin context
+  await app.register(rateLimit({ max: 50, window: 60_000 }), { encapsulate: false });
 
   // Routes
   app.get('/users', listUsers);
@@ -266,8 +267,8 @@ async function usersFeature(app) {
 }
 
 async function ordersFeature(app) {
-  // Different rate limit
-  await app.register(rateLimit({ max: 20, window: 60_000 }));
+  // Different rate limit for orders
+  await app.register(rateLimit({ max: 20, window: 60_000 }), { encapsulate: false });
 
   app.get('/orders', listOrders);
   app.post('/orders', createOrder);
@@ -277,9 +278,9 @@ async function ordersFeature(app) {
 await app.register(cors(), { encapsulate: false });
 await app.register(security(), { encapsulate: false });
 
-// Feature plugins
+// Feature plugins — each gets its own encapsulation scope with a prefix
 await app.register(usersFeature, { prefix: '/api' });
 await app.register(ordersFeature, { prefix: '/api' });
 ```
 
-Each feature has its own rate limit, but CORS and security headers apply everywhere.
+Each feature has its own rate limit (applied via `{ encapsulate: false }` within the feature's scope), while CORS and security headers apply everywhere. The `onRequest` hooks from rate-limit stay scoped to each feature because the feature plugins themselves are encapsulated.

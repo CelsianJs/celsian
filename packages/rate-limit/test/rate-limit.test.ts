@@ -117,6 +117,36 @@ describe("@celsian/rate-limit", () => {
     expect(blocked.status).toBe(429);
     expect(blocked.headers.get("retry-after")).toBeTruthy();
   });
+
+  it("should NOT affect routes outside scope when encapsulated (default)", async () => {
+    const app = createApp();
+
+    // Register rate-limit without encapsulate: false
+    await app.register(
+      rateLimit({
+        max: 2,
+        window: 60_000,
+        keyGenerator: () => "test-key",
+      }),
+    );
+
+    // Route on the root context -- should NOT be rate-limited because
+    // the rate-limit onRequest hook is scoped to the child context
+    app.get("/health", (_req, reply) => reply.json({ ok: true }));
+
+    const r1 = await app.inject({ url: "/health" });
+    expect(r1.status).toBe(200);
+    expect(r1.headers.get("x-ratelimit-limit")).toBeNull();
+
+    const r2 = await app.inject({ url: "/health" });
+    expect(r2.status).toBe(200);
+    expect(r2.headers.get("x-ratelimit-limit")).toBeNull();
+
+    const r3 = await app.inject({ url: "/health" });
+    expect(r3.status).toBe(200);
+    // No rate-limit headers -- the onRequest hook is scoped
+    expect(r3.headers.get("x-ratelimit-limit")).toBeNull();
+  });
 });
 
 describe("MemoryRateLimitStore", () => {
