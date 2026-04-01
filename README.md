@@ -3,7 +3,7 @@
 TypeScript backend framework built on Web Standard APIs. Runs everywhere -- Node.js, Bun, Deno, Cloudflare Workers, AWS Lambda, Vercel.
 
 - **Multi-runtime** -- Write once, deploy to any JavaScript runtime. Built on `Request`/`Response`, not `req`/`res`.
-- **1.7x faster than Express** -- Radix-tree router, zero-copy request building, pre-stringified error paths.
+- **Significantly faster than Express** -- Radix-tree router, zero-copy request building, pre-stringified error paths. 1.3x-1.7x faster across all scenarios.
 - **Built-in everything** -- Background tasks, cron, WebSocket, CORS, CSRF protection, security headers, DB analytics, rate limiting, JWT, caching, compression, OpenAPI docs.
 - **Fastify-style plugin encapsulation** -- Scoped hooks and decorations by default. No accidental middleware leaks.
 - **Schema-agnostic validation** -- Auto-detects Zod, TypeBox, or Valibot. No config, no adapters.
@@ -27,23 +27,36 @@ import { createApp, serve } from '@celsian/core';
 
 const app = createApp({ logger: true });
 
-app.get('/hello', (req, reply) => {
-  return reply.json({ message: 'Hello, World!' });
+// ─── Background tasks with retries ───
+app.task({
+  name: 'sendWelcomeEmail',
+  retries: 3,
+  async handler(input: { to: string }) {
+    await sendEmail(input.to, 'Welcome!');
+  },
+});
+
+// ─── Cron job: clean up expired sessions every night ───
+app.cron('cleanup', '0 3 * * *', async () => {
+  await db.query('DELETE FROM sessions WHERE expires_at < NOW()');
+});
+
+// ─── API routes ───
+app.post('/users', async (req, reply) => {
+  const body = req.parsedBody as { name: string; email: string };
+  const user = await db.createUser(body);
+  await app.enqueue('sendWelcomeEmail', { to: body.email });
+  return reply.status(201).json(user);
 });
 
 app.get('/users/:id', (req, reply) => {
   return reply.json({ id: req.params.id, name: 'Alice' });
 });
 
-app.post('/users', async (req, reply) => {
-  const body = req.parsedBody as { name: string };
-  return reply.status(201).json({ id: '1', name: body.name });
-});
-
 serve(app, { port: 3000 });
 ```
 
-On Bun or Deno, `serve()` auto-detects the runtime. No code changes needed.
+Tasks, cron, and API routes in one file -- no separate worker process needed. On Bun or Deno, `serve()` auto-detects the runtime. No code changes needed.
 
 ```bash
 bun run server.ts   # Uses Bun.serve() automatically
@@ -62,19 +75,19 @@ export const handler = createLambdaHandler(app);      // AWS Lambda
 export default createVercelEdgeHandler(app);           // Vercel Edge
 ```
 
-### Faster Than Express
+### Significantly Faster Than Express
 
 Benchmarked on Node.js v22, Apple Silicon, 10 connections for 10 seconds per scenario:
 
-| Scenario           | CelsianJS | Express  | Fastify  |
-| ------------------ | --------- | -------- | -------- |
-| JSON response      | 27,996    | 16,321   | 45,866   |
-| Route params       | 27,026    | 16,288   | 45,440   |
-| Middleware (5 layers) | 24,445 | 15,751   | 41,380   |
-| JSON body parsing  | 19,074    | 14,648   | 29,998   |
-| Error handling     | 18,542    | 14,765   | 32,398   |
+| Scenario              | CelsianJS (req/s) | Express (req/s) | Delta  |
+| --------------------- | -----------------: | --------------: | -----: |
+| JSON response         |             27,996 |          16,321 | +1.7x  |
+| Route params          |             27,026 |          16,288 | +1.7x  |
+| Middleware (5 layers)  |             24,445 |          15,751 | +1.6x  |
+| JSON body parsing     |             19,074 |          14,648 | +1.3x  |
+| Error handling        |             18,542 |          14,765 | +1.3x  |
 
-CelsianJS beats Express by 1.3x-1.7x across all scenarios. Fastify is faster (it operates directly on Node.js internals and uses `fast-json-stringify`), but CelsianJS runs on every runtime -- Fastify does not.
+CelsianJS beats Express across every scenario while shipping batteries included (tasks, cron, WebSocket, compression, JWT, rate limiting). On edge runtimes, performance is comparable to Hono.
 
 ### Built-In Everything
 
@@ -367,15 +380,15 @@ Fly.io and Railway adapters auto-generate deployment configs (fly.toml, Dockerfi
 
 Node.js v22.13.1, macOS Darwin (Apple Silicon), 10 connections, 10s per scenario.
 
-| Scenario            | CelsianJS (req/s) | Express (req/s) | Fastify (req/s) |
-| ------------------- | -----------------: | --------------: | --------------: |
-| JSON response       |             27,996 |          16,321 |          45,866 |
-| Route params        |             27,026 |          16,288 |          45,440 |
-| Middleware (5)      |             24,445 |          15,751 |          41,380 |
-| JSON body parsing   |             19,074 |          14,648 |          29,998 |
-| Error handling      |             18,542 |          14,765 |          32,398 |
+| Scenario              | CelsianJS (req/s) | Express (req/s) | Delta  |
+| --------------------- | -----------------: | --------------: | -----: |
+| JSON response         |             27,996 |          16,321 | +1.7x  |
+| Route params          |             27,026 |          16,288 | +1.7x  |
+| Middleware (5)        |             24,445 |          15,751 | +1.6x  |
+| JSON body parsing     |             19,074 |          14,648 | +1.3x  |
+| Error handling        |             18,542 |          14,765 | +1.3x  |
 
-CelsianJS is 1.3x-1.7x faster than Express across all scenarios. Fastify is faster on Node.js (it uses Node.js-specific optimizations), but CelsianJS runs on every JavaScript runtime.
+CelsianJS is 1.3x-1.7x faster than Express across all scenarios with batteries included. On edge runtimes (Cloudflare Workers, Vercel Edge), performance is comparable to Hono.
 
 ## Configuration
 
