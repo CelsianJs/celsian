@@ -285,6 +285,30 @@ const users = await client.users.list.query({ limit: 10 });
 const newUser = await client.users.create.mutate({ name: 'Bob', email: 'bob@example.com' });
 ```
 
+## Try the Demo
+
+The [SaaS Demo](examples/saas-demo/) builds a complete backend in one file (~250 lines): JWT auth, users CRUD, background tasks, cron, SSE, and OpenAPI docs.
+
+```bash
+cd examples/saas-demo
+npm install
+npx tsx src/index.ts
+```
+
+Then hit `http://localhost:3000/docs` for the Swagger UI, or:
+
+```bash
+# Register
+curl -X POST http://localhost:3000/register \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"alice@example.com","password":"secret123","name":"Alice"}'
+
+# Login and grab the token
+curl -X POST http://localhost:3000/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"alice@example.com","password":"secret123"}'
+```
+
 ## Ecosystem
 
 ### Core Packages
