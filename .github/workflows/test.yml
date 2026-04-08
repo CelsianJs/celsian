@@ -9,7 +9,6 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    # TODO: Add Bun to the test matrix in a future PR (requires oven-sh/setup-bun action)
     strategy:
       matrix:
         node-version: [20, 22]
@@ -78,3 +77,49 @@ jobs:
 
       - name: Security audit
         run: pnpm audit --audit-level=moderate
+
+  # Bun smoke test — verifies the framework runs on Bun
+  test-bun:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: Run core tests with Bun
+        run: cd packages/core && bun test
+
+  # Final gate — all required checks must pass before this reports success.
+  # Use this as the single required status check in branch protection.
+  ci-passed:
+    if: always()
+    needs: [test, lint, security-audit]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check all jobs passed
+        run: |
+          if [[ "${{ needs.test.result }}" != "success" ]]; then
+            echo "❌ test failed"
+            exit 1
+          fi
+          if [[ "${{ needs.lint.result }}" != "success" ]]; then
+            echo "❌ lint failed"
+            exit 1
+          fi
+          if [[ "${{ needs.security-audit.result }}" != "success" ]]; then
+            echo "❌ security-audit failed"
+            exit 1
+          fi
+          echo "✅ All CI checks passed"

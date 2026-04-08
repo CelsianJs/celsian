@@ -7,7 +7,33 @@ on:
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
 jobs:
+  # Gate: run the full test suite before any release happens
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: Run tests
+        run: pnpm test
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Verify no workspace:* in published packages
+        run: bash scripts/verify-publish.sh
+
   release:
+    needs: verify
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -27,12 +53,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
 
-      - name: Verify no workspace:* in published packages
-        run: bash scripts/verify-publish.sh
-
       - uses: changesets/action@v1
         with:
           publish: pnpm release
+          title: "chore: version packages"
+          commit: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
