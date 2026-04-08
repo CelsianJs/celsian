@@ -1,7 +1,7 @@
 // @celsian/rate-limit — Fixed-window rate limiter with pluggable store
 
-import { CelsianError } from "@celsian/core";
 import type { CelsianReply, CelsianRequest, HookHandler, PluginFunction } from "@celsian/core";
+import { CelsianError } from "@celsian/core";
 
 /** Options for the rate limiter: max requests, window size, key generation, and store. */
 export interface RateLimitOptions {

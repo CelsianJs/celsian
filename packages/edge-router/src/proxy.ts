@@ -75,7 +75,12 @@ export async function proxyRequest(request: Request, match: RouteMatch): Promise
   const headers = new Headers(request.headers);
   headers.set("X-Forwarded-Host", url.hostname);
   headers.set("X-Forwarded-Proto", url.protocol.replace(":", ""));
-  headers.set("X-Forwarded-For", request.headers.get("CF-Connecting-IP") ?? request.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim() ?? "unknown");
+  headers.set(
+    "X-Forwarded-For",
+    request.headers.get("CF-Connecting-IP") ??
+      request.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim() ??
+      "unknown",
+  );
 
   // Add route-level custom headers
   if (route.entry.headers) {

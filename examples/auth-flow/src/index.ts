@@ -71,114 +71,130 @@ export function createAuthApp() {
 
   // ─── Public Routes ───
 
-  app.post("/auth/register", {
-    schema: { body: CredentialsSchema },
-  }, async (req, reply) => {
-    const { email, password } = req.parsedBody;
+  app.post(
+    "/auth/register",
+    {
+      schema: { body: CredentialsSchema },
+    },
+    async (req, reply) => {
+      const { email, password } = req.parsedBody;
 
-    // Check duplicate
-    for (const user of users.values()) {
-      if (user.email === email) {
-        throw new HttpError(409, "Email already registered");
+      // Check duplicate
+      for (const user of users.values()) {
+        if (user.email === email) {
+          throw new HttpError(409, "Email already registered");
+        }
       }
-    }
 
-    const user: User = {
-      id: generateId(),
-      email,
-      passwordHash: await hashPassword(password),
-      createdAt: new Date().toISOString(),
-    };
-    users.set(user.id, user);
+      const user: User = {
+        id: generateId(),
+        email,
+        passwordHash: await hashPassword(password),
+        createdAt: new Date().toISOString(),
+      };
+      users.set(user.id, user);
 
-    const jwtNs = app.getDecoration("jwt") as JWTNamespace;
-    const accessToken = await jwtNs.sign({ sub: user.id, email }, { expiresIn: ACCESS_TOKEN_EXPIRY });
-    const refreshToken = generateId();
-    refreshTokens.set(refreshToken, {
-      userId: user.id,
-      expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
-    });
+      const jwtNs = app.getDecoration("jwt") as JWTNamespace;
+      const accessToken = await jwtNs.sign({ sub: user.id, email }, { expiresIn: ACCESS_TOKEN_EXPIRY });
+      const refreshToken = generateId();
+      refreshTokens.set(refreshToken, {
+        userId: user.id,
+        expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
+      });
 
-    return reply.status(201).json({
-      user: { id: user.id, email: user.email },
-      accessToken,
-      refreshToken,
-    });
-  });
+      return reply.status(201).json({
+        user: { id: user.id, email: user.email },
+        accessToken,
+        refreshToken,
+      });
+    },
+  );
 
-  app.post("/auth/login", {
-    schema: { body: CredentialsSchema },
-  }, async (req, reply) => {
-    const { email, password } = req.parsedBody;
+  app.post(
+    "/auth/login",
+    {
+      schema: { body: CredentialsSchema },
+    },
+    async (req, reply) => {
+      const { email, password } = req.parsedBody;
 
-    let foundUser: User | undefined;
-    for (const user of users.values()) {
-      if (user.email === email) {
-        foundUser = user;
-        break;
+      let foundUser: User | undefined;
+      for (const user of users.values()) {
+        if (user.email === email) {
+          foundUser = user;
+          break;
+        }
       }
-    }
 
-    if (!foundUser || !(await verifyPassword(password, foundUser.passwordHash))) {
-      throw new HttpError(401, "Invalid email or password");
-    }
+      if (!foundUser || !(await verifyPassword(password, foundUser.passwordHash))) {
+        throw new HttpError(401, "Invalid email or password");
+      }
 
-    const jwtNs = app.getDecoration("jwt") as JWTNamespace;
-    const accessToken = await jwtNs.sign({ sub: foundUser.id, email }, { expiresIn: ACCESS_TOKEN_EXPIRY });
-    const refreshToken = generateId();
-    refreshTokens.set(refreshToken, {
-      userId: foundUser.id,
-      expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
-    });
+      const jwtNs = app.getDecoration("jwt") as JWTNamespace;
+      const accessToken = await jwtNs.sign({ sub: foundUser.id, email }, { expiresIn: ACCESS_TOKEN_EXPIRY });
+      const refreshToken = generateId();
+      refreshTokens.set(refreshToken, {
+        userId: foundUser.id,
+        expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
+      });
 
-    return reply.json({
-      user: { id: foundUser.id, email: foundUser.email },
-      accessToken,
-      refreshToken,
-    });
-  });
+      return reply.json({
+        user: { id: foundUser.id, email: foundUser.email },
+        accessToken,
+        refreshToken,
+      });
+    },
+  );
 
-  app.post("/auth/refresh", {
-    schema: { body: RefreshTokenSchema },
-  }, async (req, reply) => {
-    const { refreshToken } = req.parsedBody;
+  app.post(
+    "/auth/refresh",
+    {
+      schema: { body: RefreshTokenSchema },
+    },
+    async (req, reply) => {
+      const { refreshToken } = req.parsedBody;
 
-    const stored = refreshTokens.get(refreshToken);
-    if (!stored || stored.expiresAt < Date.now()) {
-      if (stored) refreshTokens.delete(refreshToken);
-      throw new HttpError(401, "Invalid or expired refresh token");
-    }
+      const stored = refreshTokens.get(refreshToken);
+      if (!stored || stored.expiresAt < Date.now()) {
+        if (stored) refreshTokens.delete(refreshToken);
+        throw new HttpError(401, "Invalid or expired refresh token");
+      }
 
-    const user = users.get(stored.userId);
-    if (!user) {
+      const user = users.get(stored.userId);
+      if (!user) {
+        refreshTokens.delete(refreshToken);
+        throw new HttpError(401, "User not found");
+      }
+
+      // Rotate refresh token
       refreshTokens.delete(refreshToken);
-      throw new HttpError(401, "User not found");
-    }
+      const newRefreshToken = generateId();
+      refreshTokens.set(newRefreshToken, {
+        userId: user.id,
+        expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
+      });
 
-    // Rotate refresh token
-    refreshTokens.delete(refreshToken);
-    const newRefreshToken = generateId();
-    refreshTokens.set(newRefreshToken, {
-      userId: user.id,
-      expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
-    });
+      const jwtNs = app.getDecoration("jwt") as JWTNamespace;
+      const accessToken = await jwtNs.sign({ sub: user.id, email: user.email }, { expiresIn: ACCESS_TOKEN_EXPIRY });
 
-    const jwtNs = app.getDecoration("jwt") as JWTNamespace;
-    const accessToken = await jwtNs.sign({ sub: user.id, email: user.email }, { expiresIn: ACCESS_TOKEN_EXPIRY });
+      return reply.json({
+        accessToken,
+        refreshToken: newRefreshToken,
+      });
+    },
+  );
 
-    return reply.json({
-      accessToken,
-      refreshToken: newRefreshToken,
-    });
-  });
-
-  app.post("/auth/logout", {
-    schema: { body: RefreshTokenSchema },
-  }, async (req, reply) => {
-    const { refreshToken } = req.parsedBody;
-    refreshTokens.delete(refreshToken);
-    return reply.json({ message: "Logged out" });
-  });
+  app.post(
+    "/auth/logout",
+    {
+      schema: { body: RefreshTokenSchema },
+    },
+    async (req, reply) => {
+      const { refreshToken } = req.parsedBody;
+      refreshTokens.delete(refreshToken);
+      return reply.json({ message: "Logged out" });
+    },
+  );
 
   // ─── Protected Routes ───
 

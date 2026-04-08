@@ -144,9 +144,7 @@ export function createReply(): CelsianReply {
       // Prevent open redirect: only allow relative paths and http(s) URLs
       // Also reject protocol-relative URLs (//evil.com) which bypass origin checks
       if (url.startsWith("//") || (!url.startsWith("/") && !url.startsWith("http://") && !url.startsWith("https://"))) {
-        throw new CelsianError(
-          `Invalid redirect URL: "${url}". Must start with "/", "http://", or "https://".`,
-        );
+        throw new CelsianError(`Invalid redirect URL: "${url}". Must start with "/", "http://", or "https://".`);
       }
       sent = true;
       return new Response(null, {

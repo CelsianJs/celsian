@@ -1,6 +1,7 @@
 // @celsian/core — Security and reliability improvement tests
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { CronScheduler } from "../src/cron.js";
 import { CelsianError } from "../src/errors.js";
 import { runHooksFireAndForget } from "../src/hooks.js";
 import { createLogger } from "../src/logger.js";
@@ -9,7 +10,6 @@ import { MemoryQueue } from "../src/queue.js";
 import { createReply } from "../src/reply.js";
 import { buildRequest } from "../src/request.js";
 import { createSSEHub } from "../src/sse.js";
-import { CronScheduler } from "../src/cron.js";
 import { TaskRegistry, TaskWorker } from "../src/task.js";
 
 function makeRequest(url = "http://localhost/test") {
@@ -67,9 +67,7 @@ describe("Redirect URL validation", () => {
   it("should throw on javascript: URLs", () => {
     const reply = createReply();
     expect(() => reply.redirect("javascript:alert(1)")).toThrow(CelsianError);
-    expect(() => reply.redirect("javascript:alert(1)")).toThrow(
-      'Invalid redirect URL: "javascript:alert(1)"',
-    );
+    expect(() => reply.redirect("javascript:alert(1)")).toThrow('Invalid redirect URL: "javascript:alert(1)"');
   });
 
   it("should throw on data: URLs", () => {

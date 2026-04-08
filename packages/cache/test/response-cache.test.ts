@@ -239,22 +239,13 @@ describe("Response Cache", () => {
     };
 
     // Same URL, different Accept-Language — should be cached separately
-    await cache.cached(
-      makeRequest("/data", "GET", { "accept-language": "en" }),
-      handler,
-    );
-    await cache.cached(
-      makeRequest("/data", "GET", { "accept-language": "fr" }),
-      handler,
-    );
+    await cache.cached(makeRequest("/data", "GET", { "accept-language": "en" }), handler);
+    await cache.cached(makeRequest("/data", "GET", { "accept-language": "fr" }), handler);
 
     expect(callCount).toBe(2);
 
     // Same language as first request — should be a HIT
-    const res = await cache.cached(
-      makeRequest("/data", "GET", { "accept-language": "en" }),
-      handler,
-    );
+    const res = await cache.cached(makeRequest("/data", "GET", { "accept-language": "en" }), handler);
     expect(res.headers.get("x-cache")).toBe("HIT");
     expect(callCount).toBe(2);
 
@@ -274,14 +265,8 @@ describe("Response Cache", () => {
       return jsonResponse({ lang: callCount === 1 ? "en" : "de" });
     };
 
-    const res1 = await cache.cached(
-      makeRequest("/page", "GET", { "accept-language": "en" }),
-      handler,
-    );
-    const res2 = await cache.cached(
-      makeRequest("/page", "GET", { "accept-language": "de" }),
-      handler,
-    );
+    const res1 = await cache.cached(makeRequest("/page", "GET", { "accept-language": "en" }), handler);
+    const res2 = await cache.cached(makeRequest("/page", "GET", { "accept-language": "de" }), handler);
 
     expect(await res1.json()).toEqual({ lang: "en" });
     expect(await res2.json()).toEqual({ lang: "de" });
@@ -300,18 +285,12 @@ describe("Response Cache", () => {
     const handler = () => jsonResponse({ ok: true });
 
     // MISS response should include Vary header
-    const res1 = await cache.cached(
-      makeRequest("/data", "GET", { "accept-language": "en" }),
-      handler,
-    );
+    const res1 = await cache.cached(makeRequest("/data", "GET", { "accept-language": "en" }), handler);
     expect(res1.headers.get("x-cache")).toBe("MISS");
     expect(res1.headers.get("vary")).toBe("accept-language, accept-encoding");
 
     // HIT response should also include Vary header (from stored headers)
-    const res2 = await cache.cached(
-      makeRequest("/data", "GET", { "accept-language": "en" }),
-      handler,
-    );
+    const res2 = await cache.cached(makeRequest("/data", "GET", { "accept-language": "en" }), handler);
     expect(res2.headers.get("x-cache")).toBe("HIT");
 
     store.destroy();
@@ -329,14 +308,8 @@ describe("Response Cache", () => {
 
     // Different Accept-Language headers but no varyHeaders configured
     // — should share the same cache entry
-    await cache.cached(
-      makeRequest("/data", "GET", { "accept-language": "en" }),
-      handler,
-    );
-    const res = await cache.cached(
-      makeRequest("/data", "GET", { "accept-language": "fr" }),
-      handler,
-    );
+    await cache.cached(makeRequest("/data", "GET", { "accept-language": "en" }), handler);
+    const res = await cache.cached(makeRequest("/data", "GET", { "accept-language": "fr" }), handler);
 
     expect(callCount).toBe(1);
     expect(res.headers.get("x-cache")).toBe("HIT");

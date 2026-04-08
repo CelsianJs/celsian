@@ -64,49 +64,57 @@ const authCredentialsSchema = z.object({
 
 export const authRoutes: PluginFunction = (app) => {
   // POST /auth/register — Create a new account and return a JWT
-  app.post("/auth/register", {
-    schema: { body: authCredentialsSchema },
-  }, async (req, reply) => {
-    const { email, password } = req.parsedBody;
+  app.post(
+    "/auth/register",
+    {
+      schema: { body: authCredentialsSchema },
+    },
+    async (req, reply) => {
+      const { email, password } = req.parsedBody;
 
-    if (findUserByEmail(email)) {
-      throw new HttpError(409, "Email already registered");
-    }
+      if (findUserByEmail(email)) {
+        throw new HttpError(409, "Email already registered");
+      }
 
-    const user: User = {
-      id: String(nextUserId++),
-      email,
-      passwordHash: await hashPassword(password),
-      createdAt: new Date().toISOString(),
-    };
-    users.set(user.id, user);
+      const user: User = {
+        id: String(nextUserId++),
+        email,
+        passwordHash: await hashPassword(password),
+        createdAt: new Date().toISOString(),
+      };
+      users.set(user.id, user);
 
-    const token = await getJwt().sign({ sub: user.id, email }, { expiresIn: "1h" });
+      const token = await getJwt().sign({ sub: user.id, email }, { expiresIn: "1h" });
 
-    return reply.status(201).json({
-      user: { id: user.id, email: user.email },
-      token,
-    });
-  });
+      return reply.status(201).json({
+        user: { id: user.id, email: user.email },
+        token,
+      });
+    },
+  );
 
   // POST /auth/login — Authenticate and return a JWT
-  app.post("/auth/login", {
-    schema: { body: authCredentialsSchema },
-  }, async (req, reply) => {
-    const { email, password } = req.parsedBody;
+  app.post(
+    "/auth/login",
+    {
+      schema: { body: authCredentialsSchema },
+    },
+    async (req, reply) => {
+      const { email, password } = req.parsedBody;
 
-    const user = findUserByEmail(email);
-    if (!user || !(await verifyPassword(password, user.passwordHash))) {
-      throw new HttpError(401, "Invalid email or password");
-    }
+      const user = findUserByEmail(email);
+      if (!user || !(await verifyPassword(password, user.passwordHash))) {
+        throw new HttpError(401, "Invalid email or password");
+      }
 
-    const token = await getJwt().sign({ sub: user.id, email }, { expiresIn: "1h" });
+      const token = await getJwt().sign({ sub: user.id, email }, { expiresIn: "1h" });
 
-    return reply.json({
-      user: { id: user.id, email: user.email },
-      token,
-    });
-  });
+      return reply.json({
+        user: { id: user.id, email: user.email },
+        token,
+      });
+    },
+  );
 
   // GET /auth/me — Protected route: returns the authenticated user's profile
   app.route({

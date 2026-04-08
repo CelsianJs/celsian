@@ -15,14 +15,18 @@ app.get("/users", (_req, reply) => {
   return reply.json(users);
 });
 
-app.post("/users", {
-  schema: { body: CreateUserSchema },
-}, (req, reply) => {
-  const { name, email } = req.parsedBody;
-  const user = { id: nextId++, name, email };
-  users.push(user);
-  return reply.status(201).json(user);
-});
+app.post(
+  "/users",
+  {
+    schema: { body: CreateUserSchema },
+  },
+  (req, reply) => {
+    const { name, email } = req.parsedBody;
+    const user = { id: nextId++, name, email };
+    users.push(user);
+    return reply.status(201).json(user);
+  },
+);
 
 app.get("/users/:id", (req, reply) => {
   const user = users.find((u) => u.id === Number(req.params.id));

@@ -161,11 +161,7 @@ export interface RouteOptions {
 }
 
 /** Route options with typed schema inference for parsedBody and parsedQuery */
-export interface TypedRouteOptions<
-  TBody = unknown,
-  TQuery = unknown,
-  TParams = Record<string, string>,
-> {
+export interface TypedRouteOptions<TBody = unknown, TQuery = unknown, TParams = Record<string, string>> {
   method: RouteMethod | RouteMethod[];
   url: string;
   handler: TypedSchemaHandler<

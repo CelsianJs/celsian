@@ -40,7 +40,7 @@ export function cors(options: CORSOptions = {}): PluginFunction {
   if (opts.origin === "*" && opts.credentials) {
     throw new CelsianError(
       'CORS misconfiguration: origin "*" with credentials:true is forbidden by browsers. ' +
-      "Set a specific origin (e.g., 'http://localhost:3000') when credentials are enabled.",
+        "Set a specific origin (e.g., 'http://localhost:3000') when credentials are enabled.",
     );
   }
 
