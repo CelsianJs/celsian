@@ -90,39 +90,43 @@ const KVPutSchema = Type.Object({
   ttl: Type.Optional(Type.Number({ minimum: 0 })),
 });
 
-app.put("/kv/:key", {
-  schema: { body: KVPutSchema },
-}, async (req, reply) => {
-  const env = (req as unknown as Record<string, unknown>).env as Env;
-  const ctx = (req as unknown as Record<string, unknown>).ctx as {
-    waitUntil(p: Promise<unknown>): void;
-  };
-  const { key } = req.params;
-  const body = req.parsedBody;
+app.put(
+  "/kv/:key",
+  {
+    schema: { body: KVPutSchema },
+  },
+  async (req, reply) => {
+    const env = (req as unknown as Record<string, unknown>).env as Env;
+    const ctx = (req as unknown as Record<string, unknown>).ctx as {
+      waitUntil(p: Promise<unknown>): void;
+    };
+    const { key } = req.params;
+    const body = req.parsedBody;
 
-  if (body.value === undefined) {
-    return reply.status(400).json({
-      error: "Bad Request",
-      message: 'Request body must include a "value" field',
+    if (body.value === undefined) {
+      return reply.status(400).json({
+        error: "Bad Request",
+        message: 'Request body must include a "value" field',
+      });
+    }
+
+    const serialized = typeof body.value === "string" ? body.value : JSON.stringify(body.value);
+
+    const kvOptions: KVNamespacePutOptions = {};
+    if (body.ttl && body.ttl > 0) {
+      kvOptions.expirationTtl = body.ttl;
+    }
+
+    // Use waitUntil so the write doesn't block the response
+    ctx.waitUntil(env.CACHE.put(key, serialized, kvOptions));
+
+    return reply.status(201).json({
+      key,
+      stored: true,
+      ttl: body.ttl ?? null,
     });
-  }
-
-  const serialized = typeof body.value === "string" ? body.value : JSON.stringify(body.value);
-
-  const kvOptions: KVNamespacePutOptions = {};
-  if (body.ttl && body.ttl > 0) {
-    kvOptions.expirationTtl = body.ttl;
-  }
-
-  // Use waitUntil so the write doesn't block the response
-  ctx.waitUntil(env.CACHE.put(key, serialized, kvOptions));
-
-  return reply.status(201).json({
-    key,
-    stored: true,
-    ttl: body.ttl ?? null,
-  });
-});
+  },
+);
 
 // DELETE /kv/:key — delete a value from CACHE KV
 app.delete("/kv/:key", async (req, reply) => {

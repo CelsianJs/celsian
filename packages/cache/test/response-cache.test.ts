@@ -4,8 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import { createResponseCache } from "../src/response-cache.js";
 import { MemoryKVStore } from "../src/store.js";
 
-function makeRequest(url: string, method = "GET"): Request {
-  return new Request(`http://localhost${url}`, { method });
+function makeRequest(url: string, method = "GET", headers?: Record<string, string>): Request {
+  return new Request(`http://localhost${url}`, { method, headers });
 }
 
 function jsonResponse(data: unknown, status = 200): Response {
@@ -221,6 +221,99 @@ describe("Response Cache", () => {
     await cache.cached(makeRequest("/data?page=2"), handler);
 
     expect(callCount).toBe(2);
+
+    store.destroy();
+  });
+
+  it("includes vary header values in cache key when configured", async () => {
+    const store = new MemoryKVStore({ cleanupIntervalMs: 0 });
+    const cache = createResponseCache({
+      store,
+      varyHeaders: ["accept-language"],
+    });
+
+    let callCount = 0;
+    const handler = () => {
+      callCount++;
+      return jsonResponse({ n: callCount });
+    };
+
+    // Same URL, different Accept-Language — should be cached separately
+    await cache.cached(makeRequest("/data", "GET", { "accept-language": "en" }), handler);
+    await cache.cached(makeRequest("/data", "GET", { "accept-language": "fr" }), handler);
+
+    expect(callCount).toBe(2);
+
+    // Same language as first request — should be a HIT
+    const res = await cache.cached(makeRequest("/data", "GET", { "accept-language": "en" }), handler);
+    expect(res.headers.get("x-cache")).toBe("HIT");
+    expect(callCount).toBe(2);
+
+    store.destroy();
+  });
+
+  it("produces different cache keys for different Accept-Language values", async () => {
+    const store = new MemoryKVStore({ cleanupIntervalMs: 0 });
+    const cache = createResponseCache({
+      store,
+      varyHeaders: ["accept-language"],
+    });
+
+    let callCount = 0;
+    const handler = () => {
+      callCount++;
+      return jsonResponse({ lang: callCount === 1 ? "en" : "de" });
+    };
+
+    const res1 = await cache.cached(makeRequest("/page", "GET", { "accept-language": "en" }), handler);
+    const res2 = await cache.cached(makeRequest("/page", "GET", { "accept-language": "de" }), handler);
+
+    expect(await res1.json()).toEqual({ lang: "en" });
+    expect(await res2.json()).toEqual({ lang: "de" });
+    expect(callCount).toBe(2);
+
+    store.destroy();
+  });
+
+  it("adds Vary header to cached responses when varyHeaders configured", async () => {
+    const store = new MemoryKVStore({ cleanupIntervalMs: 0 });
+    const cache = createResponseCache({
+      store,
+      varyHeaders: ["accept-language", "accept-encoding"],
+    });
+
+    const handler = () => jsonResponse({ ok: true });
+
+    // MISS response should include Vary header
+    const res1 = await cache.cached(makeRequest("/data", "GET", { "accept-language": "en" }), handler);
+    expect(res1.headers.get("x-cache")).toBe("MISS");
+    expect(res1.headers.get("vary")).toBe("accept-language, accept-encoding");
+
+    // HIT response should also include Vary header (from stored headers)
+    const res2 = await cache.cached(makeRequest("/data", "GET", { "accept-language": "en" }), handler);
+    expect(res2.headers.get("x-cache")).toBe("HIT");
+
+    store.destroy();
+  });
+
+  it("behaves the same as before when varyHeaders is not set", async () => {
+    const store = new MemoryKVStore({ cleanupIntervalMs: 0 });
+    const cache = createResponseCache({ store });
+
+    let callCount = 0;
+    const handler = () => {
+      callCount++;
+      return jsonResponse({ n: callCount });
+    };
+
+    // Different Accept-Language headers but no varyHeaders configured
+    // — should share the same cache entry
+    await cache.cached(makeRequest("/data", "GET", { "accept-language": "en" }), handler);
+    const res = await cache.cached(makeRequest("/data", "GET", { "accept-language": "fr" }), handler);
+
+    expect(callCount).toBe(1);
+    expect(res.headers.get("x-cache")).toBe("HIT");
+    expect(res.headers.get("vary")).toBeNull();
 
     store.destroy();
   });

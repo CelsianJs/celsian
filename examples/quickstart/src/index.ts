@@ -29,7 +29,7 @@ export function buildApp() {
 
   app.register(cors(), { encapsulate: false });
   app.register(security(), { encapsulate: false });
-  app.register(rateLimit({ max: 100, window: 60_000 }), { encapsulate: false });
+  app.register(rateLimit({ max: 100, window: 60_000, trustProxy: true }), { encapsulate: false });
 
   // Register JWT plugin at the app level — decorates app with `jwt.sign()` and `jwt.verify()`
   app.register(jwt({ secret: JWT_SECRET }), { encapsulate: false }).then(() => {

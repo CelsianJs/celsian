@@ -76,14 +76,23 @@ export async function runOnSendHooks(
 }
 
 /** Run hooks without awaiting -- errors are logged, not thrown. Used for onResponse. */
-export function runHooksFireAndForget(hooks: HookHandler[], request: CelsianRequest, reply: CelsianReply): void {
+export function runHooksFireAndForget(
+  hooks: HookHandler[],
+  request: CelsianRequest,
+  reply: CelsianReply,
+  logger?: { error: (msg: string, meta?: Record<string, unknown>) => void },
+): void {
   for (const hook of hooks) {
     try {
       const result = hook(request, reply);
       // If the hook returns a thenable, log errors instead of silently swallowing
       if (result && typeof (result as any).catch === "function") {
         (result as Promise<unknown>).catch((err: unknown) => {
-          console.error("[celsian] fire-and-forget hook error:", err);
+          if (logger) {
+            logger.error("fire-and-forget hook error", { error: err instanceof Error ? err.message : String(err) });
+          } else {
+            console.error("[celsian] fire-and-forget hook error:", err);
+          }
         });
       }
     } catch {

@@ -51,18 +51,22 @@ const CreateUserSchema = Type.Object({
   email: Type.String({ minLength: 1 }),
 });
 
-app.post("/users", {
-  schema: { body: CreateUserSchema },
-}, (req, reply) => {
-  const { name, email } = req.parsedBody;
+app.post(
+  "/users",
+  {
+    schema: { body: CreateUserSchema },
+  },
+  (req, reply) => {
+    const { name, email } = req.parsedBody;
 
-  return reply.status(201).json({
-    id: Math.floor(Math.random() * 10000),
-    name,
-    email,
-    createdAt: new Date().toISOString(),
-  });
-});
+    return reply.status(201).json({
+      id: Math.floor(Math.random() * 10000),
+      name,
+      email,
+      createdAt: new Date().toISOString(),
+    });
+  },
+);
 
 app.post("/echo", (req, reply) => {
   return reply.json({

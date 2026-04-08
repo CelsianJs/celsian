@@ -469,13 +469,9 @@ describe("CelsianApp", () => {
       },
     };
 
-    app.post(
-      "/new",
-      { schema: { body: bodySchema } },
-      (req, reply) => {
-        return reply.json({ new: true, body: req.parsedBody });
-      },
-    );
+    app.post("/new", { schema: { body: bodySchema } }, (req, reply) => {
+      return reply.json({ new: true, body: req.parsedBody });
+    });
 
     const oldRes = await app.handle(
       new Request("http://localhost/old", {

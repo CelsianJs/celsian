@@ -350,3 +350,89 @@ describe("Schema-based route type inference", () => {
     );
   });
 });
+
+// ─── app.route() typed schema inference tests ───
+
+describe("app.route() typed schema inference", () => {
+  type MockBodySchema = { _output: { name: string; email: string }; safeParse: unknown; parse: unknown };
+
+  it("route() with schema.body infers parsedBody type", () => {
+    const app = createApp();
+    app.route({
+      method: "POST",
+      url: "/users",
+      schema: { body: {} as MockBodySchema },
+      handler(req, reply) {
+        expectTypeOf(req.parsedBody).toEqualTypeOf<{ name: string; email: string }>();
+        return reply.json(req.parsedBody);
+      },
+    });
+  });
+
+  it("route() without schema keeps parsedBody as unknown", () => {
+    const app = createApp();
+    app.route({
+      method: "GET",
+      url: "/users",
+      handler(req, reply) {
+        expectTypeOf(req.parsedBody).toEqualTypeOf<unknown>();
+        return reply.json({});
+      },
+    });
+  });
+
+  it("route() with schema.body works with PUT method", () => {
+    const app = createApp();
+    app.route({
+      method: "PUT",
+      url: "/users",
+      schema: { body: {} as MockBodySchema },
+      handler(req, reply) {
+        expectTypeOf(req.parsedBody).toEqualTypeOf<{ name: string; email: string }>();
+        return reply.json({ updated: req.parsedBody.name });
+      },
+    });
+  });
+
+  it("route() with schema.body works with multiple methods", () => {
+    const app = createApp();
+    app.route({
+      method: ["POST", "PUT"],
+      url: "/users",
+      schema: { body: {} as MockBodySchema },
+      handler(req, reply) {
+        expectTypeOf(req.parsedBody).toEqualTypeOf<{ name: string; email: string }>();
+        return reply.json({ ok: true });
+      },
+    });
+  });
+
+  it("route() with kind option still infers types", () => {
+    const app = createApp();
+    app.route({
+      method: "POST",
+      url: "/users",
+      kind: "serverless",
+      schema: { body: {} as MockBodySchema },
+      handler(req, reply) {
+        expectTypeOf(req.parsedBody).toEqualTypeOf<{ name: string; email: string }>();
+        return reply.json({ ok: true });
+      },
+    });
+  });
+
+  it("route() with hooks and schema still infers types", () => {
+    const app = createApp();
+    app.route({
+      method: "POST",
+      url: "/users",
+      schema: { body: {} as MockBodySchema },
+      onRequest: (_req, _reply) => {},
+      preHandler: (_req, _reply) => {},
+      handler(req, reply) {
+        expectTypeOf(req.parsedBody).toEqualTypeOf<{ name: string; email: string }>();
+        return reply.json({ ok: true });
+      },
+    });
+  });
+});

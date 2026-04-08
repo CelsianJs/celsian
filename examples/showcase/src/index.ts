@@ -52,7 +52,7 @@ app.cron("cleanup-done-tasks", "5m", () => {
 });
 
 // ─── Middleware ───
-await app.register(cors({ origin: "*", credentials: true }), { encapsulate: false });
+await app.register(cors({ origin: "http://localhost:3000", credentials: true }), { encapsulate: false });
 
 // ─── REST: Health ───
 app.health();
@@ -80,51 +80,59 @@ const LoginSchema = z.object({
   password: z.string().min(1),
 });
 
-app.post("/api/auth/register", {
-  schema: { body: RegisterSchema },
-}, async (req, reply) => {
-  const { email, name, password } = req.parsedBody;
-  if (users.has(email)) {
-    return reply.status(409).json({ error: "User already exists" });
-  }
+app.post(
+  "/api/auth/register",
+  {
+    schema: { body: RegisterSchema },
+  },
+  async (req, reply) => {
+    const { email, name, password } = req.parsedBody;
+    if (users.has(email)) {
+      return reply.status(409).json({ error: "User already exists" });
+    }
 
-  const id = crypto.randomUUID();
-  // Simple hash for demo -- use bcrypt or argon2 in production
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password + PASSWORD_SALT);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  const passwordHash = Array.from(new Uint8Array(hashBuffer))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+    const id = crypto.randomUUID();
+    // Simple hash for demo -- use bcrypt or argon2 in production
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password + PASSWORD_SALT);
+    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+    const passwordHash = Array.from(new Uint8Array(hashBuffer))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
 
-  users.set(email, { id, email, name, passwordHash });
-  return reply.status(201).json({ id, email, name });
-});
+    users.set(email, { id, email, name, passwordHash });
+    return reply.status(201).json({ id, email, name });
+  },
+);
 
-app.post("/api/auth/login", {
-  schema: { body: LoginSchema },
-}, async (req, reply) => {
-  const { email, password } = req.parsedBody;
-  const user = users.get(email);
-  if (!user) return reply.status(401).json({ error: "Invalid credentials" });
+app.post(
+  "/api/auth/login",
+  {
+    schema: { body: LoginSchema },
+  },
+  async (req, reply) => {
+    const { email, password } = req.parsedBody;
+    const user = users.get(email);
+    if (!user) return reply.status(401).json({ error: "Invalid credentials" });
 
-  // Simple hash for demo -- use bcrypt or argon2 in production
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password + PASSWORD_SALT);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  const hash = Array.from(new Uint8Array(hashBuffer))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+    // Simple hash for demo -- use bcrypt or argon2 in production
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password + PASSWORD_SALT);
+    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+    const hash = Array.from(new Uint8Array(hashBuffer))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
 
-  if (hash !== user.passwordHash) return reply.status(401).json({ error: "Invalid credentials" });
+    if (hash !== user.passwordHash) return reply.status(401).json({ error: "Invalid credentials" });
 
-  const session = await sessions.create({ userId: user.id, email: user.email, name: user.name });
-  await session.save();
+    const session = await sessions.create({ userId: user.id, email: user.email, name: user.name });
+    await session.save();
 
-  return reply
-    .header("set-cookie", sessions.cookie(session.id))
-    .json({ user: { id: user.id, email, name: user.name }, sessionId: session.id });
-});
+    return reply
+      .header("set-cookie", sessions.cookie(session.id))
+      .json({ user: { id: user.id, email, name: user.name }, sessionId: session.id });
+  },
+);
 
 // ─── REST: Tasks CRUD ───
 app.get("/api/tasks", (req, reply) => {
@@ -168,52 +176,60 @@ const UpdateTaskSchema = z.object({
   assignee: z.string().optional(),
 });
 
-app.post("/api/tasks", {
-  schema: { body: CreateTaskSchema },
-}, async (req, reply) => {
-  const { title, priority, assignee } = req.parsedBody;
+app.post(
+  "/api/tasks",
+  {
+    schema: { body: CreateTaskSchema },
+  },
+  async (req, reply) => {
+    const { title, priority, assignee } = req.parsedBody;
 
-  const task: Task = {
-    id: crypto.randomUUID(),
-    title,
-    status: "todo",
-    priority,
-    assignee,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-  };
+    const task: Task = {
+      id: crypto.randomUUID(),
+      title,
+      status: "todo",
+      priority,
+      assignee,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
 
-  tasks.set(task.id, task);
+    tasks.set(task.id, task);
 
-  await kvStore.delete("cache:GET:/api/tasks");
-  hub.broadcast({ event: "task:created", data: task });
-  await app.enqueue("notify", { type: "task:created", message: `New task: ${title}` });
+    await kvStore.delete("cache:GET:/api/tasks");
+    hub.broadcast({ event: "task:created", data: task });
+    await app.enqueue("notify", { type: "task:created", message: `New task: ${title}` });
 
-  return reply.status(201).json(task);
-});
+    return reply.status(201).json(task);
+  },
+);
 
-app.put("/api/tasks/:id", {
-  schema: { body: UpdateTaskSchema },
-}, async (req, reply) => {
-  const task = tasks.get(req.params.id);
-  if (!task) return reply.status(404).json({ error: "Task not found" });
+app.put(
+  "/api/tasks/:id",
+  {
+    schema: { body: UpdateTaskSchema },
+  },
+  async (req, reply) => {
+    const task = tasks.get(req.params.id);
+    if (!task) return reply.status(404).json({ error: "Task not found" });
 
-  const { title, status, priority, assignee } = req.parsedBody;
-  if (title) task.title = title;
-  if (status) task.status = status;
-  if (priority) task.priority = priority;
-  if (assignee !== undefined) task.assignee = assignee;
-  task.updatedAt = Date.now();
+    const { title, status, priority, assignee } = req.parsedBody;
+    if (title) task.title = title;
+    if (status) task.status = status;
+    if (priority) task.priority = priority;
+    if (assignee !== undefined) task.assignee = assignee;
+    task.updatedAt = Date.now();
 
-  await kvStore.delete("cache:GET:/api/tasks");
-  hub.broadcast({ event: "task:updated", data: task });
+    await kvStore.delete("cache:GET:/api/tasks");
+    hub.broadcast({ event: "task:updated", data: task });
 
-  if (status === "done") {
-    await app.enqueue("notify", { type: "task:completed", message: `Completed: ${task.title}` });
-  }
+    if (status === "done") {
+      await app.enqueue("notify", { type: "task:completed", message: `Completed: ${task.title}` });
+    }
 
-  return reply.json(task);
-});
+    return reply.json(task);
+  },
+);
 
 app.delete("/api/tasks/:id", async (req, reply) => {
   const task = tasks.get(req.params.id);

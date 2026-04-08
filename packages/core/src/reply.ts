@@ -1,6 +1,7 @@
 // @celsian/core — CelsianReply implementation
 
 import { type CookieOptions, serializeCookie } from "./cookie.js";
+import { CelsianError } from "./errors.js";
 import type { CelsianReply } from "./types.js";
 
 const MIME_TYPES: Record<string, string> = {
@@ -140,6 +141,11 @@ export function createReply(): CelsianReply {
     },
 
     redirect(url: string, code = 302): Response {
+      // Prevent open redirect: only allow relative paths and http(s) URLs
+      // Also reject protocol-relative URLs (//evil.com) which bypass origin checks
+      if (url.startsWith("//") || (!url.startsWith("/") && !url.startsWith("http://") && !url.startsWith("https://"))) {
+        throw new CelsianError(`Invalid redirect URL: "${url}". Must start with "/", "http://", or "https://".`);
+      }
       sent = true;
       return new Response(null, {
         status: code,
@@ -171,7 +177,7 @@ export function createReply(): CelsianReply {
           const resolvedRoot = resolve(options.root);
           resolvedPath = resolve(resolvedRoot, filePath);
           if (!resolvedPath.startsWith(resolvedRoot)) {
-            return new Response(JSON.stringify({ error: "Forbidden", statusCode: 403, code: "PATH_TRAVERSAL" }), {
+            return new Response(JSON.stringify({ error: "Forbidden", statusCode: 403, code: "FORBIDDEN" }), {
               status: 403,
               headers: buildHeaders({ "content-type": "application/json; charset=utf-8" }),
             });

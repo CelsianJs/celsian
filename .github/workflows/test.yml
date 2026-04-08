@@ -9,6 +9,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # TODO: Add Bun to the test matrix in a future PR (requires oven-sh/setup-bun action)
     strategy:
       matrix:
         node-version: [20, 22]
@@ -25,7 +26,25 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm test
+      - run: pnpm test -- --coverage --coverage.reporter=text --coverage.reporter=json-summary
+
+      - name: Check coverage threshold
+        if: matrix.node-version == 22
+        run: |
+          node --input-type=module -e "
+            import { readFileSync } from 'node:fs';
+            const summary = JSON.parse(readFileSync('./coverage/coverage-summary.json', 'utf8'));
+            const total = summary.total;
+            const lines = total.lines.pct;
+            const branches = total.branches.pct;
+            const functions = total.functions.pct;
+            console.log('Coverage: lines=' + lines + '% branches=' + branches + '% functions=' + functions + '%');
+            if (lines < 70 || branches < 60 || functions < 70) {
+              console.error('Coverage below threshold!');
+              process.exit(1);
+            }
+          "
+
       - run: pnpm typecheck
 
   lint:

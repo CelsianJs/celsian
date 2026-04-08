@@ -76,6 +76,8 @@ export interface SSEChannel {
   readonly response: Response;
   /** Whether the stream is still open */
   readonly open: boolean;
+  /** Timestamp of last activity (send or creation) */
+  readonly lastActivity: number;
 }
 
 /**
@@ -129,9 +131,12 @@ export function createSSEStream(request: Request, options?: SSEStreamOptions): S
     headers,
   });
 
+  let lastActivity = Date.now();
+
   const channel: SSEChannel = {
     send(event: SSEEvent) {
       if (!isOpen) return;
+      lastActivity = Date.now();
       const formatted = formatSSEEvent(event);
       writer.write(encoder.encode(formatted)).catch(() => {
         close();
@@ -146,6 +151,9 @@ export function createSSEStream(request: Request, options?: SSEStreamOptions): S
     },
     get open() {
       return isOpen;
+    },
+    get lastActivity() {
+      return lastActivity;
     },
   };
 
@@ -168,6 +176,14 @@ export function createSSEStream(request: Request, options?: SSEStreamOptions): S
  * hub.broadcast({ event: 'update', data: { count: 42 } });
  * ```
  */
+/** Options for configuring the SSE broadcast hub. */
+export interface SSEHubOptions {
+  /** Maximum idle time in ms before a channel is auto-closed (default: 300_000 = 5 minutes) */
+  maxIdleMs?: number;
+  /** Interval in ms between cleanup sweeps (default: 60_000 = 1 minute) */
+  cleanupIntervalMs?: number;
+}
+
 export interface SSEHub {
   /** Subscribe a new client — returns the SSEChannel for that client */
   subscribe(request: Request, options?: SSEStreamOptions): SSEChannel;
@@ -177,12 +193,30 @@ export interface SSEHub {
   broadcastData(data: unknown): void;
   /** Number of connected clients */
   readonly size: number;
-  /** Close all connections */
+  /** Close all connections and stop cleanup timer */
   closeAll(): void;
 }
 
-export function createSSEHub(): SSEHub {
+export function createSSEHub(hubOptions?: SSEHubOptions): SSEHub {
   const channels = new Set<SSEChannel>();
+  const maxIdleMs = hubOptions?.maxIdleMs ?? 300_000;
+  const cleanupIntervalMs = hubOptions?.cleanupIntervalMs ?? 60_000;
+
+  // Periodic cleanup of idle channels
+  const cleanupTimer = setInterval(() => {
+    const now = Date.now();
+    for (const channel of channels) {
+      if (channel.open && now - channel.lastActivity > maxIdleMs) {
+        channel.close();
+        channels.delete(channel);
+      }
+    }
+  }, cleanupIntervalMs);
+
+  // Prevent timer from keeping the process alive
+  if (typeof cleanupTimer === "object" && "unref" in cleanupTimer) {
+    (cleanupTimer as { unref: () => void }).unref();
+  }
 
   return {
     subscribe(request: Request, options?: SSEStreamOptions): SSEChannel {
@@ -212,6 +246,7 @@ export function createSSEHub(): SSEHub {
     },
 
     closeAll() {
+      clearInterval(cleanupTimer);
       for (const channel of channels) {
         channel.close();
       }

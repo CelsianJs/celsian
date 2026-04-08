@@ -1,6 +1,7 @@
 // @celsian/rate-limit — Fixed-window rate limiter with pluggable store
 
 import type { CelsianReply, CelsianRequest, HookHandler, PluginFunction } from "@celsian/core";
+import { CelsianError } from "@celsian/core";
 
 /** Options for the rate limiter: max requests, window size, key generation, and store. */
 export interface RateLimitOptions {
@@ -36,6 +37,7 @@ export class MemoryRateLimitStore implements RateLimitStore {
         }
       }
     }, 60_000);
+    this.cleanupTimer.unref?.();
   }
 
   async increment(key: string, window: number): Promise<{ count: number; resetAt: number }> {
@@ -63,31 +65,23 @@ export class MemoryRateLimitStore implements RateLimitStore {
   }
 }
 
-let warnedNoKey = false;
-
 function createDefaultKeyGenerator(trustProxy: boolean): (req: CelsianRequest) => string {
   if (trustProxy) {
     return (req: CelsianRequest): string => {
       return (
-        req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+        req.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim() ??
         req.headers.get("x-real-ip") ??
         `anonymous-${Date.now().toString(36)}`
       );
     };
   }
-  // Without trustProxy and no custom keyGenerator, every request gets a unique key,
-  // effectively disabling rate limiting. Warn developers once.
-  return (_req: CelsianRequest): string => {
-    if (!warnedNoKey) {
-      warnedNoKey = true;
-      console.warn(
-        "[@celsian/rate-limit] WARNING: trustProxy is false and no custom keyGenerator was provided. " +
-          "Each request gets a unique key, so rate limiting is effectively disabled. " +
-          "Set trustProxy:true (behind a reverse proxy) or provide a custom keyGenerator.",
-      );
-    }
-    return `anonymous-${Date.now().toString(36)}`;
-  };
+  // Without trustProxy and no custom keyGenerator, rate limiting cannot identify clients.
+  // This is a security risk — throw instead of silently disabling.
+  throw new CelsianError(
+    "[@celsian/rate-limit] trustProxy is false and no custom keyGenerator was provided. " +
+      "Rate limiting cannot identify clients without a key. " +
+      "Set trustProxy:true (behind a reverse proxy) or provide a custom keyGenerator.",
+  );
 }
 
 /**

@@ -6,7 +6,7 @@ import { handleUpdateRoutes } from "./update-routes.js";
 
 export { corsHeaders, isOriginAllowed, preflightResponse } from "./cors.js";
 export { applyRewrite, compileRoute, compileRoutes, matchRoute } from "./match.js";
-export { proxyRequest } from "./proxy.js";
+export { isInternalUrl, proxyRequest } from "./proxy.js";
 export type { CompiledRoute, EdgeRouterConfig } from "./types.js";
 export { handleUpdateRoutes } from "./update-routes.js";
 

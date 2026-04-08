@@ -30,6 +30,7 @@ import type {
   RouteOptions,
   RouteSchemaOptions,
   TypedRouteHandler,
+  TypedRouteOptions,
   TypedSchemaHandler,
 } from "./types.js";
 import { type WSHandler, WSRegistry } from "./websocket.js";
@@ -140,8 +141,10 @@ export class CelsianApp {
   }
 
   /** Register a route with full options (method, url, schema, hooks, handler). */
-  route(options: RouteOptions): void {
-    this.pluginContext.route(options);
+  route(options: RouteOptions): void;
+  route<TBody, TQuery>(options: TypedRouteOptions<TBody, TQuery>): void;
+  route(options: RouteOptions | TypedRouteOptions): void {
+    this.pluginContext.route(options as RouteOptions);
   }
 
   // Overloaded route methods: (path, handler) and (path, options, handler)
@@ -789,7 +792,7 @@ export class CelsianApp {
 
     // 10. onResponse hooks (fire-and-forget, skip if empty)
     if (this.rootContext.hooks.onResponse.length > 0) {
-      runHooksFireAndForget(this.rootContext.hooks.onResponse, request, reply);
+      runHooksFireAndForget(this.rootContext.hooks.onResponse, request, reply, this.log);
     }
 
     return response;
@@ -823,6 +826,48 @@ export class CelsianApp {
     }
   }
 
+  /**
+   * Read the request body as text, enforcing a byte limit during streaming.
+   * Rejects with 413 if the body exceeds the limit before reading completes,
+   * preventing memory exhaustion from chunked transfer encoding attacks.
+   */
+  private async readBodyText(request: Request, limit: number): Promise<string> {
+    // Fast path: Content-Length is known — pre-check without reading
+    const contentLength = request.headers.get("content-length");
+    if (contentLength && parseInt(contentLength, 10) > limit) {
+      throw new HttpError(413, "Payload Too Large");
+    }
+
+    // If no body or limit disabled, read directly
+    if (!request.body || limit <= 0) {
+      return request.text();
+    }
+
+    // Stream the body with a byte counter — abort early if limit exceeded
+    const reader = request.body.getReader();
+    const decoder = new TextDecoder();
+    let totalBytes = 0;
+    let result = "";
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        totalBytes += value.byteLength;
+        if (totalBytes > limit) {
+          throw new HttpError(413, "Payload Too Large");
+        }
+        result += decoder.decode(value, { stream: true });
+      }
+      // Flush the decoder
+      result += decoder.decode();
+    } finally {
+      reader.releaseLock();
+    }
+
+    return result;
+  }
+
   private async parseBody(request: CelsianRequest): Promise<void> {
     const contentType = request.headers.get("content-type") ?? "";
 
@@ -830,14 +875,7 @@ export class CelsianApp {
       return;
     }
 
-    // Enforce body size limit via Content-Length header (fast reject before reading)
     const bodyLimit = this.cachedBodyLimit;
-    if (bodyLimit > 0) {
-      const contentLength = request.headers.get("content-length");
-      if (contentLength && parseInt(contentLength, 10) > bodyLimit) {
-        throw new HttpError(413, "Payload Too Large");
-      }
-    }
 
     // Check custom content-type parsers (exact match then prefix match)
     if (this.contentTypeParsers.size > 0) {
@@ -851,13 +889,8 @@ export class CelsianApp {
 
     try {
       if (contentType.includes("application/json")) {
-        // Read body as text first to enforce body size limit on actual data
-        // (Content-Length can be omitted in chunked transfer encoding)
         try {
-          const text = await request.text();
-          if (bodyLimit > 0 && text.length > bodyLimit) {
-            throw new HttpError(413, "Payload Too Large");
-          }
+          const text = await this.readBodyText(request, bodyLimit);
           if (!text.trim()) {
             // Empty body — leave as undefined
             return;
@@ -876,17 +909,10 @@ export class CelsianApp {
       ) {
         request.parsedBody = await request.formData();
       } else if (contentType.includes("text/")) {
-        const text = await request.text();
-        if (bodyLimit > 0 && text.length > bodyLimit) {
-          throw new HttpError(413, "Payload Too Large");
-        }
-        request.parsedBody = text;
+        request.parsedBody = await this.readBodyText(request, bodyLimit);
       } else if (!contentType) {
         // No content-type: try JSON, fall back to text
-        const text = await request.text();
-        if (bodyLimit > 0 && text.length > bodyLimit) {
-          throw new HttpError(413, "Payload Too Large");
-        }
+        const text = await this.readBodyText(request, bodyLimit);
         if (!text.trim()) return;
         try {
           request.parsedBody = JSON.parse(text);

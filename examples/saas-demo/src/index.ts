@@ -1,14 +1,7 @@
 // SaaS Backend in One File — CelsianJS Demo
 // Demonstrates: JWT auth, CRUD, background tasks, cron, SSE, OpenAPI, Zod validation
 
-import {
-  cors,
-  createApp,
-  createSSEHub,
-  HttpError,
-  openapi,
-  serve,
-} from "@celsian/core";
+import { cors, createApp, createSSEHub, HttpError, openapi, serve } from "@celsian/core";
 import { createJWTGuard, jwt } from "@celsian/jwt";
 import { z } from "zod";
 
@@ -83,143 +76,175 @@ app.health();
 
 // ─── Auth Endpoints ───
 
-app.post("/register", {
-  schema: { body: RegisterSchema },
-}, async (req, reply) => {
-  const { email, password, name } = req.parsedBody;
+app.post(
+  "/register",
+  {
+    schema: { body: RegisterSchema },
+  },
+  async (req, reply) => {
+    const { email, password, name } = req.parsedBody;
 
-  if (emailIndex.has(email)) {
-    return reply.conflict("Email already registered");
-  }
+    if (emailIndex.has(email)) {
+      return reply.conflict("Email already registered");
+    }
 
-  const id = String(nextId++);
-  const user: User = {
-    id,
-    email,
-    name,
-    passwordHash: hashPassword(password),
-    role: "user",
-    createdAt: new Date().toISOString(),
-  };
+    const id = String(nextId++);
+    const user: User = {
+      id,
+      email,
+      name,
+      passwordHash: hashPassword(password),
+      role: "user",
+      createdAt: new Date().toISOString(),
+    };
 
-  users.set(id, user);
-  emailIndex.set(email, id);
+    users.set(id, user);
+    emailIndex.set(email, id);
 
-  // Enqueue welcome email background task
-  await app.enqueue("send-welcome-email", { userId: id, email, name });
+    // Enqueue welcome email background task
+    await app.enqueue("send-welcome-email", { userId: id, email, name });
 
-  // Broadcast new user event via SSE
-  hub.broadcast({ event: "user-registered", data: { id, email, name } });
+    // Broadcast new user event via SSE
+    hub.broadcast({ event: "user-registered", data: { id, email, name } });
 
-  const jwtNs = app.getDecoration("jwt") as import("@celsian/jwt").JWTNamespace;
-  const token = await jwtNs.sign({ sub: id, email, role: "user" }, { expiresIn: "24h" });
+    const jwtNs = app.getDecoration("jwt") as import("@celsian/jwt").JWTNamespace;
+    const token = await jwtNs.sign({ sub: id, email, role: "user" }, { expiresIn: "24h" });
 
-  return reply.status(201).json({
-    user: { id, email, name, role: user.role },
-    token,
-  });
-});
+    return reply.status(201).json({
+      user: { id, email, name, role: user.role },
+      token,
+    });
+  },
+);
 
-app.post("/login", {
-  schema: { body: LoginSchema },
-}, async (req, reply) => {
-  const { email, password } = req.parsedBody;
+app.post(
+  "/login",
+  {
+    schema: { body: LoginSchema },
+  },
+  async (req, reply) => {
+    const { email, password } = req.parsedBody;
 
-  const userId = emailIndex.get(email);
-  if (!userId) {
-    return reply.unauthorized("Invalid email or password");
-  }
+    const userId = emailIndex.get(email);
+    if (!userId) {
+      return reply.unauthorized("Invalid email or password");
+    }
 
-  const user = users.get(userId)!;
-  if (user.passwordHash !== hashPassword(password)) {
-    return reply.unauthorized("Invalid email or password");
-  }
+    const user = users.get(userId)!;
+    if (user.passwordHash !== hashPassword(password)) {
+      return reply.unauthorized("Invalid email or password");
+    }
 
-  const jwtNs = app.getDecoration("jwt") as import("@celsian/jwt").JWTNamespace;
-  const token = await jwtNs.sign({ sub: user.id, email: user.email, role: user.role }, { expiresIn: "24h" });
+    const jwtNs = app.getDecoration("jwt") as import("@celsian/jwt").JWTNamespace;
+    const token = await jwtNs.sign({ sub: user.id, email: user.email, role: user.role }, { expiresIn: "24h" });
 
-  return reply.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role } });
-});
+    return reply.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role } });
+  },
+);
 
 // ─── Users CRUD (Protected) ───
 
-app.get("/users", {
-  onRequest: authGuard,
-}, async (_req, reply) => {
-  const list = Array.from(users.values()).map(({ passwordHash: _, ...u }) => u);
-  return reply.json({ users: list, total: list.length });
-});
+app.get(
+  "/users",
+  {
+    onRequest: authGuard,
+  },
+  async (_req, reply) => {
+    const list = Array.from(users.values()).map(({ passwordHash: _, ...u }) => u);
+    return reply.json({ users: list, total: list.length });
+  },
+);
 
-app.get("/users/:id", {
-  onRequest: authGuard,
-}, async (req, reply) => {
-  const user = users.get(req.params.id);
-  if (!user) return reply.notFound("User not found");
-  const { passwordHash: _, ...safe } = user;
-  return reply.json(safe);
-});
+app.get(
+  "/users/:id",
+  {
+    onRequest: authGuard,
+  },
+  async (req, reply) => {
+    const user = users.get(req.params.id);
+    if (!user) return reply.notFound("User not found");
+    const { passwordHash: _, ...safe } = user;
+    return reply.json(safe);
+  },
+);
 
-app.put("/users/:id", {
-  schema: { body: UpdateUserSchema },
-  onRequest: authGuard,
-}, async (req, reply) => {
-  const user = users.get(req.params.id);
-  if (!user) return reply.notFound("User not found");
+app.put(
+  "/users/:id",
+  {
+    schema: { body: UpdateUserSchema },
+    onRequest: authGuard,
+  },
+  async (req, reply) => {
+    const user = users.get(req.params.id);
+    if (!user) return reply.notFound("User not found");
 
-  const updates = req.parsedBody;
-  if (updates.name) user.name = updates.name;
-  if (updates.email) {
-    if (emailIndex.has(updates.email) && emailIndex.get(updates.email) !== user.id) {
-      return reply.conflict("Email already in use");
+    const updates = req.parsedBody;
+    if (updates.name) user.name = updates.name;
+    if (updates.email) {
+      if (emailIndex.has(updates.email) && emailIndex.get(updates.email) !== user.id) {
+        return reply.conflict("Email already in use");
+      }
+      emailIndex.delete(user.email);
+      user.email = updates.email;
+      emailIndex.set(updates.email, user.id);
     }
+
+    const { passwordHash: _, ...safe } = user;
+    hub.broadcast({ event: "user-updated", data: safe });
+    return reply.json(safe);
+  },
+);
+
+app.delete(
+  "/users/:id",
+  {
+    onRequest: authGuard,
+  },
+  async (req, reply) => {
+    const user = users.get(req.params.id);
+    if (!user) return reply.notFound("User not found");
+
+    users.delete(user.id);
     emailIndex.delete(user.email);
-    user.email = updates.email;
-    emailIndex.set(updates.email, user.id);
-  }
-
-  const { passwordHash: _, ...safe } = user;
-  hub.broadcast({ event: "user-updated", data: safe });
-  return reply.json(safe);
-});
-
-app.delete("/users/:id", {
-  onRequest: authGuard,
-}, async (req, reply) => {
-  const user = users.get(req.params.id);
-  if (!user) return reply.notFound("User not found");
-
-  users.delete(user.id);
-  emailIndex.delete(user.email);
-  hub.broadcast({ event: "user-deleted", data: { id: user.id } });
-  return reply.json({ deleted: true });
-});
+    hub.broadcast({ event: "user-deleted", data: { id: user.id } });
+    return reply.json({ deleted: true });
+  },
+);
 
 // ─── Dashboard ───
 
-app.get("/dashboard/stats", {
-  onRequest: authGuard,
-}, async (_req, reply) => {
-  const allUsers = Array.from(users.values());
-  const now = Date.now();
-  const oneDayAgo = now - 86_400_000;
+app.get(
+  "/dashboard/stats",
+  {
+    onRequest: authGuard,
+  },
+  async (_req, reply) => {
+    const allUsers = Array.from(users.values());
+    const now = Date.now();
+    const oneDayAgo = now - 86_400_000;
 
-  return reply.json({
-    totalUsers: allUsers.length,
-    newUsersToday: allUsers.filter((u) => new Date(u.createdAt).getTime() > oneDayAgo).length,
-    adminCount: allUsers.filter((u) => u.role === "admin").length,
-    serverUptime: Math.floor(process.uptime()),
-    timestamp: new Date().toISOString(),
-  });
-});
+    return reply.json({
+      totalUsers: allUsers.length,
+      newUsersToday: allUsers.filter((u) => new Date(u.createdAt).getTime() > oneDayAgo).length,
+      adminCount: allUsers.filter((u) => u.role === "admin").length,
+      serverUptime: Math.floor(process.uptime()),
+      timestamp: new Date().toISOString(),
+    });
+  },
+);
 
 // ─── SSE Events (Protected) ───
 
-app.get("/events", {
-  onRequest: authGuard,
-}, async (req, _reply) => {
-  const channel = hub.subscribe(req);
-  return channel.response;
-});
+app.get(
+  "/events",
+  {
+    onRequest: authGuard,
+  },
+  async (req, _reply) => {
+    const channel = hub.subscribe(req);
+    return channel.response;
+  },
+);
 
 // ─── Background Task: Welcome Email ───
 

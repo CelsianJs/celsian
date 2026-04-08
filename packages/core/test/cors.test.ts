@@ -78,7 +78,7 @@ describe("CORS Plugin", () => {
 
   it("should include credentials header when enabled", async () => {
     const app = createApp();
-    await app.register(cors({ credentials: true }));
+    await app.register(cors({ origin: "http://example.com", credentials: true }));
     app.get("/test", (_req, reply) => reply.json({ ok: true }));
 
     const response = await app.inject({

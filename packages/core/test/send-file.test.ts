@@ -92,7 +92,7 @@ describe("reply.sendFile with root option", () => {
     const response = await app.handle(new Request("http://localhost/file"));
     expect(response.status).toBe(403);
     const body = await response.json();
-    expect(body.code).toBe("PATH_TRAVERSAL");
+    expect(body.code).toBe("FORBIDDEN");
   });
 
   it("should return 403 for absolute path traversal outside root", async () => {
@@ -103,7 +103,7 @@ describe("reply.sendFile with root option", () => {
     // /etc/passwd won't start with TMP_DIR, so this should be 403
     expect(response.status).toBe(403);
     const body = await response.json();
-    expect(body.code).toBe("PATH_TRAVERSAL");
+    expect(body.code).toBe("FORBIDDEN");
   });
 
   it("should return 404 for non-existent file within root", async () => {
