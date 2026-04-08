@@ -69,16 +69,21 @@ export class TaskWorker {
     this.poll();
   }
 
-  async stop(): Promise<void> {
+  async stop(timeoutMs = 10_000): Promise<void> {
     this.running = false;
     if (this.pollTimer !== null) {
       clearTimeout(this.pollTimer);
       this.pollTimer = null;
     }
 
-    // Wait for active jobs to finish
-    while (this.activeJobs > 0) {
+    // Wait for active jobs with deadline
+    const deadline = Date.now() + timeoutMs;
+    while (this.activeJobs > 0 && Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 50));
+    }
+
+    if (this.activeJobs > 0) {
+      this.log.warn("Task worker stopped with active jobs remaining", { activeJobs: this.activeJobs });
     }
   }
 

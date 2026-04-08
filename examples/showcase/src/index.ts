@@ -52,7 +52,7 @@ app.cron("cleanup-done-tasks", "5m", () => {
 });
 
 // ─── Middleware ───
-await app.register(cors({ origin: "*", credentials: true }), { encapsulate: false });
+await app.register(cors({ origin: "http://localhost:3000", credentials: true }), { encapsulate: false });
 
 // ─── REST: Health ───
 app.health();

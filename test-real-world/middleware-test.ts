@@ -52,9 +52,13 @@ export function buildSecurityApp(): CelsianApp {
 export function buildCorsApp(options?: { corsOrigin?: string | string[] }): CelsianApp {
   const app = createApp();
 
+  // Use a specific origin when credentials are enabled (wildcard + credentials
+  // is forbidden by browsers and now throws a CelsianError).
+  const origin = options?.corsOrigin ?? "http://example.com";
+
   app.register(
     cors({
-      origin: options?.corsOrigin ?? "*",
+      origin,
       credentials: true,
       maxAge: 3600,
     }),

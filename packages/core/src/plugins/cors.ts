@@ -1,5 +1,6 @@
 // @celsian/core — CORS plugin
 
+import { CelsianError } from "../errors.js";
 import type { HookHandler, PluginFunction } from "../types.js";
 
 export interface CORSOptions {
@@ -35,6 +36,13 @@ function resolveOriginHeader(origin: string, opts: Required<CORSOptions>): strin
 
 export function cors(options: CORSOptions = {}): PluginFunction {
   const opts = { ...DEFAULTS, ...options };
+
+  if (opts.origin === "*" && opts.credentials) {
+    throw new CelsianError(
+      'CORS misconfiguration: origin "*" with credentials:true is forbidden by browsers. ' +
+      "Set a specific origin (e.g., 'http://localhost:3000') when credentials are enabled.",
+    );
+  }
 
   return function corsPlugin(app) {
     // Register catch-all OPTIONS route for preflight

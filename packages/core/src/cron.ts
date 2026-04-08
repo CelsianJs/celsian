@@ -88,6 +88,7 @@ export class CronScheduler {
 
     // Tick every second, but only fire jobs on minute boundary
     this.timer = setInterval(() => this.tick(), 1000);
+    this.timer.unref?.();
   }
 
   stop(): void {

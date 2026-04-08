@@ -14,6 +14,8 @@ export interface ServeOptions {
   shutdownTimeout?: number;
   /** Cleanup hook called during graceful shutdown */
   onShutdown?: () => Promise<void> | void;
+  /** Authenticate WebSocket upgrade requests. Return false or throw to reject. */
+  onUpgrade?: (request: Request, pathname: string) => boolean | Promise<boolean>;
 }
 
 /** Handle returned by `serve()` for programmatic shutdown. */
@@ -198,10 +200,22 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
           return;
         }
 
-        // TODO: Origin validation and auth for WebSocket upgrades should be done
-        // in the WS handler's open() callback. The app's internal hooks and options
-        // are not accessible here (private properties), so upgrade-time auth
-        // requires the handler to implement its own checks.
+        // Authenticate upgrade requests via onUpgrade callback
+        if (options.onUpgrade) {
+          try {
+            const webReq = nodeToWebRequest(req, url);
+            const allowed = await options.onUpgrade(webReq, pathname);
+            if (!allowed) {
+              socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+              socket.destroy();
+              return;
+            }
+          } catch {
+            socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+            socket.destroy();
+            return;
+          }
+        }
 
         wss.handleUpgrade(req, socket, head, (ws: any) => {
           const conn = createWSConnection({
