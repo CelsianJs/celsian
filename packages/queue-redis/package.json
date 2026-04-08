@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@celsian/core": "workspace:*",
-    "ioredis": "^5.4.0"
+    "ioredis": "^5.10.1"
   },
   "license": "MIT",
   "publishConfig": {
