@@ -24,6 +24,8 @@ export interface ResponseCacheOptions {
   exclude?: string[];
   /** Key prefix in the store (default: 'rc:') */
   prefix?: string;
+  /** Headers to include in cache key for content negotiation (default: []) */
+  varyHeaders?: string[];
 }
 
 const DEFAULT_OPTIONS = {
@@ -63,11 +65,19 @@ export function createResponseCache(options: ResponseCacheOptions) {
   const statusCodes = options.statusCodes ?? DEFAULT_OPTIONS.statusCodes;
   const exclude = options.exclude ?? [];
   const prefix = options.prefix ?? DEFAULT_OPTIONS.prefix;
+  const varyHeaders = options.varyHeaders ?? [];
   const keyGenerator = options.keyGenerator ?? defaultKeyGenerator;
 
   function defaultKeyGenerator(request: Request): string {
     const url = new URL(request.url);
-    return `${request.method}:${url.pathname}${url.search}`;
+    let key = `${request.method}:${url.pathname}${url.search}`;
+    for (const header of varyHeaders) {
+      const value = request.headers.get(header);
+      if (value) {
+        key += `|${header}=${value}`;
+      }
+    }
+    return key;
   }
 
   function isExcluded(pathname: string): boolean {
@@ -135,6 +145,9 @@ export function createResponseCache(options: ResponseCacheOptions) {
     // Add cache miss header
     const newHeaders = new Headers(response.headers);
     newHeaders.set("x-cache", "MISS");
+    if (varyHeaders.length > 0) {
+      newHeaders.set("vary", varyHeaders.join(", "));
+    }
 
     return new Response(body, {
       status: response.status,
