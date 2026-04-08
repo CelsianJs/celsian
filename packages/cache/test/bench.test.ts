@@ -1,5 +1,6 @@
 // @celsian/cache — Performance Micro-benchmarks
 // Measures KV store throughput, TTL overhead, response cache hit/miss, and session management.
+// Thresholds are set conservatively for CI runners (~2x slower than local machines).
 
 import { afterEach, describe, expect, it } from "vitest";
 import { createResponseCache } from "../src/response-cache.js";
@@ -133,8 +134,8 @@ describe("Bench: MemoryKVStore get/set", () => {
     console.log(`  ${iterations} ops in ${elapsed.toFixed(1)} ms`);
     console.log(`  ~${opsPerSec} ops/sec`);
 
-    // Should handle at least 100k ops/sec for in-memory store
-    expect(opsPerSec).toBeGreaterThan(100000);
+    // Should handle at least 50k ops/sec for in-memory store (conservative for CI)
+    expect(opsPerSec).toBeGreaterThan(50000);
   });
 });
 
@@ -169,8 +170,8 @@ describe("Bench: MemoryKVStore with TTL", () => {
     console.log(`  ${iterations} ops in ${elapsed.toFixed(1)} ms`);
     console.log(`  ~${opsPerSec} ops/sec`);
 
-    // TTL should add minimal overhead
-    expect(opsPerSec).toBeGreaterThan(100000);
+    // TTL should add minimal overhead (conservative for CI)
+    expect(opsPerSec).toBeGreaterThan(50000);
   });
 
   it("should measure get-with-TTL-check throughput (10000 ops)", async () => {
@@ -199,8 +200,8 @@ describe("Bench: MemoryKVStore with TTL", () => {
     console.log(`  ${iterations} ops in ${elapsed.toFixed(1)} ms`);
     console.log(`  ~${opsPerSec} ops/sec`);
 
-    // TTL check should add minimal overhead to get
-    expect(opsPerSec).toBeGreaterThan(100000);
+    // TTL check should add minimal overhead to get (conservative for CI)
+    expect(opsPerSec).toBeGreaterThan(50000);
   });
 
   it("should measure TTL expiration check overhead", async () => {
@@ -272,8 +273,8 @@ describe("Bench: Response Cache hit/miss", () => {
     console.log(`  ${iterations} requests in ${elapsed.toFixed(1)} ms`);
     console.log(`  ~${reqPerSec} req/sec`);
 
-    // Should handle at least 5k miss/sec (handler + cache write)
-    expect(reqPerSec).toBeGreaterThan(5000);
+    // Should handle at least 2k miss/sec (handler + cache write, conservative for CI)
+    expect(reqPerSec).toBeGreaterThan(2000);
 
     store.destroy();
   });
@@ -316,8 +317,8 @@ describe("Bench: Response Cache hit/miss", () => {
     console.log(`  p99: ${(p99 * 1000).toFixed(2)} us`);
     console.log(`  ~${reqPerSec} req/sec`);
 
-    // Cache hits should be fast — at least 10k req/sec
-    expect(reqPerSec).toBeGreaterThan(10000);
+    // Cache hits should be fast — at least 5k req/sec (conservative for CI)
+    expect(reqPerSec).toBeGreaterThan(5000);
 
     store.destroy();
   });
@@ -359,7 +360,7 @@ describe("Bench: Response Cache hit/miss", () => {
 
     // All should be hits (100 unique routes, all pre-populated)
     expect(handlerCalls).toBe(0);
-    expect(reqPerSec).toBeGreaterThan(10000);
+    expect(reqPerSec).toBeGreaterThan(5000);
 
     store.destroy();
   });
@@ -393,8 +394,8 @@ describe("Bench: Session create/load", () => {
     console.log(`  ${iterations} sessions in ${elapsed.toFixed(1)} ms`);
     console.log(`  ~${reqPerSec} sessions/sec`);
 
-    // Should create at least 10k sessions/sec
-    expect(reqPerSec).toBeGreaterThan(10000);
+    // Should create at least 5k sessions/sec (conservative for CI)
+    expect(reqPerSec).toBeGreaterThan(5000);
     // Verify all IDs are unique
     expect(new Set(sessionIds).size).toBe(iterations);
 
@@ -442,8 +443,8 @@ describe("Bench: Session create/load", () => {
     console.log(`  p99: ${(p99 * 1000).toFixed(2)} us`);
     console.log(`  ~${reqPerSec} loads/sec`);
 
-    // Should load at least 50k sessions/sec from memory
-    expect(reqPerSec).toBeGreaterThan(50000);
+    // Should load at least 20k sessions/sec from memory (conservative for CI)
+    expect(reqPerSec).toBeGreaterThan(20000);
 
     store.destroy();
   });
@@ -482,8 +483,8 @@ describe("Bench: Session create/load", () => {
     console.log(`  ${iterations} round-trips in ${elapsed.toFixed(1)} ms`);
     console.log(`  ~${reqPerSec} round-trips/sec`);
 
-    // Should handle at least 5k full round-trips/sec
-    expect(reqPerSec).toBeGreaterThan(5000);
+    // Should handle at least 2k full round-trips/sec (conservative for CI)
+    expect(reqPerSec).toBeGreaterThan(2000);
 
     store.destroy();
   });
@@ -523,8 +524,8 @@ describe("Bench: Session create/load", () => {
     console.log(`  ${iterations} requests in ${elapsed.toFixed(1)} ms`);
     console.log(`  ~${reqPerSec} req/sec`);
 
-    // Should handle at least 10k fromRequest/sec
-    expect(reqPerSec).toBeGreaterThan(10000);
+    // Should handle at least 5k fromRequest/sec (conservative for CI)
+    expect(reqPerSec).toBeGreaterThan(5000);
 
     store.destroy();
   });

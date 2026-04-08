@@ -20,9 +20,11 @@ export function compileRoute(entry: RouteEntry): CompiledRoute {
   const tokens: Array<{ type: "literal" | "param" | "wildcard"; value: string }> = [];
   const tokenRegex = /:([^/]+)|\*/g;
   let lastIndex = 0;
-  let tokenMatch: RegExpExecArray | null;
-
-  while ((tokenMatch = tokenRegex.exec(entry.pattern)) !== null) {
+  for (
+    let tokenMatch = tokenRegex.exec(entry.pattern);
+    tokenMatch !== null;
+    tokenMatch = tokenRegex.exec(entry.pattern)
+  ) {
     // Literal text before this token
     if (tokenMatch.index > lastIndex) {
       tokens.push({ type: "literal", value: entry.pattern.slice(lastIndex, tokenMatch.index) });
