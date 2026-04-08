@@ -10,7 +10,7 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250306.0",
+    "@cloudflare/workers-types": "^4.20260408.1",
     "vitest": "^3.0.0"
   },
   "engines": {
