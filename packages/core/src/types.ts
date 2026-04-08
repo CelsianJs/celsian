@@ -160,6 +160,35 @@ export interface RouteOptions {
   onSend?: HookHandler | HookHandler[];
 }
 
+/** Route options with typed schema inference for parsedBody and parsedQuery */
+export interface TypedRouteOptions<
+  TBody = unknown,
+  TQuery = unknown,
+  TParams = Record<string, string>,
+> {
+  method: RouteMethod | RouteMethod[];
+  url: string;
+  handler: TypedSchemaHandler<
+    TParams,
+    InferOutput<TBody>,
+    TQuery extends unknown ? Record<string, string | string[]> : InferOutput<TQuery>
+  >;
+  /** Endpoint type */
+  kind?: "serverless" | "hot" | "task";
+  /** Schema for validation */
+  schema?: {
+    body?: TBody;
+    querystring?: TQuery;
+    params?: unknown;
+    response?: Record<number, unknown>;
+  };
+  /** Route-specific hooks */
+  onRequest?: HookHandler | HookHandler[];
+  preHandler?: HookHandler | HookHandler[];
+  preSerialization?: HookHandler | HookHandler[];
+  onSend?: HookHandler | HookHandler[];
+}
+
 export interface RouteMatch {
   handler: RouteHandler;
   params: Record<string, string>;
@@ -195,6 +224,7 @@ export interface PluginOptions {
 export interface PluginContext {
   register(plugin: PluginFunction, options?: PluginOptions): Promise<void>;
   route(options: RouteOptions): void;
+  route<TBody, TQuery>(options: TypedRouteOptions<TBody, TQuery>): void;
 
   // Overloaded: (path, handler) for backwards compat, (path, options, handler) for typed schemas
   get<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void;

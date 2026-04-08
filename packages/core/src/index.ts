@@ -70,6 +70,7 @@ export type {
   RouteSchemaOptions,
   TypedCelsianRequest,
   TypedRouteHandler,
+  TypedRouteOptions,
   TypedSchemaHandler,
 } from "./types.js";
 export type { WSConnection, WSHandler } from "./websocket.js";

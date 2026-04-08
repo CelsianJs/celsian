@@ -30,6 +30,7 @@ import type {
   RouteOptions,
   RouteSchemaOptions,
   TypedRouteHandler,
+  TypedRouteOptions,
   TypedSchemaHandler,
 } from "./types.js";
 import { type WSHandler, WSRegistry } from "./websocket.js";
@@ -140,8 +141,10 @@ export class CelsianApp {
   }
 
   /** Register a route with full options (method, url, schema, hooks, handler). */
-  route(options: RouteOptions): void {
-    this.pluginContext.route(options);
+  route(options: RouteOptions): void;
+  route<TBody, TQuery>(options: TypedRouteOptions<TBody, TQuery>): void;
+  route(options: RouteOptions | TypedRouteOptions): void {
+    this.pluginContext.route(options as RouteOptions);
   }
 
   // Overloaded route methods: (path, handler) and (path, options, handler)
