@@ -1,5 +1,5 @@
-import { createApp } from "@celsian/core";
-import { describe, expect, it } from "vitest";
+import { CelsianError, createApp } from "@celsian/core";
+import { describe, expect, it, vi } from "vitest";
 import { MemoryRateLimitStore, rateLimit } from "../src/index.js";
 
 describe("@celsian/rate-limit", () => {
@@ -172,5 +172,94 @@ describe("MemoryRateLimitStore", () => {
     expect(r2.count).toBe(1); // Reset
 
     store.destroy();
+  });
+
+  it("should call unref on cleanup timer", () => {
+    const unrefSpy = vi.fn();
+    const originalSetInterval = globalThis.setInterval;
+    vi.spyOn(globalThis, "setInterval").mockImplementation((...args) => {
+      const timer = originalSetInterval(...args);
+      timer.unref = unrefSpy;
+      return timer;
+    });
+
+    const store = new MemoryRateLimitStore();
+    expect(unrefSpy).toHaveBeenCalledTimes(1);
+    store.destroy();
+
+    vi.restoreAllMocks();
+  });
+});
+
+describe("rate-limit XFF key generation", () => {
+  it("should use the rightmost IP from X-Forwarded-For when trustProxy is true", async () => {
+    const app = createApp();
+    await app.register(
+      rateLimit({
+        max: 2,
+        window: 60_000,
+        trustProxy: true,
+      }),
+      { encapsulate: false },
+    );
+
+    app.get("/api", (_req, reply) => reply.json({ ok: true }));
+
+    // First two requests from the rightmost IP "10.0.0.1" should count
+    const r1 = await app.inject({
+      url: "/api",
+      headers: { "x-forwarded-for": "spoofed-client, proxy1, 10.0.0.1" },
+    });
+    expect(r1.status).toBe(200);
+
+    const r2 = await app.inject({
+      url: "/api",
+      headers: { "x-forwarded-for": "different-spoof, proxy2, 10.0.0.1" },
+    });
+    expect(r2.status).toBe(200);
+
+    // Third request from same rightmost IP should be blocked
+    const r3 = await app.inject({
+      url: "/api",
+      headers: { "x-forwarded-for": "another-spoof, proxy3, 10.0.0.1" },
+    });
+    expect(r3.status).toBe(429);
+  });
+
+  it("should throw CelsianError when trustProxy is false and no keyGenerator provided", () => {
+    expect(() =>
+      rateLimit({
+        max: 10,
+        window: 60_000,
+        trustProxy: false,
+      }),
+    ).toThrow(CelsianError);
+  });
+
+  it("should throw CelsianError by default (trustProxy defaults to false) without keyGenerator", () => {
+    expect(() =>
+      rateLimit({
+        max: 10,
+        window: 60_000,
+      }),
+    ).toThrow(CelsianError);
+  });
+
+  it("should NOT throw when trustProxy is false but a custom keyGenerator is provided", async () => {
+    const app = createApp();
+    await app.register(
+      rateLimit({
+        max: 10,
+        window: 60_000,
+        trustProxy: false,
+        keyGenerator: () => "custom-key",
+      }),
+      { encapsulate: false },
+    );
+
+    app.get("/api", (_req, reply) => reply.json({ ok: true }));
+
+    const res = await app.inject({ url: "/api" });
+    expect(res.status).toBe(200);
   });
 });

@@ -52,7 +52,7 @@ export function createAuthApp() {
   app.register(cors(), { encapsulate: false });
   app.register(security(), { encapsulate: false });
   app.register(jwt({ secret: JWT_SECRET }), { encapsulate: false });
-  app.register(rateLimit({ max: 100, window: 60_000 }), { encapsulate: false });
+  app.register(rateLimit({ max: 100, window: 60_000, trustProxy: true }), { encapsulate: false });
 
   app.health();
 
