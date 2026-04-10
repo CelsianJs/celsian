@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@celsian/core": "workspace:*",
-    "jose": "^5.0.0"
+    "jose": "^6.2.2"
   },
   "license": "MIT",
   "publishConfig": {
