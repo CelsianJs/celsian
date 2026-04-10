@@ -15,8 +15,8 @@ importers:
         specifier: ^2.30.0
         version: 2.30.0(@types/node@25.5.2)
       '@sinclair/typebox':
-        specifier: ^0.34.0
-        version: 0.34.48
+        specifier: ^0.34.49
+        version: 0.34.49
       '@types/autocannon':
         specifier: ^7.12.7
         version: 7.12.7
@@ -101,8 +101,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/schema
       '@sinclair/typebox':
-        specifier: ^0.34.0
-        version: 0.34.48
+        specifier: ^0.34.49
+        version: 0.34.49
     devDependencies:
       esbuild:
         specifier: ^0.27.3
@@ -126,8 +126,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/schema
       '@sinclair/typebox':
-        specifier: ^0.34.0
-        version: 0.34.48
+        specifier: ^0.34.49
+        version: 0.34.49
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20241205.0
@@ -183,8 +183,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/schema
       '@sinclair/typebox':
-        specifier: ^0.34.0
-        version: 0.34.48
+        specifier: ^0.34.49
+        version: 0.34.49
       celsian:
         specifier: workspace:*
         version: link:../../packages/celsian
@@ -217,8 +217,8 @@ importers:
   examples/rest-api:
     dependencies:
       '@sinclair/typebox':
-        specifier: ^0.34.0
-        version: 0.34.48
+        specifier: ^0.34.49
+        version: 0.34.49
       celsian:
         specifier: workspace:*
         version: link:../../packages/celsian
@@ -229,8 +229,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/rpc
       '@sinclair/typebox':
-        specifier: ^0.34.0
-        version: 0.34.48
+        specifier: ^0.34.49
+        version: 0.34.49
       celsian:
         specifier: workspace:*
         version: link:../../packages/celsian
@@ -1399,6 +1399,9 @@ packages:
 
   '@sinclair/typebox@0.34.48':
     resolution: {integrity: sha512-kKJTNuK3AQOrgjjotVxMrCn1sUJwM76wMszfq1kdU4uYVJjvEWuFQ6HgvLt4Xz3fSmZlTOxJ/Ie13KnIcWQXFA==}
+
+  '@sinclair/typebox@0.34.49':
+    resolution: {integrity: sha512-brySQQs7Jtn0joV8Xh9ZV/hZb9Ozb0pmazDIASBkYKCjXrXU3mpcFahmK/z4YDhGkQvP9mWJbVyahdtU5wQA+A==}
 
   '@types/autocannon@7.12.7':
     resolution: {integrity: sha512-Pd4nPf7wRpacULa6D/EC9x3CwzFQXwA0z5WFuik/fvJjW44V3WzBTM3jtt8nSBoflUNgswPiMCtgrr1bwnAcMg==}
@@ -3574,6 +3577,8 @@ snapshots:
     optional: true
 
   '@sinclair/typebox@0.34.48': {}
+
+  '@sinclair/typebox@0.34.49': {}
 
   '@types/autocannon@7.12.7':
     dependencies:

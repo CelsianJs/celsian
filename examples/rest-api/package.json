@@ -7,6 +7,6 @@
   },
   "dependencies": {
     "celsian": "workspace:*",
-    "@sinclair/typebox": "^0.34.0"
+    "@sinclair/typebox": "^0.34.49"
   }
 }
