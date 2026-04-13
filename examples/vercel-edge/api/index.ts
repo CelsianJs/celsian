@@ -1,3 +1,10 @@
+// NOTE: Vercel Edge Functions are now legacy. For new projects, use Serverless
+// Functions with Fluid Compute for full Node.js compatibility and better
+// cold-start performance. See examples/vercel-serverless/ for the recommended pattern.
+//
+// This example is preserved for reference when Edge Functions are specifically needed
+// (e.g., middleware-style request interception at the edge).
+
 import { createVercelEdgeHandler } from "@celsian/adapter-vercel";
 import { cors, createApp } from "@celsian/core";
 
