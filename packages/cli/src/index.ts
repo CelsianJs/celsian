@@ -4,6 +4,7 @@
 
 import { buildCommand } from "./commands/build.js";
 import { createCommand, type Template } from "./commands/create.js";
+import { deployCommand } from "./commands/deploy.js";
 import { devCommand } from "./commands/dev.js";
 import { generateRoute, generateRpc } from "./commands/generate.js";
 import { routesCommand } from "./commands/routes.js";
@@ -76,6 +77,16 @@ async function main(): Promise<void> {
       break;
     }
 
+    case "deploy": {
+      const target = getFlag(args, "--target", "-t") ?? args[1];
+      if (!target) {
+        logger.error("Usage: celsian deploy --target <vercel|lambda|cloudflare|fly|railway|docker>");
+        process.exit(1);
+      }
+      await deployCommand(target);
+      break;
+    }
+
     case "--version":
     case "-v": {
       console.log(getVersion());
@@ -94,6 +105,7 @@ async function main(): Promise<void> {
       console.log("    generate rpc <name>      Generate an RPC procedure");
       console.log("    routes                   Print registered routes");
       console.log("    build                    Bundle app for production");
+      console.log("    deploy --target <platform>  Generate deployment files for a platform");
       console.log("");
       console.log("  Build options:");
       console.log("");
@@ -103,6 +115,10 @@ async function main(): Promise<void> {
       console.log("    --target <target>        Build target (default: es2022)");
       console.log("    --platform node|browser  Target platform (default: node)");
       console.log("    --minify                 Minify output");
+      console.log("");
+      console.log("  Deploy targets:");
+      console.log("");
+      console.log("    vercel, lambda, cloudflare, fly, railway, docker");
       console.log("");
       console.log("  Options:");
       console.log("");

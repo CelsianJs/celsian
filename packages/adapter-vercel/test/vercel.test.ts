@@ -1,6 +1,6 @@
 import { cors, createApp } from "@celsian/core";
 import { describe, expect, it } from "vitest";
-import { createVercelEdgeHandler } from "../src/index.js";
+import { createVercelCronHandler, createVercelEdgeHandler } from "../src/index.js";
 
 function makeRequest(path: string, init?: RequestInit) {
   return new Request(`http://localhost${path}`, init);
@@ -162,5 +162,91 @@ describe("@celsian/adapter-vercel (Edge)", () => {
 
     const response = await handle(app, "/search?tag=a&tag=b");
     expect(await response.json()).toEqual({ tags: ["a", "b"] });
+  });
+});
+
+describe("@celsian/adapter-vercel (Cron Handler)", () => {
+  function makeCronRequest(path: string, secret?: string): Request {
+    const headers: Record<string, string> = {};
+    if (secret) {
+      headers.authorization = `Bearer ${secret}`;
+    }
+    return new Request(`http://localhost${path}`, { headers });
+  }
+
+  it("should create a cron handler", () => {
+    const app = createApp();
+    const handler = createVercelCronHandler(app);
+    expect(typeof handler).toBe("function");
+  });
+
+  it("should reject requests without valid CRON_SECRET", async () => {
+    const app = createApp();
+    app.get("/api/cron", (_req, reply) => reply.json({ ok: true }));
+
+    const handler = createVercelCronHandler(app, "test-secret-123");
+
+    // No auth header
+    const res1 = await handler(makeCronRequest("/api/cron"));
+    expect(res1.status).toBe(401);
+
+    // Wrong secret
+    const res2 = await handler(makeCronRequest("/api/cron", "wrong-secret"));
+    expect(res2.status).toBe(401);
+  });
+
+  it("should allow requests with valid CRON_SECRET", async () => {
+    const app = createApp();
+    app.get("/api/cron", (_req, reply) => reply.json({ ok: true }));
+
+    const handler = createVercelCronHandler(app, "test-secret-123");
+    const response = await handler(makeCronRequest("/api/cron", "test-secret-123"));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+  });
+
+  it("should reject with 503 when no secret configured (fail closed)", async () => {
+    const app = createApp();
+    app.get("/api/cron", (_req, reply) => reply.json({ ok: true }));
+
+    // No secret parameter, and CRON_SECRET env not set
+    const originalEnv = process.env.CRON_SECRET;
+    delete process.env.CRON_SECRET;
+
+    const handler = createVercelCronHandler(app);
+    const response = await handler(makeCronRequest("/api/cron"));
+
+    expect(response.status).toBe(503);
+
+    // Restore env
+    if (originalEnv !== undefined) {
+      process.env.CRON_SECRET = originalEnv;
+    }
+  });
+
+  it("should read CRON_SECRET from environment variable", async () => {
+    const app = createApp();
+    app.get("/api/cron", (_req, reply) => reply.json({ ok: true }));
+
+    const originalEnv = process.env.CRON_SECRET;
+    process.env.CRON_SECRET = "env-secret-456";
+
+    const handler = createVercelCronHandler(app);
+
+    // Wrong secret
+    const res1 = await handler(makeCronRequest("/api/cron", "wrong"));
+    expect(res1.status).toBe(401);
+
+    // Correct secret from env
+    const res2 = await handler(makeCronRequest("/api/cron", "env-secret-456"));
+    expect(res2.status).toBe(200);
+
+    // Restore env
+    if (originalEnv !== undefined) {
+      process.env.CRON_SECRET = originalEnv;
+    } else {
+      delete process.env.CRON_SECRET;
+    }
   });
 });

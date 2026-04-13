@@ -1,5 +1,6 @@
 // @celsian/adapter-vercel — Vercel deployment adapter
 
+import { createHash, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { CelsianApp } from "@celsian/core";
 import { nodeToWebRequest, writeWebResponse } from "@celsian/core";
@@ -40,6 +41,50 @@ export function createVercelEdgeHandler(app: CelsianApp) {
       return await app.handle(request);
     } catch (error) {
       console.error("[celsian] Unhandled error in Vercel Edge handler:", error);
+      return new Response(JSON.stringify({ error: "Internal Server Error", statusCode: 500 }), {
+        status: 500,
+        headers: { "content-type": "application/json; charset=utf-8" },
+      });
+    }
+  };
+}
+
+/**
+ * Create a Vercel Cron Job handler with CRON_SECRET validation.
+ * Vercel Cron Jobs call API routes on a schedule. This handler validates
+ * the Authorization header against the CRON_SECRET environment variable
+ * to ensure only Vercel's scheduler can trigger the endpoint.
+ *
+ * @param app - CelsianApp instance
+ * @param cronSecret - Optional secret override (defaults to process.env.CRON_SECRET)
+ */
+export function createVercelCronHandler(app: CelsianApp, cronSecret?: string) {
+  return async (request: Request): Promise<Response> => {
+    const secret = (cronSecret ?? process.env.CRON_SECRET ?? "").trim();
+    if (!secret) {
+      console.error("[celsian] CRON_SECRET not set — rejecting all cron requests");
+      return new Response(JSON.stringify({ error: "Service Unavailable", statusCode: 503 }), {
+        status: 503,
+        headers: { "content-type": "application/json; charset=utf-8" },
+      });
+    }
+
+    const authHeader = request.headers.get("authorization") ?? "";
+    const expected = `Bearer ${secret}`;
+    // Timing-safe comparison: hash both to normalize length, then compare digests
+    const authDigest = createHash("sha256").update(authHeader).digest();
+    const expectedDigest = createHash("sha256").update(expected).digest();
+    if (!timingSafeEqual(authDigest, expectedDigest)) {
+      return new Response(JSON.stringify({ error: "Unauthorized", statusCode: 401 }), {
+        status: 401,
+        headers: { "content-type": "application/json; charset=utf-8" },
+      });
+    }
+
+    try {
+      return await app.handle(request);
+    } catch (error) {
+      console.error("[celsian] Unhandled error in Vercel Cron handler:", error);
       return new Response(JSON.stringify({ error: "Internal Server Error", statusCode: 500 }), {
         status: 500,
         headers: { "content-type": "application/json; charset=utf-8" },

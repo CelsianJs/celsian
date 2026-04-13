@@ -1,0 +1,14 @@
+{
+  "name": "celsian-vercel-serverless-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel deploy",
+    "deploy:prod": "vercel deploy --prod"
+  },
+  "dependencies": {
+    "@celsian/adapter-vercel": "workspace:*",
+    "@celsian/core": "workspace:*"
+  }
+}
