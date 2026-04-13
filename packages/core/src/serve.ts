@@ -271,25 +271,86 @@ function serveBun(app: CelsianApp, port: number, host: string, options: ServeOpt
     fetch: app.fetch,
   });
 
+  let shuttingDown = false;
+
+  const handleShutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+
+    app.log.info("shutting down gracefully");
+
+    // Stop accepting new connections
+    server.stop();
+
+    // Stop task worker and cron
+    await app.stopWorker();
+    app.stopCron();
+
+    // Run user cleanup hook
+    if (options.onShutdown) {
+      await options.onShutdown();
+    }
+  };
+
+  process.on("SIGTERM", () => handleShutdown());
+  process.on("SIGINT", () => handleShutdown());
+
+  if (options.signal) {
+    options.signal.addEventListener("abort", () => handleShutdown());
+  }
+
   console.log(`[celsian] Server running at http://${host}:${port}`);
   options.onReady?.({ port, host });
 
   return {
-    close: async () => {
-      server.stop();
-      if (options.onShutdown) await options.onShutdown();
-    },
+    close: () => handleShutdown(),
   };
 }
 
 function serveDeno(app: CelsianApp, port: number, host: string, options: ServeOptions): ServeResult {
   const controller = new AbortController();
+  let shuttingDown = false;
+
+  const handleShutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+
+    app.log.info("shutting down gracefully");
+
+    // Stop accepting new connections
+    controller.abort();
+
+    // Stop task worker and cron
+    await app.stopWorker();
+    app.stopCron();
+
+    // Run user cleanup hook
+    if (options.onShutdown) {
+      await options.onShutdown();
+    }
+  };
+
+  // Register signal listeners — wrap in try/catch since Deno permissions may not allow signal listening
+  try {
+    (globalThis as any).Deno.addSignalListener?.("SIGTERM", () => handleShutdown());
+  } catch {
+    // Signal listening not permitted
+  }
+  try {
+    (globalThis as any).Deno.addSignalListener?.("SIGINT", () => handleShutdown());
+  } catch {
+    // Signal listening not permitted
+  }
+
+  if (options.signal) {
+    options.signal.addEventListener("abort", () => handleShutdown());
+  }
 
   (globalThis as any).Deno.serve(
     {
       port,
       hostname: host,
-      signal: options.signal ?? controller.signal,
+      signal: controller.signal,
       onListen() {
         console.log(`[celsian] Server running at http://${host}:${port}`);
         options.onReady?.({ port, host });
@@ -299,10 +360,7 @@ function serveDeno(app: CelsianApp, port: number, host: string, options: ServeOp
   );
 
   return {
-    close: async () => {
-      controller.abort();
-      if (options.onShutdown) await options.onShutdown();
-    },
+    close: () => handleShutdown(),
   };
 }
 

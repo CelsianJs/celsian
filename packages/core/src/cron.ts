@@ -98,6 +98,11 @@ export class CronScheduler {
     }
   }
 
+  /** Whether the scheduler timer is currently running. */
+  get isRunning(): boolean {
+    return this.timer !== null;
+  }
+
   private tick(): void {
     const now = new Date();
     const currentMinute = now.getHours() * 60 + now.getMinutes();

@@ -85,6 +85,10 @@ export class CelsianApp {
   // WebSocket
   readonly wsRegistry = new WSRegistry();
 
+  // Serverless safety warnings (one-time)
+  private _enqueuedWithoutWorkerWarned = false;
+  private _cronNotStartedWarned = false;
+
   // Cached options for hot path
   private readonly hasLogger: boolean;
   private readonly cachedBodyLimit: number;
@@ -319,6 +323,12 @@ export class CelsianApp {
 
   /** Enqueue a background task by name. Returns the task ID. */
   async enqueue(taskName: string, input: unknown): Promise<string> {
+    if (!this.taskWorker && !this._enqueuedWithoutWorkerWarned) {
+      this.log.warn(
+        `Task '${taskName}' enqueued but no worker is running. Call app.startWorker() or use serve() to process background tasks.`,
+      );
+      this._enqueuedWithoutWorkerWarned = true;
+    }
     return createEnqueue(this._queue, this.taskRegistry)(taskName, input);
   }
 
@@ -460,6 +470,15 @@ export class CelsianApp {
     // Skip the async call entirely when no pending plugins and no active ready promise
     if (this.pendingPlugins.length > 0 || this.readyPromise !== null) {
       await this.ready();
+    }
+
+    // Serverless safety: warn once if cron jobs registered but scheduler not started
+    if (!this._cronNotStartedWarned && this.cronScheduler.getJobs().length > 0 && !this.cronScheduler.isRunning) {
+      const count = this.cronScheduler.getJobs().length;
+      this.log.warn(
+        `${count} cron job(s) registered but scheduler not started. In serverless environments, use platform-native cron (Vercel Cron Jobs, AWS EventBridge, CF Cron Triggers) instead of app.cron().`,
+      );
+      this._cronNotStartedWarned = true;
     }
 
     // Fast URL parsing: extract pathname and query with simple string ops
