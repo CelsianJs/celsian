@@ -11,9 +11,7 @@ describe("Serverless Safety Warnings", () => {
     const warnSpy = vi.spyOn(app.log, "warn");
     await app.enqueue("test-task", { data: 1 });
 
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("no worker is running"),
-    );
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("no worker is running"));
   });
 
   it("should only warn once for repeated enqueues without worker", async () => {
