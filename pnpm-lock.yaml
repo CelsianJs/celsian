@@ -288,6 +288,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/core
 
+  examples/vercel-serverless:
+    dependencies:
+      '@celsian/adapter-vercel':
+        specifier: workspace:*
+        version: link:../../packages/adapter-vercel
+      '@celsian/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+
   packages/adapter-cloudflare:
     dependencies:
       '@celsian/core':
