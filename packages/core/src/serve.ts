@@ -69,6 +69,15 @@ export async function serve(app: CelsianApp, options: ServeOptions = {}): Promis
   return serveNode(app, port, host, options);
 }
 
+/** Shared teardown: stop worker, cron, and run user cleanup hook. */
+async function teardownApp(app: CelsianApp, options: ServeOptions): Promise<void> {
+  await app.stopWorker();
+  app.stopCron();
+  if (options.onShutdown) {
+    await options.onShutdown();
+  }
+}
+
 async function serveNode(app: CelsianApp, port: number, host: string, options: ServeOptions): Promise<ServeResult> {
   const http = await import("node:http");
   const { readFile, stat } = await import("node:fs/promises");
@@ -164,14 +173,7 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
       await new Promise((r) => setTimeout(r, 100));
     }
 
-    // Stop task worker and cron
-    await app.stopWorker();
-    app.stopCron();
-
-    // Run user cleanup hook
-    if (options.onShutdown) {
-      await options.onShutdown();
-    }
+    await teardownApp(app, options);
   };
 
   process.on("SIGTERM", () => handleShutdown());
@@ -282,14 +284,7 @@ function serveBun(app: CelsianApp, port: number, host: string, options: ServeOpt
     // Stop accepting new connections
     server.stop();
 
-    // Stop task worker and cron
-    await app.stopWorker();
-    app.stopCron();
-
-    // Run user cleanup hook
-    if (options.onShutdown) {
-      await options.onShutdown();
-    }
+    await teardownApp(app, options);
   };
 
   process.on("SIGTERM", () => handleShutdown());
@@ -320,14 +315,7 @@ function serveDeno(app: CelsianApp, port: number, host: string, options: ServeOp
     // Stop accepting new connections
     controller.abort();
 
-    // Stop task worker and cron
-    await app.stopWorker();
-    app.stopCron();
-
-    // Run user cleanup hook
-    if (options.onShutdown) {
-      await options.onShutdown();
-    }
+    await teardownApp(app, options);
   };
 
   // Register signal listeners — wrap in try/catch since Deno permissions may not allow signal listening

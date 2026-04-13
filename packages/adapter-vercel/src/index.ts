@@ -1,5 +1,6 @@
 // @celsian/adapter-vercel — Vercel deployment adapter
 
+import { createHash, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { CelsianApp } from "@celsian/core";
 import { nodeToWebRequest, writeWebResponse } from "@celsian/core";
@@ -59,18 +60,25 @@ export function createVercelEdgeHandler(app: CelsianApp) {
  */
 export function createVercelCronHandler(app: CelsianApp, cronSecret?: string) {
   return async (request: Request): Promise<Response> => {
-    const secret = cronSecret ?? process.env.CRON_SECRET;
+    const secret = (cronSecret ?? process.env.CRON_SECRET ?? "").trim();
     if (!secret) {
-      console.error("[celsian] CRON_SECRET not set — cron endpoint is unprotected");
-      // Fall through without validation if no secret configured (dev mode)
-    } else {
-      const authHeader = request.headers.get("authorization");
-      if (authHeader !== `Bearer ${secret}`) {
-        return new Response(JSON.stringify({ error: "Unauthorized", statusCode: 401 }), {
-          status: 401,
-          headers: { "content-type": "application/json; charset=utf-8" },
-        });
-      }
+      console.error("[celsian] CRON_SECRET not set — rejecting all cron requests");
+      return new Response(JSON.stringify({ error: "Service Unavailable", statusCode: 503 }), {
+        status: 503,
+        headers: { "content-type": "application/json; charset=utf-8" },
+      });
+    }
+
+    const authHeader = request.headers.get("authorization") ?? "";
+    const expected = `Bearer ${secret}`;
+    // Timing-safe comparison: hash both to normalize length, then compare digests
+    const authDigest = createHash("sha256").update(authHeader).digest();
+    const expectedDigest = createHash("sha256").update(expected).digest();
+    if (!timingSafeEqual(authDigest, expectedDigest)) {
+      return new Response(JSON.stringify({ error: "Unauthorized", statusCode: 401 }), {
+        status: 401,
+        headers: { "content-type": "application/json; charset=utf-8" },
+      });
     }
 
     try {

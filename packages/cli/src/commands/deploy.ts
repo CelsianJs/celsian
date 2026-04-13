@@ -24,6 +24,8 @@ const app = createApp();
 
 app.get("/api/health", (_req, reply) => reply.json({ status: "ok" }));
 
+await app.ready();
+
 export default createVercelHandler(app);
 `;
 

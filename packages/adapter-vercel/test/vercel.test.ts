@@ -206,7 +206,7 @@ describe("@celsian/adapter-vercel (Cron Handler)", () => {
     expect(await response.json()).toEqual({ ok: true });
   });
 
-  it("should fall through without validation when no secret configured", async () => {
+  it("should reject with 503 when no secret configured (fail closed)", async () => {
     const app = createApp();
     app.get("/api/cron", (_req, reply) => reply.json({ ok: true }));
 
@@ -217,7 +217,7 @@ describe("@celsian/adapter-vercel (Cron Handler)", () => {
     const handler = createVercelCronHandler(app);
     const response = await handler(makeCronRequest("/api/cron"));
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(503);
 
     // Restore env
     if (originalEnv !== undefined) {

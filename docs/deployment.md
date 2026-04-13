@@ -449,25 +449,6 @@ app.health({
 - `/health` returns `{ "status": "ok" }` (or `503` if the check fails)
 - `/ready` returns `{ "status": "ready" }` (or `503` if plugins are still loading)
 
-## Route Tagging
-
-Tag routes for deployment tooling. This is useful when splitting an app across serverless functions and long-running servers:
-
-```typescript
-// Stateless API routes -- deploy as serverless functions
-app.route({ method: 'GET', url: '/api/users', kind: 'serverless', handler: listUsers });
-
-// WebSocket or SSE -- needs a persistent server
-app.route({ method: 'GET', url: '/ws', kind: 'hot', handler: wsHandler });
-
-// Background work -- runs on worker processes
-app.route({ method: 'POST', url: '/tasks/email', kind: 'task', handler: emailHandler });
-
-// Export manifest for build tooling
-const manifest = app.getRouteManifest();
-// { serverless: [...], hot: [...], task: [...] }
-```
-
 ## Static Files
 
 For Node.js deployments, `serve()` can serve static files:
