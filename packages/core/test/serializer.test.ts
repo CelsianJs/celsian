@@ -131,6 +131,27 @@ describe("compileSerializer", () => {
     expect(serialize!(null)).toBe("null");
     expect(serialize!(undefined)).toBe("null");
   });
+
+  it("should serialize NaN and Infinity as null (matching JSON.stringify)", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        value: { type: "number" },
+      },
+    };
+
+    const serialize = compileSerializer(schema);
+
+    // JSON.stringify converts NaN, Infinity, -Infinity to null
+    expect(JSON.parse(serialize!({ value: NaN }))).toEqual({ value: null });
+    expect(JSON.parse(serialize!({ value: Infinity }))).toEqual({ value: null });
+    expect(JSON.parse(serialize!({ value: -Infinity }))).toEqual({ value: null });
+
+    // Verify matches JSON.stringify behavior exactly
+    expect(serialize!({ value: NaN })).toBe(JSON.stringify({ value: NaN }));
+    expect(serialize!({ value: Infinity })).toBe(JSON.stringify({ value: Infinity }));
+    expect(serialize!({ value: -Infinity })).toBe(JSON.stringify({ value: -Infinity }));
+  });
 });
 
 describe("Response schema pre-compilation integration", () => {

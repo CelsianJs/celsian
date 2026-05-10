@@ -190,7 +190,8 @@ function buildObjectSerializer(properties: PropertyInfo[]): FastSerializer {
       } else if (prop.type === "string" && typeof value === "string") {
         result += serializeString(value);
       } else if (prop.type === "number" && typeof value === "number") {
-        result += value.toString();
+        // NaN and Infinity are not valid JSON — JSON.stringify outputs null for these
+        result += Number.isFinite(value) ? value.toString() : "null";
       } else if (prop.type === "boolean" && typeof value === "boolean") {
         result += value ? "true" : "false";
       } else if (nestedSerializers[i] && typeof value === "object" && !Array.isArray(value)) {

@@ -308,7 +308,20 @@ export function createReply(serializer?: FastSerializer | null): CelsianReply {
         const { extname, basename, resolve } = await import("node:path");
         const { createHash } = await import("node:crypto");
 
-        const resolvedPath = resolve(filePath);
+        let resolvedPath: string;
+        if (options?.root) {
+          const resolvedRoot = resolve(options.root);
+          resolvedPath = resolve(resolvedRoot, filePath);
+          if (!resolvedPath.startsWith(resolvedRoot)) {
+            return new Response(JSON.stringify({ error: "Forbidden", statusCode: 403, code: "PATH_TRAVERSAL" }), {
+              status: 403,
+              headers: buildHeaders({ "content-type": "application/json; charset=utf-8" }),
+            });
+          }
+        } else {
+          resolvedPath = resolve(filePath);
+        }
+
         const fileStat = await fsStat(resolvedPath);
         const data = await readFile(resolvedPath);
         const ext = extname(resolvedPath).toLowerCase();
@@ -370,6 +383,40 @@ export function createReply(serializer?: FastSerializer | null): CelsianReply {
               }),
             });
           }
+
+          // Multi-range — return 206 with multipart/byteranges
+          const boundary = "celsian_range_" + Date.now().toString(36);
+          const parts: Uint8Array[] = [];
+          const encoder = new TextEncoder();
+
+          for (const [start, end] of ranges) {
+            const partHeader = `\r\n--${boundary}\r\nContent-Type: ${contentType}\r\nContent-Range: bytes ${start}-${end}/${totalSize}\r\n\r\n`;
+            parts.push(encoder.encode(partHeader));
+            parts.push(data.slice(start, end + 1));
+          }
+          parts.push(encoder.encode(`\r\n--${boundary}--\r\n`));
+
+          // Concatenate all parts
+          const totalLength = parts.reduce((sum, p) => sum + p.byteLength, 0);
+          const multipartBody = new Uint8Array(totalLength);
+          let offset = 0;
+          for (const part of parts) {
+            multipartBody.set(part, offset);
+            offset += part.byteLength;
+          }
+
+          return new Response(multipartBody, {
+            status: 206,
+            headers: buildHeaders({
+              "content-type": `multipart/byteranges; boundary=${boundary}`,
+              "content-length": totalLength.toString(),
+              "content-disposition": `attachment; filename="${safeName}"`,
+              etag,
+              "last-modified": lastModified,
+              "accept-ranges": "bytes",
+              ...headers,
+            }),
+          });
         }
 
         return new Response(data, {

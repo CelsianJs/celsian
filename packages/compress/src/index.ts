@@ -82,39 +82,6 @@ function compressBody(
 }
 
 /**
- * Compress body using Brotli via Node.js zlib (streaming).
- * Uses lazy import so the module stays edge-compatible when Brotli isn't used.
- */
-async function compressBodyBrotli(
-  body: string,
-  contentType: string,
-  statusCode: number,
-  extraHeaders: Headers,
-  quality: number,
-): Promise<Response> {
-  const { brotliCompress, constants } = await import("node:zlib");
-  const { promisify } = await import("node:util");
-  const brotliCompressAsync = promisify(brotliCompress);
-
-  const input = Buffer.from(body, "utf-8");
-  const compressed = await brotliCompressAsync(input, {
-    params: {
-      [constants.BROTLI_PARAM_QUALITY]: quality,
-    },
-  });
-
-  extraHeaders.set("content-encoding", "br");
-  extraHeaders.set("content-type", contentType);
-  extraHeaders.delete("content-length");
-  extraHeaders.append("vary", "accept-encoding");
-
-  return new Response(compressed, {
-    status: statusCode,
-    headers: extraHeaders,
-  });
-}
-
-/**
  * Response compression plugin supporting Brotli, Gzip, and Deflate.
  * Wraps `reply.json()`, `.send()`, and `.html()` to compress responses above threshold.
  *
