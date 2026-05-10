@@ -528,7 +528,7 @@ export class CelsianApp {
         const result = await hook(request);
         if (result === false) return false;
       } catch (err) {
-        console.warn("[celsian] WS upgrade hook error:", err);
+        this.log.warn("WS upgrade hook error", { error: String(err) });
         return false;
       }
     }
@@ -538,7 +538,7 @@ export class CelsianApp {
         const result = await handler.onUpgrade(request);
         if (result === false) return false;
       } catch (err) {
-        console.warn("[celsian] WS upgrade hook error:", err);
+        this.log.warn("WS upgrade hook error", { error: String(err) });
         return false;
       }
     }
@@ -736,11 +736,13 @@ export class CelsianApp {
       enumerable: true,
     });
 
-    // Only generate requestId and child logger when logging is enabled
+    // Always generate requestId for tracing/correlation, even without logger
+    const requestId = generateRequestId();
+    (celsianRequest as Record<string, unknown>).requestId = requestId;
+
+    // Only create child logger when logging is enabled
     if (this.hasLogger) {
-      const requestId = generateRequestId();
       (celsianRequest as Record<string, unknown>).log = this.log.child({ requestId });
-      (celsianRequest as Record<string, unknown>).requestId = requestId;
     }
 
     const reply = createReply(match.route.serializer);
