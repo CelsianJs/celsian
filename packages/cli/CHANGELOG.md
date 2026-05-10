@@ -1,5 +1,12 @@
 # @celsian/cli
 
+## 0.3.7
+
+### Patch Changes
+
+- Updated dependencies [a85406d]
+  - @celsian/core@0.3.7
+
 ## 0.3.6
 
 ### Patch Changes

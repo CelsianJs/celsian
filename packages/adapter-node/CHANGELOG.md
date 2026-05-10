@@ -1,5 +1,13 @@
 # @celsian/adapter-node
 
+## 0.3.3
+
+### Patch Changes
+
+- a85406d: Harden required body validation, multipart body limits, raw response security headers, and Node adapter static/build behavior.
+- Updated dependencies [a85406d]
+  - @celsian/core@0.3.7
+
 ## 0.3.2
 
 ### Patch Changes
