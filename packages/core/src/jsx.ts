@@ -122,6 +122,9 @@ function renderProps(props: Record<string, unknown>): string {
     if (key === "children" || key === "key" || key === "ref") continue;
     if (value === false || value === null || value === undefined) continue;
 
+    // Skip event handler props (on*) during SSR — they produce broken output like onclick="[object Function]"
+    if (key.length > 2 && key.charCodeAt(0) === 111 /* 'o' */ && key.charCodeAt(1) === 110 /* 'n' */ && key.charCodeAt(2) >= 65 && key.charCodeAt(2) <= 90) continue;
+
     // Boolean attributes
     if (value === true) {
       result += ` ${key}`;
@@ -181,6 +184,9 @@ export function renderToString(node: VNode): string {
   // dangerouslySetInnerHTML
   const dangerous = node.props.dangerouslySetInnerHTML as { __html: string } | undefined;
   if (dangerous) {
+    if (node.children.length > 0) {
+      throw new Error("Cannot use both dangerouslySetInnerHTML and children in the same element.");
+    }
     return `<${tag}${attrs}>${dangerous.__html}</${tag}>`;
   }
 

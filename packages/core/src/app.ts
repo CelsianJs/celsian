@@ -300,11 +300,12 @@ export class CelsianApp {
    *
    * @param handlerOrPath - A file path to an HTML file, or a custom RouteHandler.
    *   When a string is given, the file is served with `text/html` content type.
+   * @param options - Optional settings. `exclude` skips fallback for paths starting with given prefixes.
    *
    * @example
    * ```ts
-   * // Serve index.html for all unmatched routes
-   * app.spaFallback('./dist/index.html');
+   * // Serve index.html for all unmatched routes, except API paths
+   * app.spaFallback('./dist/index.html', { exclude: ['/api'] });
    *
    * // Or with a custom handler
    * app.spaFallback((req, reply) => {
@@ -312,14 +313,31 @@ export class CelsianApp {
    * });
    * ```
    */
-  spaFallback(handlerOrPath: string | RouteHandler): void {
+  spaFallback(handlerOrPath: string | RouteHandler, options?: { exclude?: string | string[] }): void {
+    const excludePrefixes = options?.exclude
+      ? Array.isArray(options.exclude) ? options.exclude : [options.exclude]
+      : [];
+
+    const makeHandler = (inner: RouteHandler): RouteHandler => {
+      if (excludePrefixes.length === 0) return inner;
+      return (req, reply) => {
+        const pathname = new URL(req.url).pathname;
+        for (const prefix of excludePrefixes) {
+          if (pathname.startsWith(prefix)) {
+            return reply.status(404).json({ error: "Not Found", statusCode: 404, code: "NOT_FOUND" });
+          }
+        }
+        return inner(req, reply);
+      };
+    };
+
     if (typeof handlerOrPath === "string") {
       const filePath = handlerOrPath;
-      this.notFoundHandler = async (_req, reply) => {
+      this.notFoundHandler = makeHandler(async (_req, reply) => {
         return reply.sendFile(filePath);
-      };
+      });
     } else {
-      this.notFoundHandler = handlerOrPath;
+      this.notFoundHandler = makeHandler(handlerOrPath);
     }
   }
 
@@ -457,7 +475,8 @@ export class CelsianApp {
       try {
         const result = await hook(request);
         if (result === false) return false;
-      } catch {
+      } catch (err) {
+        console.warn("[celsian] WS upgrade hook error:", err);
         return false;
       }
     }
@@ -466,7 +485,8 @@ export class CelsianApp {
       try {
         const result = await handler.onUpgrade(request);
         if (result === false) return false;
-      } catch {
+      } catch (err) {
+        console.warn("[celsian] WS upgrade hook error:", err);
         return false;
       }
     }

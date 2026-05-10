@@ -189,52 +189,57 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
       const wss = new WSS({ noServer: true });
 
       server.on("upgrade", async (req: IncomingMessage, socket: any, head: Buffer) => {
-        const url = new URL(req.url ?? "/", `http://${host}:${port}`);
-        const pathname = url.pathname;
-        const handler = app.wsRegistry.getHandler(pathname);
+        try {
+          const url = new URL(req.url ?? "/", `http://${host}:${port}`);
+          const pathname = url.pathname;
+          const handler = app.wsRegistry.getHandler(pathname);
 
-        if (!handler) {
+          if (!handler) {
+            socket.destroy();
+            return;
+          }
+
+          // Build a CelsianRequest for upgrade auth hooks
+          const webReq = nodeToWebRequest(req, url);
+          const celsianReq = buildRequest(webReq, url, {});
+
+          // Run onWsUpgrade hooks (global + per-handler) before accepting
+          const allowed = await app.runWsUpgradeHooks(celsianReq, handler);
+          if (!allowed) {
+            app.log.info("WebSocket upgrade rejected", { path: pathname });
+            socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+            socket.destroy();
+            return;
+          }
+
+          wss.handleUpgrade(req, socket, head, (ws: any) => {
+            const conn = createWSConnection({
+              send: (data: string | ArrayBuffer) => ws.send(data),
+              close: (code?: number, reason?: string) => ws.close(code, reason),
+            });
+
+            app.wsRegistry.addConnection(pathname, conn);
+
+            handler.open?.(conn, celsianReq);
+
+            ws.on("error", (err: Error) => {
+              app.log.error("WebSocket error", { path: pathname, connId: conn.id, error: err.message });
+            });
+
+            ws.on("message", (data: Buffer | ArrayBuffer | Buffer[]) => {
+              const msg = Buffer.isBuffer(data) ? data.toString() : data;
+              handler.message?.(conn, msg as string | ArrayBuffer);
+            });
+
+            ws.on("close", (code: number, reason: Buffer) => {
+              handler.close?.(conn, code, reason.toString());
+              app.wsRegistry.removeConnection(pathname, conn);
+            });
+          });
+        } catch (err) {
+          app.log.error("WebSocket upgrade error", { error: (err as Error).message });
           socket.destroy();
-          return;
         }
-
-        // Build a CelsianRequest for upgrade auth hooks
-        const webReq = nodeToWebRequest(req, url);
-        const celsianReq = buildRequest(webReq, url, {});
-
-        // Run onWsUpgrade hooks (global + per-handler) before accepting
-        const allowed = await app.runWsUpgradeHooks(celsianReq, handler);
-        if (!allowed) {
-          app.log.info("WebSocket upgrade rejected", { path: pathname });
-          socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-          socket.destroy();
-          return;
-        }
-
-        wss.handleUpgrade(req, socket, head, (ws: any) => {
-          const conn = createWSConnection({
-            send: (data: string | ArrayBuffer) => ws.send(data),
-            close: (code?: number, reason?: string) => ws.close(code, reason),
-          });
-
-          app.wsRegistry.addConnection(pathname, conn);
-
-          handler.open?.(conn, celsianReq);
-
-          ws.on("error", (err: Error) => {
-            app.log.error("WebSocket error", { path: pathname, connId: conn.id, error: err.message });
-          });
-
-          ws.on("message", (data: Buffer | ArrayBuffer | Buffer[]) => {
-            const msg = Buffer.isBuffer(data) ? data.toString() : data;
-            handler.message?.(conn, msg as string | ArrayBuffer);
-          });
-
-          ws.on("close", (code: number, reason: Buffer) => {
-            handler.close?.(conn, code, reason.toString());
-            app.wsRegistry.removeConnection(pathname, conn);
-          });
-        });
       });
 
       app.log.info("WebSocket upgrade handler enabled");

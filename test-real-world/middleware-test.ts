@@ -120,11 +120,9 @@ export function buildLoggingApp(): { app: CelsianApp; logs: LogEntry[] } {
 // ─── Combined app for composition testing ───
 
 export function buildComposedApp(): { app: CelsianApp; logs: LogEntry[] } {
+  // createApp() auto-registers security headers by default — no need to register manually
   const app = createApp();
   const { plugin: logPlugin, logs } = createRequestLogger();
-
-  // Security headers via onRequest — doesn't conflict with other hooks
-  app.register(security(), { encapsulate: false });
 
   // Logging via onRequest
   app.register(logPlugin, { encapsulate: false });
