@@ -1,7 +1,7 @@
 {
   "name": "@celsian/adapter-fly",
-  "version": "0.3.3",
-  "description": "CelsianJS adapter for Fly.io — generates fly.toml, Dockerfile, and multi-region config",
+  "version": "0.3.4",
+  "description": "CelsianJS adapter for Fly.io \u2014 generates fly.toml, Dockerfile, and multi-region config",
   "type": "module",
   "license": "MIT",
   "main": "dist/index.js",
