@@ -72,7 +72,7 @@ export type {
   TypedRouteHandler,
   TypedSchemaHandler,
 } from "./types.js";
-export type { WSConnection, WSHandler } from "./websocket.js";
+export type { OnWsUpgradeHook, WSConnection, WSHandler } from "./websocket.js";
 export { createWSConnection, WSRegistry } from "./websocket.js";
 export type { Child, VNode } from "./jsx.js";
 export { Fragment, h, jsx, jsxs, raw, renderToDocument, renderToString } from "./jsx.js";

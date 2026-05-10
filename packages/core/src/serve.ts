@@ -198,10 +198,18 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
           return;
         }
 
-        // TODO: Origin validation and auth for WebSocket upgrades should be done
-        // in the WS handler's open() callback. The app's internal hooks and options
-        // are not accessible here (private properties), so upgrade-time auth
-        // requires the handler to implement its own checks.
+        // Build a CelsianRequest for upgrade auth hooks
+        const webReq = nodeToWebRequest(req, url);
+        const celsianReq = buildRequest(webReq, url, {});
+
+        // Run onWsUpgrade hooks (global + per-handler) before accepting
+        const allowed = await app.runWsUpgradeHooks(celsianReq, handler);
+        if (!allowed) {
+          app.log.info("WebSocket upgrade rejected", { path: pathname });
+          socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+          socket.destroy();
+          return;
+        }
 
         wss.handleUpgrade(req, socket, head, (ws: any) => {
           const conn = createWSConnection({
@@ -210,10 +218,6 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
           });
 
           app.wsRegistry.addConnection(pathname, conn);
-
-          // Build a CelsianRequest for the upgrade
-          const webReq = nodeToWebRequest(req, url);
-          const celsianReq = buildRequest(webReq, url, {});
 
           handler.open?.(conn, celsianReq);
 

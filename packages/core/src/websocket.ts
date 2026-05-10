@@ -2,8 +2,18 @@
 
 import type { CelsianRequest } from "./types.js";
 
+/**
+ * Hook called during WebSocket upgrade, before the connection is established.
+ * Return `true` (or void) to allow the connection.
+ * Return `false` or throw to reject (socket is destroyed with no upgrade).
+ * Attach auth data to `request` for use in the `open` handler.
+ */
+export type OnWsUpgradeHook = (request: CelsianRequest) => boolean | void | Promise<boolean | void>;
+
 /** WebSocket event handler with optional open, message, and close callbacks. */
 export interface WSHandler {
+  /** Called before the WebSocket upgrade completes. Reject by returning false or throwing. */
+  onUpgrade?: OnWsUpgradeHook;
   open?: (ws: WSConnection, req: CelsianRequest) => void;
   message?: (ws: WSConnection, data: string | ArrayBuffer) => void;
   close?: (ws: WSConnection, code: number, reason: string) => void;

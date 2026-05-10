@@ -33,7 +33,7 @@ import type {
   TypedRouteHandler,
   TypedSchemaHandler,
 } from "./types.js";
-import { type WSHandler, WSRegistry } from "./websocket.js";
+import { type OnWsUpgradeHook, type WSHandler, WSRegistry } from "./websocket.js";
 
 /**
  * The main application class. Provides routing, hooks, plugins, task queues, cron,
@@ -84,6 +84,7 @@ export class CelsianApp {
 
   // WebSocket
   readonly wsRegistry = new WSRegistry();
+  private wsUpgradeHooks: OnWsUpgradeHook[] = [];
 
   // Cached options for hot path
   private readonly hasLogger: boolean;
@@ -429,6 +430,47 @@ export class CelsianApp {
   /** Broadcast a message to all WebSocket connections on a path. */
   wsBroadcast(path: string, data: string | ArrayBuffer, exclude?: string): void {
     this.wsRegistry.broadcast(path, data, exclude);
+  }
+
+  /**
+   * Register a global WebSocket upgrade hook. Runs before every WS connection
+   * is established, allowing auth checks. Return false or throw to reject.
+   *
+   * @example
+   * ```ts
+   * app.onWsUpgrade(async (req) => {
+   *   const token = req.headers.get('authorization')?.replace('Bearer ', '');
+   *   if (!token) return false;
+   *   const user = await verifyToken(token);
+   *   (req as any).user = user;
+   * });
+   * ```
+   */
+  onWsUpgrade(hook: OnWsUpgradeHook): void {
+    this.wsUpgradeHooks.push(hook);
+  }
+
+  /** Run all WS upgrade hooks (global + per-handler). Returns false if rejected. */
+  async runWsUpgradeHooks(request: CelsianRequest, handler: WSHandler): Promise<boolean> {
+    // Run global hooks first
+    for (const hook of this.wsUpgradeHooks) {
+      try {
+        const result = await hook(request);
+        if (result === false) return false;
+      } catch {
+        return false;
+      }
+    }
+    // Run per-handler hook
+    if (handler.onUpgrade) {
+      try {
+        const result = await handler.onUpgrade(request);
+        if (result === false) return false;
+      } catch {
+        return false;
+      }
+    }
+    return true;
   }
 
   // ─── Health Check ───
