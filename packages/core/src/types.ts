@@ -69,10 +69,10 @@ export interface CelsianReply {
   cookie(name: string, value: string, options?: import("./cookie.js").CookieOptions): CelsianReply;
   /** Clear a cookie by setting maxAge=0 */
   clearCookie(name: string, options?: import("./cookie.js").CookieOptions): CelsianReply;
-  /** Read a file and send it with the correct MIME type. When options.root is set, filePath is resolved relative to root and path traversal is rejected with 403. */
-  sendFile(filePath: string, options?: { root?: string }): Promise<Response>;
-  /** Send a file as a download with Content-Disposition: attachment */
-  download(filePath: string, filename?: string): Promise<Response>;
+  /** Read a file and send it with the correct MIME type. When options.root is set, filePath is resolved relative to root and path traversal is rejected with 403. Supports Range requests when options.request is provided. */
+  sendFile(filePath: string, options?: SendFileOptions): Promise<Response>;
+  /** Send a file as a download with Content-Disposition: attachment. Supports Range requests when options.request is provided. */
+  download(filePath: string, filename?: string, options?: SendFileOptions): Promise<Response>;
   /** Has a response already been sent? */
   sent: boolean;
 
@@ -86,6 +86,15 @@ export interface CelsianReply {
   tooManyRequests(message?: string): Response;
   internalServerError(message?: string): Response;
   serviceUnavailable(message?: string): Response;
+}
+
+// ─── sendFile Options ───
+
+export interface SendFileOptions {
+  /** Root directory for resolving relative file paths. Enables path traversal protection. */
+  root?: string;
+  /** Pass the incoming request to enable Range request support (206 Partial Content). */
+  request?: Request;
 }
 
 // ─── Route Handler ───

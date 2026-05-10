@@ -1,7 +1,7 @@
 // @celsian/core — CelsianReply implementation
 
 import { type CookieOptions, serializeCookie } from "./cookie.js";
-import type { CelsianReply } from "./types.js";
+import type { CelsianReply, SendFileOptions } from "./types.js";
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -164,17 +164,15 @@ export function createReply(serializer?: FastSerializer | null): CelsianReply {
       return reply;
     },
 
-    async sendFile(filePath: string, options?: { root?: string }): Promise<Response> {
+    async sendFile(filePath: string, options?: SendFileOptions): Promise<Response> {
       sent = true;
       try {
-        // Lazy import — keeps reply.ts edge-compatible when sendFile isn't used
-        const { readFile, stat } = await import("node:fs/promises");
+        const { readFile, stat: fsStat } = await import("node:fs/promises");
         const { extname, resolve } = await import("node:path");
+        const { createHash } = await import("node:crypto");
 
         let resolvedPath: string;
         if (options?.root) {
-          // When root is provided, resolve filePath relative to root and
-          // verify the result stays within root to prevent path traversal.
           const resolvedRoot = resolve(options.root);
           resolvedPath = resolve(resolvedRoot, filePath);
           if (!resolvedPath.startsWith(resolvedRoot)) {
@@ -184,17 +182,116 @@ export function createReply(serializer?: FastSerializer | null): CelsianReply {
             });
           }
         } else {
-          // Resolve to absolute path to prevent path traversal
           resolvedPath = resolve(filePath);
         }
 
-        await stat(resolvedPath);
+        const fileStat = await fsStat(resolvedPath);
         const data = await readFile(resolvedPath);
         const ext = extname(resolvedPath).toLowerCase();
         const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
+
+        // Generate ETag and Last-Modified
+        const etag = '"' + createHash("md5").update(data).digest("hex") + '"';
+        const lastModified = fileStat.mtime.toUTCString();
+        const totalSize = data.byteLength;
+
+        const baseHeaders: Record<string, string> = {
+          "content-type": contentType,
+          etag,
+          "last-modified": lastModified,
+          "accept-ranges": "bytes",
+          ...headers,
+        };
+
+        // Handle Range requests when the incoming request is provided
+        const rangeHeader = options?.request?.headers.get("range");
+        if (rangeHeader && options?.request) {
+          // Check If-Range: only serve partial if ETag or Last-Modified matches
+          const ifRange = options.request.headers.get("if-range");
+          if (ifRange) {
+            const ifRangeValid = ifRange === etag || ifRange === lastModified;
+            if (!ifRangeValid) {
+              // If-Range doesn't match — serve full response
+              return new Response(data, {
+                status: statusCode,
+                headers: buildHeaders({
+                  ...baseHeaders,
+                  "content-length": totalSize.toString(),
+                }),
+              });
+            }
+          }
+
+          const ranges = parseRangeHeader(rangeHeader, totalSize);
+          if (ranges === null) {
+            // Malformed range
+            return new Response(
+              JSON.stringify({ error: "Range Not Satisfiable", statusCode: 416, code: "RANGE_NOT_SATISFIABLE" }),
+              {
+                status: 416,
+                headers: buildHeaders({
+                  "content-type": "application/json; charset=utf-8",
+                  "content-range": `bytes */${totalSize}`,
+                }),
+              },
+            );
+          }
+
+          if (ranges.length === 1) {
+            // Single range — 206 Partial Content
+            const [start, end] = ranges[0]!;
+            const slice = data.slice(start, end + 1);
+            return new Response(slice, {
+              status: 206,
+              headers: buildHeaders({
+                ...baseHeaders,
+                "content-length": slice.byteLength.toString(),
+                "content-range": `bytes ${start}-${end}/${totalSize}`,
+              }),
+            });
+          }
+
+          // Multi-range — return 206 with multipart/byteranges
+          const boundary = "celsian_range_" + Date.now().toString(36);
+          const parts: Uint8Array[] = [];
+          const encoder = new TextEncoder();
+
+          for (const [start, end] of ranges) {
+            const partHeader = `\r\n--${boundary}\r\nContent-Type: ${contentType}\r\nContent-Range: bytes ${start}-${end}/${totalSize}\r\n\r\n`;
+            parts.push(encoder.encode(partHeader));
+            parts.push(data.slice(start, end + 1));
+          }
+          parts.push(encoder.encode(`\r\n--${boundary}--\r\n`));
+
+          // Concatenate all parts
+          const totalLength = parts.reduce((sum, p) => sum + p.byteLength, 0);
+          const multipartBody = new Uint8Array(totalLength);
+          let offset = 0;
+          for (const part of parts) {
+            multipartBody.set(part, offset);
+            offset += part.byteLength;
+          }
+
+          return new Response(multipartBody, {
+            status: 206,
+            headers: buildHeaders({
+              "content-type": `multipart/byteranges; boundary=${boundary}`,
+              "content-length": totalLength.toString(),
+              etag,
+              "last-modified": lastModified,
+              "accept-ranges": "bytes",
+              ...headers,
+            }),
+          });
+        }
+
+        // Full response (no Range requested)
         return new Response(data, {
           status: statusCode,
-          headers: buildHeaders({ "content-type": contentType, ...headers }),
+          headers: buildHeaders({
+            ...baseHeaders,
+            "content-length": totalSize.toString(),
+          }),
         });
       } catch {
         return new Response(JSON.stringify({ error: "Not Found", statusCode: 404, code: "NOT_FOUND" }), {
@@ -204,27 +301,82 @@ export function createReply(serializer?: FastSerializer | null): CelsianReply {
       }
     },
 
-    async download(filePath: string, filename?: string): Promise<Response> {
+    async download(filePath: string, filename?: string, options?: SendFileOptions): Promise<Response> {
       sent = true;
       try {
-        // Lazy import — keeps reply.ts edge-compatible when download isn't used
-        const { readFile, stat } = await import("node:fs/promises");
+        const { readFile, stat: fsStat } = await import("node:fs/promises");
         const { extname, basename, resolve } = await import("node:path");
-        // Resolve to absolute path to prevent path traversal
+        const { createHash } = await import("node:crypto");
+
         const resolvedPath = resolve(filePath);
-        await stat(resolvedPath);
+        const fileStat = await fsStat(resolvedPath);
         const data = await readFile(resolvedPath);
         const ext = extname(resolvedPath).toLowerCase();
         const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
         const downloadName = filename ?? basename(resolvedPath);
-        // Sanitize filename to prevent header injection via Content-Disposition
         const safeName = downloadName.replace(/["\r\n]/g, "");
+
+        // Generate ETag and Last-Modified
+        const etag = '"' + createHash("md5").update(data).digest("hex") + '"';
+        const lastModified = fileStat.mtime.toUTCString();
+        const totalSize = data.byteLength;
+
+        const baseHeaders: Record<string, string> = {
+          "content-type": contentType,
+          "content-disposition": `attachment; filename="${safeName}"`,
+          etag,
+          "last-modified": lastModified,
+          "accept-ranges": "bytes",
+          ...headers,
+        };
+
+        // Handle Range requests
+        const rangeHeader = options?.request?.headers.get("range");
+        if (rangeHeader && options?.request) {
+          const ifRange = options.request.headers.get("if-range");
+          if (ifRange && ifRange !== etag && ifRange !== lastModified) {
+            return new Response(data, {
+              status: statusCode,
+              headers: buildHeaders({
+                ...baseHeaders,
+                "content-length": totalSize.toString(),
+              }),
+            });
+          }
+
+          const ranges = parseRangeHeader(rangeHeader, totalSize);
+          if (ranges === null) {
+            return new Response(
+              JSON.stringify({ error: "Range Not Satisfiable", statusCode: 416, code: "RANGE_NOT_SATISFIABLE" }),
+              {
+                status: 416,
+                headers: buildHeaders({
+                  "content-type": "application/json; charset=utf-8",
+                  "content-range": `bytes */${totalSize}`,
+                }),
+              },
+            );
+          }
+
+          if (ranges.length === 1) {
+            const [start, end] = ranges[0]!;
+            const slice = data.slice(start, end + 1);
+            return new Response(slice, {
+              status: 206,
+              headers: buildHeaders({
+                ...baseHeaders,
+                "content-length": slice.byteLength.toString(),
+                "content-range": `bytes ${start}-${end}/${totalSize}`,
+              }),
+            });
+          }
+        }
+
         return new Response(data, {
           status: statusCode,
           headers: buildHeaders({
-            "content-type": contentType,
-            "content-disposition": `attachment; filename="${safeName}"`,
-            ...headers,
+            ...baseHeaders,
+            "content-length": totalSize.toString(),
           }),
         });
       } catch {
@@ -291,4 +443,56 @@ export function createReply(serializer?: FastSerializer | null): CelsianReply {
   }
 
   return reply;
+}
+
+/**
+ * Parse an HTTP Range header into an array of [start, end] tuples (inclusive).
+ * Returns null if the range is invalid or unsatisfiable.
+ *
+ * Supports:
+ * - `bytes=0-499` (start-end)
+ * - `bytes=500-` (start to end-of-file)
+ * - `bytes=-500` (last 500 bytes)
+ * - `bytes=0-499, 1000-1499` (multi-range)
+ */
+function parseRangeHeader(rangeHeader: string, totalSize: number): [number, number][] | null {
+  if (!rangeHeader.startsWith("bytes=")) return null;
+
+  const rangeSpec = rangeHeader.slice(6);
+  const parts = rangeSpec.split(",").map((s) => s.trim());
+  const ranges: [number, number][] = [];
+
+  for (const part of parts) {
+    if (part.startsWith("-")) {
+      // Suffix range: `-500` means last 500 bytes
+      const suffix = parseInt(part.slice(1), 10);
+      if (isNaN(suffix) || suffix <= 0) return null;
+      const start = Math.max(0, totalSize - suffix);
+      ranges.push([start, totalSize - 1]);
+    } else {
+      const [startStr, endStr] = part.split("-");
+      const start = parseInt(startStr!, 10);
+      if (isNaN(start)) return null;
+
+      let end: number;
+      if (!endStr || endStr === "") {
+        // Open-ended range: `500-` means 500 to end
+        end = totalSize - 1;
+      } else {
+        end = parseInt(endStr, 10);
+        if (isNaN(end)) return null;
+      }
+
+      // Clamp end to file size
+      if (end >= totalSize) end = totalSize - 1;
+
+      // Validate range
+      if (start > end || start >= totalSize) return null;
+
+      ranges.push([start, end]);
+    }
+  }
+
+  if (ranges.length === 0) return null;
+  return ranges;
 }

@@ -70,6 +70,7 @@ export type {
   RouteMethod,
   RouteOptions,
   RouteSchemaOptions,
+  SendFileOptions,
   TypedCelsianRequest,
   TypedRouteHandler,
   TypedSchemaHandler,
