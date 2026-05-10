@@ -1,6 +1,6 @@
 {
   "name": "@celsian/adapter-cloudflare",
-  "version": "0.3.0",
+  "version": "0.3.2",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -27,5 +27,21 @@
   "engines": {
     "node": ">=20"
   },
-  "sideEffects": false
+  "sideEffects": false,
+  "description": "Cloudflare Workers deployment adapter for CelsianJS",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/celsian/celsian.git"
+  },
+  "homepage": "https://github.com/celsian/celsian#readme",
+  "bugs": {
+    "url": "https://github.com/celsian/celsian/issues"
+  },
+  "keywords": [
+    "celsian",
+    "cloudflare",
+    "workers",
+    "adapter",
+    "deployment"
+  ]
 }

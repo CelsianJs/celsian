@@ -287,9 +287,7 @@ describe("Response schema pre-compilation integration", () => {
       handler: (_req, reply) => reply.status(201).json({ id: 99, created: true }),
     });
 
-    const response = await app.handle(
-      new Request("http://localhost/create", { method: "POST" }),
-    );
+    const response = await app.handle(new Request("http://localhost/create", { method: "POST" }));
     expect(response.status).toBe(201);
     const body = await response.json();
     expect(body).toEqual({ id: 99, created: true });
@@ -318,6 +316,47 @@ describe("Response schema pre-compilation integration", () => {
     const route = routes.find((r) => r.url === "/schema-route");
     expect(route).toBeDefined();
     expect(route!.serializer).toBeTypeOf("function");
+  });
+
+  it("should pre-compile request validators at route registration", async () => {
+    const app = createApp();
+    let schemaDetectionLookups = 0;
+    let bodyValidateCalls = 0;
+
+    const bodySchema = {
+      safeParse: (value: unknown) => {
+        bodyValidateCalls++;
+        return { success: true as const, data: value };
+      },
+      get parse() {
+        schemaDetectionLookups++;
+        return (value: unknown) => value;
+      },
+    };
+
+    app.post("/cached-validator", { schema: { body: bodySchema } }, (req, reply) =>
+      reply.json({ body: req.parsedBody }),
+    );
+
+    expect(schemaDetectionLookups).toBe(1);
+
+    for (let i = 0; i < 3; i++) {
+      const response = await app.handle(
+        new Request("http://localhost/cached-validator", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ i }),
+        }),
+      );
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ body: { i } });
+    }
+
+    expect(bodyValidateCalls).toBe(3);
+    expect(schemaDetectionLookups).toBe(1);
+
+    const route = app.getRoutes().find((r) => r.url === "/cached-validator");
+    expect(route?.validators?.body).not.toBe(bodySchema);
   });
 
   it("should not store serializer when no response schema", () => {

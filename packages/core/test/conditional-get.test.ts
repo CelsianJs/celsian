@@ -17,9 +17,7 @@ afterAll(async () => {
 describe("Conditional GET (304 Not Modified)", () => {
   it("should return 304 when If-None-Match matches ETag", async () => {
     const app = createApp();
-    app.get("/file", async (req, reply) =>
-      reply.sendFile(join(TMP_DIR, "hello.txt"), { request: req }),
-    );
+    app.get("/file", async (req, reply) => reply.sendFile(join(TMP_DIR, "hello.txt"), { request: req }));
 
     // First request to get ETag
     const fullRes = await app.handle(new Request("http://localhost/file"));
@@ -40,9 +38,7 @@ describe("Conditional GET (304 Not Modified)", () => {
 
   it("should return 200 when If-None-Match does not match", async () => {
     const app = createApp();
-    app.get("/file", async (req, reply) =>
-      reply.sendFile(join(TMP_DIR, "hello.txt"), { request: req }),
-    );
+    app.get("/file", async (req, reply) => reply.sendFile(join(TMP_DIR, "hello.txt"), { request: req }));
 
     const res = await app.handle(
       new Request("http://localhost/file", {
@@ -56,9 +52,7 @@ describe("Conditional GET (304 Not Modified)", () => {
 
   it("should return 304 when If-Modified-Since is after file mtime", async () => {
     const app = createApp();
-    app.get("/file", async (req, reply) =>
-      reply.sendFile(join(TMP_DIR, "hello.txt"), { request: req }),
-    );
+    app.get("/file", async (req, reply) => reply.sendFile(join(TMP_DIR, "hello.txt"), { request: req }));
 
     // Get Last-Modified from first request
     const fullRes = await app.handle(new Request("http://localhost/file"));
@@ -76,9 +70,7 @@ describe("Conditional GET (304 Not Modified)", () => {
 
   it("should return 200 when If-Modified-Since is before file mtime", async () => {
     const app = createApp();
-    app.get("/file", async (req, reply) =>
-      reply.sendFile(join(TMP_DIR, "hello.txt"), { request: req }),
-    );
+    app.get("/file", async (req, reply) => reply.sendFile(join(TMP_DIR, "hello.txt"), { request: req }));
 
     // Use a very old date
     const res = await app.handle(
@@ -91,9 +83,7 @@ describe("Conditional GET (304 Not Modified)", () => {
 
   it("should prefer If-None-Match over If-Modified-Since", async () => {
     const app = createApp();
-    app.get("/file", async (req, reply) =>
-      reply.sendFile(join(TMP_DIR, "hello.txt"), { request: req }),
-    );
+    app.get("/file", async (req, reply) => reply.sendFile(join(TMP_DIR, "hello.txt"), { request: req }));
 
     const fullRes = await app.handle(new Request("http://localhost/file"));
     const etag = fullRes.headers.get("etag")!;
@@ -114,9 +104,7 @@ describe("Conditional GET (304 Not Modified)", () => {
 
   it("should return 304 for download() with If-None-Match", async () => {
     const app = createApp();
-    app.get("/dl", async (req, reply) =>
-      reply.download(join(TMP_DIR, "hello.txt"), "file.txt", { request: req }),
-    );
+    app.get("/dl", async (req, reply) => reply.download(join(TMP_DIR, "hello.txt"), "file.txt", { request: req }));
 
     const fullRes = await app.handle(new Request("http://localhost/dl"));
     expect(fullRes.status).toBe(200);
@@ -132,9 +120,7 @@ describe("Conditional GET (304 Not Modified)", () => {
 
   it("should NOT check conditional headers when request is not passed", async () => {
     const app = createApp();
-    app.get("/file", async (_req, reply) =>
-      reply.sendFile(join(TMP_DIR, "hello.txt")),
-    );
+    app.get("/file", async (_req, reply) => reply.sendFile(join(TMP_DIR, "hello.txt")));
 
     // Even with If-None-Match, without passing request, it should serve full
     const res = await app.handle(
@@ -149,9 +135,7 @@ describe("Conditional GET (304 Not Modified)", () => {
 
   it("should include ETag and Last-Modified in 304 response", async () => {
     const app = createApp();
-    app.get("/file", async (req, reply) =>
-      reply.sendFile(join(TMP_DIR, "hello.txt"), { request: req }),
-    );
+    app.get("/file", async (req, reply) => reply.sendFile(join(TMP_DIR, "hello.txt"), { request: req }));
 
     const fullRes = await app.handle(new Request("http://localhost/file"));
     const etag = fullRes.headers.get("etag")!;

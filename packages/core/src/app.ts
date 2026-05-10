@@ -8,12 +8,12 @@ import { assertPlugin, HttpError, ValidationError, wrapNonError } from "./errors
 import { runHooks, runHooksFireAndForget, runOnSendHooks } from "./hooks.js";
 import { createInject, type InjectOptions } from "./inject.js";
 import { createLogger, generateRequestId, type Logger } from "./logger.js";
+import { buildSecurityHeaders, security } from "./plugins/security.js";
 import { MemoryQueue, type QueueBackend } from "./queue.js";
 import { createReply } from "./reply.js";
 import { buildRequest, buildRequestFast } from "./request.js";
 import { Router } from "./router.js";
 import { createEnqueue, type TaskDefinition, TaskRegistry, TaskWorker, type TaskWorkerOptions } from "./task.js";
-import { buildSecurityHeaders, security } from "./plugins/security.js";
 import type {
   CelsianAppOptions,
   CelsianReply,
@@ -353,7 +353,9 @@ export class CelsianApp {
    */
   spaFallback(handlerOrPath: string | RouteHandler, options?: { exclude?: string | string[] }): void {
     const excludePrefixes = options?.exclude
-      ? Array.isArray(options.exclude) ? options.exclude : [options.exclude]
+      ? Array.isArray(options.exclude)
+        ? options.exclude
+        : [options.exclude]
       : [];
 
     const makeHandler = (inner: RouteHandler): RouteHandler => {
@@ -645,8 +647,7 @@ export class CelsianApp {
     callback?: (info: { port: number; host: string }) => void,
   ): Promise<import("./serve.js").ServeResult> {
     const { serve } = await import("./serve.js");
-    const options: import("./serve.js").ServeOptions =
-      typeof port === "object" ? port : { port: port ?? 3000 };
+    const options: import("./serve.js").ServeOptions = typeof port === "object" ? port : { port: port ?? 3000 };
     if (callback && !options.onReady) {
       options.onReady = callback;
     }
@@ -942,7 +943,7 @@ export class CelsianApp {
 
     // 5. Schema validation
     if (route.schema) {
-      this.validateRequest(request, route.schema);
+      this.validateRequest(request, route);
     }
 
     // 6. preHandler hooks (skip if empty)
@@ -1015,9 +1016,12 @@ export class CelsianApp {
     return response;
   }
 
-  private validateRequest(request: CelsianRequest, schema: NonNullable<InternalRoute["schema"]>): void {
+  private validateRequest(request: CelsianRequest, route: InternalRoute): void {
+    const schema = route.schema;
+    if (!schema) return;
+
     if (schema.body && request.parsedBody !== undefined) {
-      const bodySchema: StandardSchema = fromSchema(schema.body);
+      const bodySchema: StandardSchema = route.validators?.body ?? fromSchema(schema.body);
       const result = bodySchema.validate(request.parsedBody);
       if (!result.success) {
         throw new ValidationError(result.issues ?? []);
@@ -1026,7 +1030,7 @@ export class CelsianApp {
     }
 
     if (schema.querystring) {
-      const querySchema: StandardSchema = fromSchema(schema.querystring);
+      const querySchema: StandardSchema = route.validators?.querystring ?? fromSchema(schema.querystring);
       const result = querySchema.validate(request.query);
       if (!result.success) {
         throw new ValidationError(result.issues ?? []);
@@ -1035,7 +1039,7 @@ export class CelsianApp {
     }
 
     if (schema.params) {
-      const paramsSchema: StandardSchema = fromSchema(schema.params);
+      const paramsSchema: StandardSchema = route.validators?.params ?? fromSchema(schema.params);
       const result = paramsSchema.validate(request.params);
       if (!result.success) {
         throw new ValidationError(result.issues ?? []);

@@ -280,6 +280,36 @@ describe("Brotli compression", () => {
     expect(response.headers.get("content-encoding")).toBe("gzip");
   });
 
+  it("should respect client quality preference over server default order", async () => {
+    const app = createApp();
+    await app.register(compress({ threshold: 10 }), { encapsulate: false });
+
+    app.get("/quality", (_req, reply) => reply.json({ message: "prefer gzip by q" }));
+
+    const response = await app.inject({
+      url: "/quality",
+      headers: { "accept-encoding": "br;q=0.1, gzip;q=1" },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-encoding")).toBe("gzip");
+  });
+
+  it("should support wildcard Accept-Encoding", async () => {
+    const app = createApp();
+    await app.register(compress({ threshold: 10 }), { encapsulate: false });
+
+    app.get("/wildcard", (_req, reply) => reply.json({ message: "wildcard compression" }));
+
+    const response = await app.inject({
+      url: "/wildcard",
+      headers: { "accept-encoding": "*;q=0.5" },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-encoding")).toBe("br");
+  });
+
   it("should respect q=0 to reject an encoding", async () => {
     const app = createApp();
     await app.register(compress({ threshold: 10 }), { encapsulate: false });

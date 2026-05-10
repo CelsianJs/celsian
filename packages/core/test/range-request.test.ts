@@ -19,9 +19,7 @@ afterAll(async () => {
 describe("Range request support in sendFile", () => {
   it("should return Accept-Ranges: bytes header on normal response", async () => {
     const app = createApp();
-    app.get("/file", async (req, reply) =>
-      reply.sendFile(join(TMP_DIR, "data.txt"), { request: req }),
-    );
+    app.get("/file", async (req, reply) => reply.sendFile(join(TMP_DIR, "data.txt"), { request: req }));
 
     const response = await app.handle(new Request("http://localhost/file"));
     expect(response.status).toBe(200);
@@ -30,9 +28,7 @@ describe("Range request support in sendFile", () => {
 
   it("should include ETag header", async () => {
     const app = createApp();
-    app.get("/file", async (req, reply) =>
-      reply.sendFile(join(TMP_DIR, "data.txt"), { request: req }),
-    );
+    app.get("/file", async (req, reply) => reply.sendFile(join(TMP_DIR, "data.txt"), { request: req }));
 
     const response = await app.handle(new Request("http://localhost/file"));
     expect(response.status).toBe(200);
@@ -43,9 +39,7 @@ describe("Range request support in sendFile", () => {
 
   it("should include Last-Modified header", async () => {
     const app = createApp();
-    app.get("/file", async (req, reply) =>
-      reply.sendFile(join(TMP_DIR, "data.txt"), { request: req }),
-    );
+    app.get("/file", async (req, reply) => reply.sendFile(join(TMP_DIR, "data.txt"), { request: req }));
 
     const response = await app.handle(new Request("http://localhost/file"));
     expect(response.status).toBe(200);
@@ -54,9 +48,7 @@ describe("Range request support in sendFile", () => {
 
   it("should include Content-Length header", async () => {
     const app = createApp();
-    app.get("/file", async (req, reply) =>
-      reply.sendFile(join(TMP_DIR, "data.txt"), { request: req }),
-    );
+    app.get("/file", async (req, reply) => reply.sendFile(join(TMP_DIR, "data.txt"), { request: req }));
 
     const response = await app.handle(new Request("http://localhost/file"));
     expect(response.status).toBe(200);
@@ -65,9 +57,7 @@ describe("Range request support in sendFile", () => {
 
   it("should return 206 Partial Content for single range", async () => {
     const app = createApp();
-    app.get("/file", async (req, reply) =>
-      reply.sendFile(join(TMP_DIR, "data.txt"), { request: req }),
-    );
+    app.get("/file", async (req, reply) => reply.sendFile(join(TMP_DIR, "data.txt"), { request: req }));
 
     const response = await app.handle(
       new Request("http://localhost/file", {
@@ -84,9 +74,7 @@ describe("Range request support in sendFile", () => {
 
   it("should handle open-ended range (start-)", async () => {
     const app = createApp();
-    app.get("/file", async (req, reply) =>
-      reply.sendFile(join(TMP_DIR, "data.txt"), { request: req }),
-    );
+    app.get("/file", async (req, reply) => reply.sendFile(join(TMP_DIR, "data.txt"), { request: req }));
 
     const response = await app.handle(
       new Request("http://localhost/file", {
@@ -102,9 +90,7 @@ describe("Range request support in sendFile", () => {
 
   it("should handle suffix range (-N for last N bytes)", async () => {
     const app = createApp();
-    app.get("/file", async (req, reply) =>
-      reply.sendFile(join(TMP_DIR, "data.txt"), { request: req }),
-    );
+    app.get("/file", async (req, reply) => reply.sendFile(join(TMP_DIR, "data.txt"), { request: req }));
 
     const response = await app.handle(
       new Request("http://localhost/file", {
@@ -120,9 +106,7 @@ describe("Range request support in sendFile", () => {
 
   it("should return 416 for unsatisfiable range", async () => {
     const app = createApp();
-    app.get("/file", async (req, reply) =>
-      reply.sendFile(join(TMP_DIR, "data.txt"), { request: req }),
-    );
+    app.get("/file", async (req, reply) => reply.sendFile(join(TMP_DIR, "data.txt"), { request: req }));
 
     const response = await app.handle(
       new Request("http://localhost/file", {
@@ -136,9 +120,7 @@ describe("Range request support in sendFile", () => {
 
   it("should return 416 for malformed range", async () => {
     const app = createApp();
-    app.get("/file", async (req, reply) =>
-      reply.sendFile(join(TMP_DIR, "data.txt"), { request: req }),
-    );
+    app.get("/file", async (req, reply) => reply.sendFile(join(TMP_DIR, "data.txt"), { request: req }));
 
     const response = await app.handle(
       new Request("http://localhost/file", {
@@ -151,9 +133,7 @@ describe("Range request support in sendFile", () => {
 
   it("should handle multi-range requests with multipart response", async () => {
     const app = createApp();
-    app.get("/file", async (req, reply) =>
-      reply.sendFile(join(TMP_DIR, "data.txt"), { request: req }),
-    );
+    app.get("/file", async (req, reply) => reply.sendFile(join(TMP_DIR, "data.txt"), { request: req }));
 
     const response = await app.handle(
       new Request("http://localhost/file", {
@@ -172,9 +152,7 @@ describe("Range request support in sendFile", () => {
 
   it("should clamp end range to file size", async () => {
     const app = createApp();
-    app.get("/file", async (req, reply) =>
-      reply.sendFile(join(TMP_DIR, "data.txt"), { request: req }),
-    );
+    app.get("/file", async (req, reply) => reply.sendFile(join(TMP_DIR, "data.txt"), { request: req }));
 
     const response = await app.handle(
       new Request("http://localhost/file", {
@@ -192,9 +170,7 @@ describe("Range request support in sendFile", () => {
 describe("If-Range conditional ranges", () => {
   it("should serve partial content when If-Range ETag matches", async () => {
     const app = createApp();
-    app.get("/file", async (req, reply) =>
-      reply.sendFile(join(TMP_DIR, "data.txt"), { request: req }),
-    );
+    app.get("/file", async (req, reply) => reply.sendFile(join(TMP_DIR, "data.txt"), { request: req }));
 
     // First, get the ETag
     const fullResponse = await app.handle(new Request("http://localhost/file"));
@@ -217,9 +193,7 @@ describe("If-Range conditional ranges", () => {
 
   it("should serve full content when If-Range ETag does not match", async () => {
     const app = createApp();
-    app.get("/file", async (req, reply) =>
-      reply.sendFile(join(TMP_DIR, "data.txt"), { request: req }),
-    );
+    app.get("/file", async (req, reply) => reply.sendFile(join(TMP_DIR, "data.txt"), { request: req }));
 
     const response = await app.handle(
       new Request("http://localhost/file", {
@@ -237,9 +211,7 @@ describe("If-Range conditional ranges", () => {
 
   it("should serve partial when If-Range Last-Modified matches", async () => {
     const app = createApp();
-    app.get("/file", async (req, reply) =>
-      reply.sendFile(join(TMP_DIR, "data.txt"), { request: req }),
-    );
+    app.get("/file", async (req, reply) => reply.sendFile(join(TMP_DIR, "data.txt"), { request: req }));
 
     const fullResponse = await app.handle(new Request("http://localhost/file"));
     const lastModified = fullResponse.headers.get("last-modified")!;
@@ -262,9 +234,7 @@ describe("If-Range conditional ranges", () => {
 describe("Range support in download", () => {
   it("should support Range in download()", async () => {
     const app = createApp();
-    app.get("/dl", async (req, reply) =>
-      reply.download(join(TMP_DIR, "data.txt"), "myfile.txt", { request: req }),
-    );
+    app.get("/dl", async (req, reply) => reply.download(join(TMP_DIR, "data.txt"), "myfile.txt", { request: req }));
 
     const response = await app.handle(
       new Request("http://localhost/dl", {
@@ -281,9 +251,7 @@ describe("Range support in download", () => {
 
   it("should include ETag and Last-Modified in download", async () => {
     const app = createApp();
-    app.get("/dl", async (req, reply) =>
-      reply.download(join(TMP_DIR, "data.txt"), undefined, { request: req }),
-    );
+    app.get("/dl", async (req, reply) => reply.download(join(TMP_DIR, "data.txt"), undefined, { request: req }));
 
     const response = await app.handle(new Request("http://localhost/dl"));
     expect(response.status).toBe(200);
@@ -296,9 +264,7 @@ describe("Range support in download", () => {
 describe("sendFile backward compatibility", () => {
   it("should work without request option (no Range support)", async () => {
     const app = createApp();
-    app.get("/file", async (_req, reply) =>
-      reply.sendFile(join(TMP_DIR, "data.txt")),
-    );
+    app.get("/file", async (_req, reply) => reply.sendFile(join(TMP_DIR, "data.txt")));
 
     const response = await app.handle(
       new Request("http://localhost/file", {
@@ -314,9 +280,7 @@ describe("sendFile backward compatibility", () => {
 
   it("should work with root option", async () => {
     const app = createApp();
-    app.get("/file", async (req, reply) =>
-      reply.sendFile("data.txt", { root: TMP_DIR, request: req }),
-    );
+    app.get("/file", async (req, reply) => reply.sendFile("data.txt", { root: TMP_DIR, request: req }));
 
     const response = await app.handle(
       new Request("http://localhost/file", {
@@ -331,9 +295,7 @@ describe("sendFile backward compatibility", () => {
 
   it("should still reject path traversal with root + range", async () => {
     const app = createApp();
-    app.get("/file", async (req, reply) =>
-      reply.sendFile("../../etc/passwd", { root: TMP_DIR, request: req }),
-    );
+    app.get("/file", async (req, reply) => reply.sendFile("../../etc/passwd", { root: TMP_DIR, request: req }));
 
     const response = await app.handle(
       new Request("http://localhost/file", {

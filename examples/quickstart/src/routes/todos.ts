@@ -58,35 +58,43 @@ export const todoRoutes: PluginFunction = (app) => {
   });
 
   // POST /todos — Create a new todo (with schema validation + typed body)
-  app.post("/todos", {
-    schema: { body: createTodoSchema },
-  }, (req, reply) => {
-    const { title, completed } = req.parsedBody;
+  app.post(
+    "/todos",
+    {
+      schema: { body: createTodoSchema },
+    },
+    (req, reply) => {
+      const { title, completed } = req.parsedBody;
 
-    const todo: Todo = {
-      id: String(nextId++),
-      title,
-      completed: completed ?? false,
-      createdAt: new Date().toISOString(),
-    };
-    todos.set(todo.id, todo);
+      const todo: Todo = {
+        id: String(nextId++),
+        title,
+        completed: completed ?? false,
+        createdAt: new Date().toISOString(),
+      };
+      todos.set(todo.id, todo);
 
-    return reply.status(201).json(todo);
-  });
+      return reply.status(201).json(todo);
+    },
+  );
 
   // PUT /todos/:id — Update a todo (with schema validation + typed body)
-  app.put("/todos/:id", {
-    schema: { body: updateTodoSchema },
-  }, (req, reply) => {
-    const todo = todos.get(req.params.id);
-    if (!todo) return reply.notFound("Todo not found");
+  app.put(
+    "/todos/:id",
+    {
+      schema: { body: updateTodoSchema },
+    },
+    (req, reply) => {
+      const todo = todos.get(req.params.id);
+      if (!todo) return reply.notFound("Todo not found");
 
-    const updates = req.parsedBody;
-    if (updates.title !== undefined) todo.title = updates.title;
-    if (updates.completed !== undefined) todo.completed = updates.completed;
+      const updates = req.parsedBody;
+      if (updates.title !== undefined) todo.title = updates.title;
+      if (updates.completed !== undefined) todo.completed = updates.completed;
 
-    return reply.json(todo);
-  });
+      return reply.json(todo);
+    },
+  );
 
   // DELETE /todos/:id — Delete a todo (204 No Content)
   app.delete("/todos/:id", (req, reply) => {

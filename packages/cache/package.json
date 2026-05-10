@@ -1,6 +1,6 @@
 {
   "name": "@celsian/cache",
-  "version": "0.3.0",
+  "version": "0.3.2",
   "type": "module",
   "license": "MIT",
   "main": "dist/index.js",
@@ -25,5 +25,20 @@
   "engines": {
     "node": ">=20"
   },
-  "sideEffects": false
+  "sideEffects": false,
+  "description": "Caching utilities for CelsianJS",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/celsian/celsian.git"
+  },
+  "homepage": "https://github.com/celsian/celsian#readme",
+  "bugs": {
+    "url": "https://github.com/celsian/celsian/issues"
+  },
+  "keywords": [
+    "celsian",
+    "cache",
+    "middleware",
+    "http"
+  ]
 }

@@ -19,6 +19,8 @@ export interface ServeOptions {
 /** Handle returned by `serve()` for programmatic shutdown. */
 export interface ServeResult {
   close: () => Promise<void>;
+  port?: number;
+  host?: string;
 }
 
 /**
@@ -89,9 +91,11 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
   let shuttingDown = false;
   const shutdownTimeout = options.shutdownTimeout ?? 10_000;
 
-  // Pre-compute base URL string for Node.js request conversion (avoid per-request concatenation)
-  const baseUrl = `http://${host}:${port}`;
   const hasStaticDir = !!options.staticDir;
+  const boundPort = () => {
+    const address = server.address();
+    return typeof address === "object" && address !== null ? address.port : port;
+  };
 
   const server = http.createServer(async (req: IncomingMessage, res: ServerResponse) => {
     if (shuttingDown) {
@@ -104,6 +108,8 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
 
     // Static files — only parse URL when staticDir is configured
     if (hasStaticDir) {
+      const requestHost = req.headers.host ?? `${host}:${boundPort()}`;
+      const baseUrl = `http://${requestHost}`;
       const url = new URL(req.url ?? "/", baseUrl);
       const { resolve } = await import("node:path");
       const staticRoot = resolve(options.staticDir!);
@@ -132,7 +138,8 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
     }
 
     // Build Web Request with raw path (let app.handle() do fast URL parsing)
-    const webRequest = nodeToWebRequestFast(req, req.url ?? "/", baseUrl);
+    const requestHost = req.headers.host ?? `${host}:${boundPort()}`;
+    const webRequest = nodeToWebRequestFast(req, req.url ?? "/", `http://${requestHost}`);
 
     try {
       const response = await app.handle(webRequest);
@@ -147,36 +154,63 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
   });
 
   // Graceful shutdown
-  const handleShutdown = async () => {
-    if (shuttingDown) return;
-    shuttingDown = true;
-
-    app.log.info("shutting down gracefully");
-
-    // Stop accepting new connections
-    server.close();
-
-    // Wait for in-flight requests to drain
-    const deadline = Date.now() + shutdownTimeout;
-    while (inFlight > 0 && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 100));
-    }
-
-    // Stop task worker and cron
-    await app.stopWorker();
-    app.stopCron();
-
-    // Run user cleanup hook
-    if (options.onShutdown) {
-      await options.onShutdown();
-    }
+  let shutdownPromise: Promise<void> | null = null;
+  const cleanupListeners = () => {
+    process.off("SIGTERM", onSigterm);
+    process.off("SIGINT", onSigint);
+    options.signal?.removeEventListener("abort", onAbort);
   };
 
-  process.on("SIGTERM", () => handleShutdown());
-  process.on("SIGINT", () => handleShutdown());
+  const handleShutdown = async () => {
+    if (shutdownPromise) return shutdownPromise;
+    shuttingDown = true;
+
+    shutdownPromise = (async () => {
+      try {
+        app.log.info("shutting down gracefully");
+
+        // Stop accepting new connections
+        await new Promise<void>((resolve, reject) => {
+          server.close((error) => {
+            if (error && (error as NodeJS.ErrnoException).code !== "ERR_SERVER_NOT_RUNNING") {
+              reject(error);
+              return;
+            }
+            resolve();
+          });
+        });
+
+        // Wait for in-flight requests to drain
+        const deadline = Date.now() + shutdownTimeout;
+        while (inFlight > 0 && Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 100));
+        }
+
+        // Stop task worker and cron
+        await app.stopWorker();
+        app.stopCron();
+
+        // Run user cleanup hook
+        if (options.onShutdown) {
+          await options.onShutdown();
+        }
+      } finally {
+        cleanupListeners();
+      }
+    })();
+
+    return shutdownPromise;
+  };
+
+  const onSigterm = () => handleShutdown();
+  const onSigint = () => handleShutdown();
+  const onAbort = () => handleShutdown();
+
+  process.on("SIGTERM", onSigterm);
+  process.on("SIGINT", onSigint);
 
   if (options.signal) {
-    options.signal.addEventListener("abort", () => handleShutdown());
+    options.signal.addEventListener("abort", onAbort);
   }
 
   // WebSocket upgrade handling (requires 'ws' package)
@@ -248,15 +282,32 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
     }
   }
 
-  server.listen(port, host, () => {
-    app.log.info(`Server running at http://${host}:${port}`);
-    console.log(`[celsian] Server running at http://${host}:${port}`);
-    options.onReady?.({ port, host });
-  });
+  return await new Promise<ServeResult>((resolve, reject) => {
+    const onError = async (error: NodeJS.ErrnoException) => {
+      server.off("listening", onListening);
+      await app.stopWorker();
+      app.stopCron();
+      cleanupListeners();
+      reject(error);
+    };
 
-  return {
-    close: () => handleShutdown(),
-  };
+    const onListening = () => {
+      server.off("error", onError);
+      const actualPort = boundPort();
+      app.log.info(`Server running at http://${host}:${actualPort}`);
+      console.log(`[celsian] Server running at http://${host}:${actualPort}`);
+      options.onReady?.({ port: actualPort, host });
+      resolve({
+        close: () => handleShutdown(),
+        port: actualPort,
+        host,
+      });
+    };
+
+    server.once("error", onError);
+    server.once("listening", onListening);
+    server.listen(port, host);
+  });
 }
 
 function serveBun(app: CelsianApp, port: number, host: string, options: ServeOptions): ServeResult {

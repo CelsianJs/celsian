@@ -1,6 +1,6 @@
 // @celsian/core — Type definitions
 
-import type { InferOutput } from "@celsian/schema";
+import type { InferOutput, StandardSchema } from "@celsian/schema";
 
 // ─── Route Parameter Extraction (Hono/Elysia-style) ───
 
@@ -188,6 +188,12 @@ export interface InternalRoute {
   hooks: RouteHooks;
   /** Pre-compiled JSON serializer built from schema.response at registration time */
   serializer?: ((data: unknown) => string) | null;
+  /** Pre-compiled request validators built from schema body/querystring/params at registration time */
+  validators?: {
+    body?: StandardSchema;
+    querystring?: StandardSchema;
+    params?: StandardSchema;
+  } | null;
 }
 
 export interface RouteHooks {

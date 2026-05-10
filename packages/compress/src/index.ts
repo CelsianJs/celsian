@@ -19,35 +19,39 @@ const DEFAULT_ENCODINGS: CompressionEncoding[] = ["br", "gzip", "deflate"];
 const DEFAULT_BROTLI_QUALITY = 4;
 /**
  * Negotiate the best compression encoding from Accept-Encoding header.
- * Returns the first supported encoding found in the accept list,
- * respecting the server's preference order (Brotli > gzip > deflate by default).
- *
- * Handles quality values (q=0 means explicitly rejected).
+ * Returns the supported encoding with the highest client quality value,
+ * using the server's preference order (Brotli > gzip > deflate by default)
+ * as the tie-breaker. Supports wildcard entries and q=0 rejection.
  */
 function negotiateEncoding(acceptEncoding: string, supported: CompressionEncoding[]): CompressionEncoding | null {
-  const accepted = acceptEncoding.toLowerCase();
+  const qualityByEncoding = new Map<string, number>();
 
-  // Parse quality values to respect q=0 (rejected)
-  const rejected = new Set<string>();
-  const parts = accepted.split(",").map((s) => s.trim());
-  for (const part of parts) {
+  for (const part of acceptEncoding.toLowerCase().split(",")) {
     const [encoding, ...params] = part.split(";").map((s) => s.trim());
     if (!encoding) continue;
+
+    let quality = 1;
     for (const param of params) {
-      if (param.startsWith("q=")) {
-        const q = parseFloat(param.slice(2));
-        if (q === 0) rejected.add(encoding);
-      }
+      if (!param.startsWith("q=")) continue;
+      const parsed = Number.parseFloat(param.slice(2));
+      quality = Number.isFinite(parsed) ? Math.max(0, Math.min(1, parsed)) : 0;
+      break;
+    }
+
+    qualityByEncoding.set(encoding, quality);
+  }
+
+  let bestEncoding: CompressionEncoding | null = null;
+  let bestQuality = 0;
+  for (const encoding of supported) {
+    const quality = qualityByEncoding.get(encoding) ?? qualityByEncoding.get("*") ?? 0;
+    if (quality > bestQuality) {
+      bestEncoding = encoding;
+      bestQuality = quality;
     }
   }
 
-  for (const encoding of supported) {
-    if (rejected.has(encoding)) continue;
-    if (accepted.includes(encoding)) {
-      return encoding;
-    }
-  }
-  return null;
+  return bestEncoding;
 }
 
 /**

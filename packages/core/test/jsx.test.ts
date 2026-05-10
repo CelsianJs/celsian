@@ -105,7 +105,7 @@ describe("JSX Runtime", () => {
 
   it("should render function components with children", () => {
     function Card(props: { children: unknown[] }) {
-      return h("div", { class: "card" }, ...props.children as any[]);
+      return h("div", { class: "card" }, ...(props.children as any[]));
     }
     const html = renderToString(h(Card as any, null, h("p", null, "Content")));
     expect(html).toBe('<div class="card"><p>Content</p></div>');
@@ -114,9 +114,7 @@ describe("JSX Runtime", () => {
   // ─── dangerouslySetInnerHTML ───
 
   it("should support dangerouslySetInnerHTML", () => {
-    const html = renderToString(
-      h("div", { dangerouslySetInnerHTML: { __html: "<b>bold</b>" } }),
-    );
+    const html = renderToString(h("div", { dangerouslySetInnerHTML: { __html: "<b>bold</b>" } }));
     expect(html).toBe("<div><b>bold</b></div>");
   });
 

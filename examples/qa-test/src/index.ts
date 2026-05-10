@@ -119,11 +119,15 @@ const CreateUserSchema = Type.Object({
   age: Type.Optional(Type.Number({ minimum: 0 })),
 });
 
-app.post("/api/users", {
-  schema: { body: CreateUserSchema },
-}, (req, reply) => {
-  return reply.status(201).json({ id: 1, ...req.parsedBody });
-});
+app.post(
+  "/api/users",
+  {
+    schema: { body: CreateUserSchema },
+  },
+  (req, reply) => {
+    return reply.status(201).json({ id: 1, ...req.parsedBody });
+  },
+);
 
 // 7. Cookie handling
 app.get("/api/cookies/set", (_req, reply) => {
@@ -152,16 +156,23 @@ const LoginSchema = Type.Object({
   username: Type.String(),
 });
 
-app.post("/api/auth/login", {
-  schema: { body: LoginSchema },
-}, async (req, reply) => {
-  const jwtInstance = app.getDecoration("jwt") as any;
-  if (!jwtInstance) {
-    return reply.status(500).json({ error: "JWT not configured (getDecoration returned undefined)" });
-  }
-  const token = await jwtInstance.sign({ sub: req.parsedBody.username ?? "anonymous", role: "user" }, { expiresIn: "1h" });
-  return reply.json({ token });
-});
+app.post(
+  "/api/auth/login",
+  {
+    schema: { body: LoginSchema },
+  },
+  async (req, reply) => {
+    const jwtInstance = app.getDecoration("jwt") as any;
+    if (!jwtInstance) {
+      return reply.status(500).json({ error: "JWT not configured (getDecoration returned undefined)" });
+    }
+    const token = await jwtInstance.sign(
+      { sub: req.parsedBody.username ?? "anonymous", role: "user" },
+      { expiresIn: "1h" },
+    );
+    return reply.json({ token });
+  },
+);
 
 // Protected route with JWT guard
 const jwtGuard = createJWTGuard({ secret: "qa-test-secret-key-32chars!!!" });
@@ -262,12 +273,16 @@ const EnqueueEmailSchema = Type.Object({
   subject: Type.String(),
 });
 
-app.post("/api/tasks/enqueue", {
-  schema: { body: EnqueueEmailSchema },
-}, async (req, reply) => {
-  const taskId = await app.enqueue("send-email", req.parsedBody);
-  return reply.status(202).json({ taskId, message: "Task enqueued" });
-});
+app.post(
+  "/api/tasks/enqueue",
+  {
+    schema: { body: EnqueueEmailSchema },
+  },
+  async (req, reply) => {
+    const taskId = await app.enqueue("send-email", req.parsedBody);
+    return reply.status(202).json({ taskId, message: "Task enqueued" });
+  },
+);
 
 app.get("/api/tasks/results", (_req, reply) => {
   const results = [...taskResults];
@@ -297,9 +312,11 @@ const appRouter = router({
     }),
   },
   math: {
-    add: procedure.input<{ a: number; b: number }>(Type.Object({ a: Type.Number(), b: Type.Number() })).mutation(({ input }) => {
-      return { result: input.a + input.b };
-    }),
+    add: procedure
+      .input<{ a: number; b: number }>(Type.Object({ a: Type.Number(), b: Type.Number() }))
+      .mutation(({ input }) => {
+        return { result: input.a + input.b };
+      }),
   },
 });
 

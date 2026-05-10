@@ -38,7 +38,6 @@ await app.register(compress({
 | `threshold` | `number` | `1024` | Minimum response size in bytes to trigger compression |
 | `encodings` | `CompressionEncoding[]` | `["br", "gzip", "deflate"]` | Allowed encodings in preference order |
 | `brotliQuality` | `number` | `4` | Brotli quality level (0-11) |
-| `gzipLevel` | `number` | `6` | Gzip compression level (1-9) |
 
 ## Documentation
 

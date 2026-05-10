@@ -262,7 +262,7 @@ async function serveFile(
   try {
     const { createReadStream, constants: fsConstants } = await import("node:fs");
     const { stat: fsStat, access } = await import("node:fs/promises");
-    const { extname, resolve } = await import("node:path");
+    const { extname, isAbsolute, relative, resolve } = await import("node:path");
     const { Readable } = await import("node:stream");
 
     // ─── Path resolution & traversal protection ───
@@ -270,7 +270,8 @@ async function serveFile(
     if (options?.root) {
       const resolvedRoot = resolve(options.root);
       resolvedPath = resolve(resolvedRoot, filePath);
-      if (!resolvedPath.startsWith(resolvedRoot)) {
+      const rootRelativePath = relative(resolvedRoot, resolvedPath);
+      if (rootRelativePath.startsWith("..") || isAbsolute(rootRelativePath)) {
         return new Response(JSON.stringify({ error: "Forbidden", statusCode: 403, code: "PATH_TRAVERSAL" }), {
           status: 403,
           headers: buildHeaders({ "content-type": "application/json; charset=utf-8" }),
@@ -294,9 +295,7 @@ async function serveFile(
     // Large file warning
     const threshold = options?.largeFileThreshold ?? LARGE_FILE_THRESHOLD;
     if (threshold > 0 && totalSize > threshold) {
-      console.warn(
-        `[celsian] Serving large file (${(totalSize / 1024 / 1024).toFixed(1)}MB): ${resolvedPath}`,
-      );
+      console.warn(`[celsian] Serving large file (${(totalSize / 1024 / 1024).toFixed(1)}MB): ${resolvedPath}`);
     }
 
     // ─── Conditional GET: 304 Not Modified ───
@@ -450,10 +449,13 @@ async function serveFile(
     }
     // Unexpected error — log and return 500
     console.error("[celsian] sendFile error:", err);
-    return new Response(JSON.stringify({ error: "Internal Server Error", statusCode: 500, code: "INTERNAL_SERVER_ERROR" }), {
-      status: 500,
-      headers: buildHeaders({ "content-type": "application/json; charset=utf-8" }),
-    });
+    return new Response(
+      JSON.stringify({ error: "Internal Server Error", statusCode: 500, code: "INTERNAL_SERVER_ERROR" }),
+      {
+        status: 500,
+        headers: buildHeaders({ "content-type": "application/json; charset=utf-8" }),
+      },
+    );
   }
 }
 

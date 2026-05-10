@@ -121,7 +121,7 @@ export function createJWTGuard(options?: JWTOptions): HookHandler {
     if (!secret) {
       throw new Error(
         "createJWTGuard() called without options, but the JWT plugin has not been registered. " +
-        "Either pass { secret } to createJWTGuard() or register the JWT plugin first with app.register(jwt({ secret }))."
+          "Either pass { secret } to createJWTGuard() or register the JWT plugin first with app.register(jwt({ secret })).",
       );
     }
 

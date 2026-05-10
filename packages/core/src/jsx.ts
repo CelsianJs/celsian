@@ -123,7 +123,14 @@ function renderProps(props: Record<string, unknown>): string {
     if (value === false || value === null || value === undefined) continue;
 
     // Skip event handler props (on*) during SSR — they produce broken output like onclick="[object Function]"
-    if (key.length > 2 && key.charCodeAt(0) === 111 /* 'o' */ && key.charCodeAt(1) === 110 /* 'n' */ && key.charCodeAt(2) >= 65 && key.charCodeAt(2) <= 90) continue;
+    if (
+      key.length > 2 &&
+      key.charCodeAt(0) === 111 /* 'o' */ &&
+      key.charCodeAt(1) === 110 /* 'n' */ &&
+      key.charCodeAt(2) >= 65 &&
+      key.charCodeAt(2) <= 90
+    )
+      continue;
 
     // Boolean attributes
     if (value === true) {

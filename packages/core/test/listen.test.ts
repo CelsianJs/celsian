@@ -1,3 +1,4 @@
+import { createServer } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import type { ServeResult } from "../src/serve.js";
@@ -18,9 +19,11 @@ describe("app.listen()", () => {
 
     const port = 49_321;
     const ready = new Promise<{ port: number; host: string }>((resolve) => {
-      app.listen(port, (info) => resolve(info)).then((h) => {
-        handle = h;
-      });
+      app
+        .listen(port, (info) => resolve(info))
+        .then((h) => {
+          handle = h;
+        });
     });
 
     const info = await ready;
@@ -49,6 +52,64 @@ describe("app.listen()", () => {
     expect(response.status).toBe(200);
   });
 
+  it("should resolve with the actual bound port for port 0", async () => {
+    const app = createApp();
+    app.get("/ephemeral", (_req, reply) => reply.json({ ok: true }));
+
+    let readyInfo: { port: number; host: string } | null = null;
+    handle = await app.listen({
+      port: 0,
+      host: "127.0.0.1",
+      onReady: (info) => {
+        readyInfo = info;
+      },
+    });
+
+    expect(readyInfo?.port).toBeGreaterThan(0);
+    expect(handle.port).toBe(readyInfo?.port);
+
+    const response = await fetch(`http://127.0.0.1:${readyInfo?.port}/ephemeral`);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true });
+  });
+
+  it("should reject when the port is already occupied", async () => {
+    const occupiedServer = createServer((_req, res) => res.end("occupied"));
+    await new Promise<void>((resolve) => {
+      occupiedServer.listen(0, "127.0.0.1", () => resolve());
+    });
+
+    const address = occupiedServer.address();
+    if (typeof address !== "object" || address === null) {
+      throw new Error("expected occupied server to bind to a TCP port");
+    }
+
+    const app = createApp();
+    let onReadyCalled = false;
+
+    await expect(
+      app.listen({
+        port: address.port,
+        host: "127.0.0.1",
+        onReady: () => {
+          onReadyCalled = true;
+        },
+      }),
+    ).rejects.toMatchObject({ code: "EADDRINUSE" });
+
+    expect(onReadyCalled).toBe(false);
+
+    await new Promise<void>((resolve, reject) => {
+      occupiedServer.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+  });
+
   it("should default to port 3000 when no port given", async () => {
     const app = createApp();
     app.get("/default", (_req, reply) => reply.json({ ok: true }));
@@ -57,7 +118,10 @@ describe("app.listen()", () => {
     // wiring by observing that listen() attempts port 3000. If it binds
     // successfully, verify via HTTP. If EADDRINUSE fires, the port number
     // in the error itself proves the default was applied correctly.
-    interface ListenError extends Error { code?: string; port?: number }
+    interface ListenError extends Error {
+      code?: string;
+      port?: number;
+    }
 
     const result = await new Promise<{ port: number } | { error: ListenError }>((resolve) => {
       // Capture EADDRINUSE before it becomes an uncaught exception
@@ -69,12 +133,14 @@ describe("app.listen()", () => {
       };
       process.on("uncaughtException", onError);
 
-      app.listen(undefined, (info) => {
-        process.removeListener("uncaughtException", onError);
-        resolve({ port: info.port });
-      }).then((h) => {
-        handle = h;
-      });
+      app
+        .listen(undefined, (info) => {
+          process.removeListener("uncaughtException", onError);
+          resolve({ port: info.port });
+        })
+        .then((h) => {
+          handle = h;
+        });
     });
 
     if ("error" in result) {

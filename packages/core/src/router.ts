@@ -1,5 +1,6 @@
 // @celsian/core — Radix tree router with URL pattern matching
 
+import { fromSchema } from "@celsian/schema";
 import { compileSerializer } from "./serializer.js";
 import type { InternalRoute, RouteHandler, RouteHooks, RouteMatch, RouteMethod } from "./types.js";
 
@@ -83,6 +84,8 @@ export class Router {
       }
     }
 
+    const validators = compileRequestValidators(schema);
+
     const route: InternalRoute = {
       method,
       url,
@@ -96,6 +99,7 @@ export class Router {
         onSend: hooks?.onSend ?? [],
       },
       serializer,
+      validators,
     };
 
     node.routes.set(method, route);
@@ -230,6 +234,31 @@ export class Router {
     if (node.wildcardChild) {
       this.collectRoutes(node.wildcardChild, routes);
     }
+  }
+}
+
+function compileRequestValidators(schema: InternalRoute["schema"]): InternalRoute["validators"] {
+  if (!schema) return null;
+
+  const validators: NonNullable<InternalRoute["validators"]> = {};
+  const body = tryCompileSchema(schema.body);
+  const querystring = tryCompileSchema(schema.querystring);
+  const params = tryCompileSchema(schema.params);
+  if (body) validators.body = body;
+  if (querystring) validators.querystring = querystring;
+  if (params) validators.params = params;
+
+  return validators.body || validators.querystring || validators.params ? validators : null;
+}
+
+function tryCompileSchema(schema: unknown): NonNullable<InternalRoute["validators"]>["body"] | null {
+  if (!schema) return null;
+  try {
+    return fromSchema(schema);
+  } catch {
+    // Preserve backwards compatibility for type-only schema placeholders by
+    // deferring unsupported-schema errors until an actual request validates.
+    return null;
   }
 }
 

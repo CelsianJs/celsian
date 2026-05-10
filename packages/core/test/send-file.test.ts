@@ -106,6 +106,26 @@ describe("reply.sendFile with root option", () => {
     expect(body.code).toBe("PATH_TRAVERSAL");
   });
 
+  it("should reject sibling paths that share the root prefix", async () => {
+    const siblingDir = `${TMP_DIR}-sibling`;
+    await mkdir(siblingDir, { recursive: true });
+    await writeFile(join(siblingDir, "secret.txt"), "secret");
+
+    try {
+      const app = createApp();
+      app.get("/file", async (_req, reply) =>
+        reply.sendFile("../__tmp_send_file__-sibling/secret.txt", { root: TMP_DIR }),
+      );
+
+      const response = await app.handle(new Request("http://localhost/file"));
+      expect(response.status).toBe(403);
+      const body = await response.json();
+      expect(body.code).toBe("PATH_TRAVERSAL");
+    } finally {
+      await rm(siblingDir, { recursive: true, force: true });
+    }
+  });
+
   it("should return 404 for non-existent file within root", async () => {
     const app = createApp();
     app.get("/file", async (_req, reply) => reply.sendFile("nonexistent.txt", { root: TMP_DIR }));
@@ -159,9 +179,7 @@ describe("sendFile cacheControl option", () => {
 
   it("should not set Cache-Control header when cacheControl is false", async () => {
     const app = createApp();
-    app.get("/file", async (_req, reply) =>
-      reply.sendFile(join(TMP_DIR, "hello.txt"), { cacheControl: false }),
-    );
+    app.get("/file", async (_req, reply) => reply.sendFile(join(TMP_DIR, "hello.txt"), { cacheControl: false }));
 
     const response = await app.handle(new Request("http://localhost/file"));
     expect(response.status).toBe(200);
@@ -170,9 +188,7 @@ describe("sendFile cacheControl option", () => {
 
   it("should not set Cache-Control header when cacheControl is omitted", async () => {
     const app = createApp();
-    app.get("/file", async (_req, reply) =>
-      reply.sendFile(join(TMP_DIR, "hello.txt")),
-    );
+    app.get("/file", async (_req, reply) => reply.sendFile(join(TMP_DIR, "hello.txt")));
 
     const response = await app.handle(new Request("http://localhost/file"));
     expect(response.status).toBe(200);

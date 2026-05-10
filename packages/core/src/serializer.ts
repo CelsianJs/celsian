@@ -43,13 +43,8 @@ function extractProperties(schema: unknown): PropertyInfo[] | null {
 
   // TypeBox / plain JSON Schema: { type: 'object', properties: { ... } }
   if (s.properties && typeof s.properties === "object") {
-    const requiredSet = new Set(
-      Array.isArray(s.required) ? (s.required as string[]) : [],
-    );
-    return extractJsonSchemaProperties(
-      s.properties as Record<string, unknown>,
-      requiredSet,
-    );
+    const requiredSet = new Set(Array.isArray(s.required) ? (s.required as string[]) : []);
+    return extractJsonSchemaProperties(s.properties as Record<string, unknown>, requiredSet);
   }
 
   // Zod: has .shape and ._def
@@ -73,10 +68,7 @@ function extractProperties(schema: unknown): PropertyInfo[] | null {
   return null;
 }
 
-function extractJsonSchemaProperties(
-  properties: Record<string, unknown>,
-  requiredSet: Set<string>,
-): PropertyInfo[] {
+function extractJsonSchemaProperties(properties: Record<string, unknown>, requiredSet: Set<string>): PropertyInfo[] {
   const result: PropertyInfo[] = [];
 
   for (const [key, def] of Object.entries(properties)) {
@@ -86,13 +78,8 @@ function extractJsonSchemaProperties(
 
     let nested: PropertyInfo[] | null = null;
     if (type === "object" && d.properties && typeof d.properties === "object") {
-      const nestedRequired = new Set(
-        Array.isArray(d.required) ? (d.required as string[]) : [],
-      );
-      nested = extractJsonSchemaProperties(
-        d.properties as Record<string, unknown>,
-        nestedRequired,
-      );
+      const nestedRequired = new Set(Array.isArray(d.required) ? (d.required as string[]) : []);
+      nested = extractJsonSchemaProperties(d.properties as Record<string, unknown>, nestedRequired);
     }
 
     result.push({
@@ -160,9 +147,7 @@ function extractZodProperties(shape: Record<string, unknown>): PropertyInfo[] {
  */
 function buildObjectSerializer(properties: PropertyInfo[]): FastSerializer {
   // For each property, generate the key prefix string once (e.g. `"name":`)
-  const keyPrefixes = properties.map(
-    (p) => JSON.stringify(p.key) + ":",
-  );
+  const keyPrefixes = properties.map((p) => JSON.stringify(p.key) + ":");
 
   // Pre-build nested serializers for object-typed properties
   const nestedSerializers = properties.map((p) =>
