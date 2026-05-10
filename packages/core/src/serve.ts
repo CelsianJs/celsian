@@ -91,7 +91,8 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
   let shuttingDown = false;
   const shutdownTimeout = options.shutdownTimeout ?? 10_000;
 
-  const hasStaticDir = !!options.staticDir;
+  const staticDir = options.staticDir;
+  const hasStaticDir = !!staticDir;
   const boundPort = () => {
     const address = server.address();
     return typeof address === "object" && address !== null ? address.port : port;
@@ -106,48 +107,61 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
 
     inFlight++;
 
-    // Static files — only parse URL when staticDir is configured
-    if (hasStaticDir) {
-      const requestHost = req.headers.host ?? `${host}:${boundPort()}`;
-      const baseUrl = `http://${requestHost}`;
-      const url = new URL(req.url ?? "/", baseUrl);
-      const { resolve } = await import("node:path");
-      const staticRoot = resolve(options.staticDir!);
-      // Decode URI and normalize to prevent path traversal (e.g., /../../../etc/passwd)
-      const decodedPath = decodeURIComponent(url.pathname);
-      const filePath = resolve(join(staticRoot, decodedPath));
-      // Ensure the resolved path is within the static directory
-      if (!filePath.startsWith(`${staticRoot}/`) && filePath !== staticRoot) {
-        // Path traversal attempt — fall through to app handler
-      } else {
+    try {
+      // Static files — only parse URL when staticDir is configured
+      if (hasStaticDir) {
+        const requestHost = req.headers.host ?? `${host}:${boundPort()}`;
+        const baseUrl = `http://${requestHost}`;
+        const url = new URL(req.url ?? "/", baseUrl);
+        const { resolve } = await import("node:path");
+        const staticRoot = resolve(staticDir);
+
+        let decodedPath: string;
         try {
-          const s = await stat(filePath);
-          if (s.isFile()) {
-            const content = await readFile(filePath);
-            const ext = extname(filePath);
-            res.setHeader("content-type", MIME_TYPES[ext] ?? "application/octet-stream");
-            res.setHeader("cache-control", "public, max-age=31536000, immutable");
-            res.end(content);
-            inFlight--;
+          // Decode URI and normalize to prevent path traversal (e.g., /../../../etc/passwd)
+          decodedPath = decodeURIComponent(url.pathname);
+        } catch (error) {
+          if (error instanceof URIError) {
+            res.statusCode = 400;
+            res.end("Bad Request");
             return;
           }
-        } catch {
-          // Not a static file
+          throw error;
+        }
+
+        const filePath = resolve(join(staticRoot, decodedPath));
+        // Ensure the resolved path is within the static directory
+        if (!filePath.startsWith(`${staticRoot}/`) && filePath !== staticRoot) {
+          // Path traversal attempt — fall through to app handler
+        } else {
+          try {
+            const s = await stat(filePath);
+            if (s.isFile()) {
+              const content = await readFile(filePath);
+              const ext = extname(filePath);
+              res.setHeader("content-type", MIME_TYPES[ext] ?? "application/octet-stream");
+              res.setHeader("cache-control", "public, max-age=31536000, immutable");
+              res.end(content);
+              return;
+            }
+          } catch {
+            // Not a static file
+          }
         }
       }
-    }
 
-    // Build Web Request with raw path (let app.handle() do fast URL parsing)
-    const requestHost = req.headers.host ?? `${host}:${boundPort()}`;
-    const webRequest = nodeToWebRequestFast(req, req.url ?? "/", `http://${requestHost}`);
+      // Build Web Request with raw path (let app.handle() do fast URL parsing)
+      const requestHost = req.headers.host ?? `${host}:${boundPort()}`;
+      const webRequest = nodeToWebRequestFast(req, req.url ?? "/", `http://${requestHost}`);
 
-    try {
-      const response = await app.handle(webRequest);
-      await writeWebResponse(res, response);
-    } catch (error) {
-      console.error("[celsian] Unhandled error:", error);
-      res.statusCode = 500;
-      res.end("Internal Server Error");
+      try {
+        const response = await app.handle(webRequest);
+        await writeWebResponse(res, response);
+      } catch (error) {
+        console.error("[celsian] Unhandled error:", error);
+        res.statusCode = 500;
+        res.end("Internal Server Error");
+      }
     } finally {
       inFlight--;
     }

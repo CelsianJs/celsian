@@ -1,4 +1,7 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import type { ServeResult } from "../src/serve.js";
@@ -71,6 +74,40 @@ describe("app.listen()", () => {
     const response = await fetch(`http://127.0.0.1:${readyInfo?.port}/ephemeral`);
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ok: true });
+  });
+
+  it("should return 400 for malformed static URL encoding and drain in-flight requests", async () => {
+    const staticDir = mkdtempSync(join(tmpdir(), "celsian-static-"));
+    writeFileSync(join(staticDir, "index.html"), "ok");
+
+    const app = createApp();
+
+    try {
+      handle = await app.listen({
+        port: 0,
+        host: "127.0.0.1",
+        staticDir,
+        shutdownTimeout: 1_000,
+      });
+
+      const response = await fetch(`http://127.0.0.1:${handle.port}/%E0%A4%A`);
+      expect(response.status).toBe(400);
+      await expect(response.text()).resolves.toBe("Bad Request");
+
+      const closed = await Promise.race([
+        handle.close().then(() => true),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 500)),
+      ]);
+      handle = null;
+
+      expect(closed).toBe(true);
+    } finally {
+      if (handle) {
+        await handle.close();
+        handle = null;
+      }
+      rmSync(staticDir, { recursive: true, force: true });
+    }
   });
 
   it("should reject when the port is already occupied", async () => {
