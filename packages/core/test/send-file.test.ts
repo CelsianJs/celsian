@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
@@ -189,5 +189,39 @@ describe("sendFile cacheControl option", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-cache");
     expect(response.headers.get("content-disposition")).toBe('attachment; filename="export.txt"');
+  });
+});
+
+describe("serveFile error differentiation", () => {
+  const noAccessFile = join(TMP_DIR, "no-access.txt");
+
+  beforeAll(async () => {
+    await writeFile(noAccessFile, "secret");
+    await chmod(noAccessFile, 0o000);
+  });
+
+  afterAll(async () => {
+    // Restore permissions so cleanup can remove the file
+    await chmod(noAccessFile, 0o644).catch(() => {});
+  });
+
+  it("should return 404 for ENOENT (file not found)", async () => {
+    const app = createApp();
+    app.get("/file", async (_req, reply) => reply.sendFile(join(TMP_DIR, "does-not-exist.txt")));
+
+    const response = await app.handle(new Request("http://localhost/file"));
+    expect(response.status).toBe(404);
+    const body = await response.json();
+    expect(body.code).toBe("NOT_FOUND");
+  });
+
+  it("should return 403 for EACCES (permission denied)", async () => {
+    const app = createApp();
+    app.get("/file", async (_req, reply) => reply.sendFile(noAccessFile));
+
+    const response = await app.handle(new Request("http://localhost/file"));
+    expect(response.status).toBe(403);
+    const body = await response.json();
+    expect(body.code).toBe("FORBIDDEN");
   });
 });

@@ -260,8 +260,8 @@ async function serveFile(
   options?: SendFileOptions,
 ): Promise<Response> {
   try {
-    const { createReadStream } = await import("node:fs");
-    const { stat: fsStat } = await import("node:fs/promises");
+    const { createReadStream, constants: fsConstants } = await import("node:fs");
+    const { stat: fsStat, access } = await import("node:fs/promises");
     const { extname, resolve } = await import("node:path");
     const { Readable } = await import("node:stream");
 
@@ -281,6 +281,8 @@ async function serveFile(
     }
 
     const fileStat = await fsStat(resolvedPath);
+    // Verify read access before streaming (stat succeeds on 0o000 files but read would fail)
+    await access(resolvedPath, fsConstants.R_OK);
     const totalSize = fileStat.size;
     const ext = extname(resolvedPath).toLowerCase();
     const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
@@ -432,9 +434,24 @@ async function serveFile(
         "content-length": totalSize.toString(),
       }),
     });
-  } catch {
-    return new Response(JSON.stringify({ error: "Not Found", statusCode: 404, code: "NOT_FOUND" }), {
-      status: 404,
+  } catch (err: unknown) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      return new Response(JSON.stringify({ error: "Not Found", statusCode: 404, code: "NOT_FOUND" }), {
+        status: 404,
+        headers: buildHeaders({ "content-type": "application/json; charset=utf-8" }),
+      });
+    }
+    if (code === "EACCES" || code === "EPERM") {
+      return new Response(JSON.stringify({ error: "Forbidden", statusCode: 403, code: "FORBIDDEN" }), {
+        status: 403,
+        headers: buildHeaders({ "content-type": "application/json; charset=utf-8" }),
+      });
+    }
+    // Unexpected error — log and return 500
+    console.error("[celsian] sendFile error:", err);
+    return new Response(JSON.stringify({ error: "Internal Server Error", statusCode: 500, code: "INTERNAL_SERVER_ERROR" }), {
+      status: 500,
       headers: buildHeaders({ "content-type": "application/json; charset=utf-8" }),
     });
   }
