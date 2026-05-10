@@ -33,6 +33,23 @@ describe("Body Size Limits", () => {
     expect(body.received).toEqual({ message: "hello" });
   });
 
+  it("should reject multipart bodies over the limit when content-length is omitted", async () => {
+    const app = createApp({ bodyLimit: 20 });
+    app.post("/upload", (_req, reply) => reply.json({ ok: true }));
+
+    const formData = new FormData();
+    formData.set("payload", "x".repeat(200));
+
+    const response = await app.handle(
+      new Request("http://localhost/upload", {
+        method: "POST",
+        body: formData,
+      }),
+    );
+
+    expect(response.status).toBe(413);
+  });
+
   it("should use 1MB default limit", async () => {
     const app = createApp();
     app.post("/data", (_req, reply) => reply.json({ received: true }));

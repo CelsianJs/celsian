@@ -969,6 +969,12 @@ export class CelsianApp {
       await runHooks(route.hooks.preSerialization, request, reply);
     }
 
+    // Merge headers accumulated before finalization (for example security
+    // headers from onRequest hooks) into raw Responses returned by handlers.
+    // Explicit headers on the returned Response win; onSend changes below can
+    // still intentionally override them.
+    response = this.mergeReplyHeaders(response, reply.headers, false);
+
     // 9. onSend hooks — run route-level then rootContext (skip entirely if both empty)
     const hasRouteOnSend = route.hooks.onSend.length > 0;
     const hasRootOnSend = this.rootContext.hooks.onSend.length > 0;
@@ -1020,7 +1026,7 @@ export class CelsianApp {
     const schema = route.schema;
     if (!schema) return;
 
-    if (schema.body && request.parsedBody !== undefined) {
+    if (schema.body) {
       const bodySchema: StandardSchema = route.validators?.body ?? fromSchema(schema.body);
       const result = bodySchema.validate(request.parsedBody);
       if (!result.success) {
@@ -1078,10 +1084,7 @@ export class CelsianApp {
         // Read body as text first to enforce body size limit on actual data
         // (Content-Length can be omitted in chunked transfer encoding)
         try {
-          const text = await request.text();
-          if (bodyLimit > 0 && text.length > bodyLimit) {
-            throw new HttpError(413, "Payload Too Large");
-          }
+          const text = await this.readBodyText(request, bodyLimit);
           if (!text.trim()) {
             // Empty body — leave as undefined
             return;
@@ -1098,19 +1101,13 @@ export class CelsianApp {
         contentType.includes("application/x-www-form-urlencoded") ||
         contentType.includes("multipart/form-data")
       ) {
-        request.parsedBody = await request.formData();
+        request.parsedBody = await this.readFormData(request, bodyLimit);
       } else if (contentType.includes("text/")) {
-        const text = await request.text();
-        if (bodyLimit > 0 && text.length > bodyLimit) {
-          throw new HttpError(413, "Payload Too Large");
-        }
+        const text = await this.readBodyText(request, bodyLimit);
         request.parsedBody = text;
       } else if (!contentType) {
         // No content-type: try JSON, fall back to text
-        const text = await request.text();
-        if (bodyLimit > 0 && text.length > bodyLimit) {
-          throw new HttpError(413, "Payload Too Large");
-        }
+        const text = await this.readBodyText(request, bodyLimit);
         if (!text.trim()) return;
         try {
           request.parsedBody = JSON.parse(text);
@@ -1123,6 +1120,51 @@ export class CelsianApp {
       // Body parsing failed for other reasons — log and leave as undefined
       console.error("[celsian]", e);
     }
+  }
+
+  private mergeReplyHeaders(response: Response, replyHeaders: Record<string, string>, overwrite: boolean): Response {
+    let needsMerge = false;
+    for (const key of Object.keys(replyHeaders)) {
+      if (overwrite || !response.headers.has(key)) {
+        needsMerge = true;
+        break;
+      }
+    }
+    if (!needsMerge) return response;
+
+    const mergedHeaders = new Headers(response.headers);
+    for (const [key, value] of Object.entries(replyHeaders)) {
+      if (overwrite || !mergedHeaders.has(key)) {
+        mergedHeaders.set(key, value);
+      }
+    }
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: mergedHeaders,
+    });
+  }
+
+  private async readBodyBytes(request: CelsianRequest, bodyLimit: number): Promise<ArrayBuffer> {
+    const bytes = await request.arrayBuffer();
+    if (bodyLimit > 0 && bytes.byteLength > bodyLimit) {
+      throw new HttpError(413, "Payload Too Large");
+    }
+    return bytes;
+  }
+
+  private async readBodyText(request: CelsianRequest, bodyLimit: number): Promise<string> {
+    return new TextDecoder().decode(await this.readBodyBytes(request, bodyLimit));
+  }
+
+  private async readFormData(request: CelsianRequest, bodyLimit: number): Promise<FormData> {
+    const bytes = await this.readBodyBytes(request, bodyLimit);
+    const replay = new Request(request.url, {
+      method: request.method,
+      headers: request.headers,
+      body: bytes,
+    });
+    return replay.formData();
   }
 
   private async handleError(error: Error, request: CelsianRequest, reply: CelsianReply): Promise<Response> {

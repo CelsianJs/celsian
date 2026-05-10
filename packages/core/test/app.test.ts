@@ -380,6 +380,47 @@ describe("CelsianApp", () => {
     expect(invalid.status).toBe(400);
   });
 
+  it("should reject missing or empty request bodies when a body schema is required", async () => {
+    const app = createApp();
+
+    const bodySchema = {
+      safeParse(input: unknown) {
+        const data = input as Record<string, unknown> | undefined;
+        if (data && typeof data.name === "string") {
+          return { success: true, data };
+        }
+        return {
+          success: false,
+          error: { issues: [{ message: "body.name is required", path: ["name"] }] },
+        };
+      },
+      parse(input: unknown) {
+        return input;
+      },
+    };
+
+    app.post("/required-body", { schema: { body: bodySchema } }, (req, reply) => {
+      return reply.json({ body: req.parsedBody });
+    });
+
+    const missing = await app.handle(
+      new Request("http://localhost/required-body", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    expect(missing.status).toBe(400);
+
+    const empty = await app.handle(
+      new Request("http://localhost/required-body", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "",
+      }),
+    );
+    expect(empty.status).toBe(400);
+  });
+
   it("should support schema overload with route params", async () => {
     const app = createApp();
 

@@ -20,6 +20,18 @@ describe("Security Headers Plugin", () => {
     expect(response.headers.get("content-security-policy")).toBe("default-src 'self'");
   });
 
+  it("should preserve default security headers when a handler returns a raw Response", async () => {
+    const app = createApp();
+    app.get("/raw", () => new Response("raw", { status: 200, headers: { "x-handler": "raw" } }));
+
+    const response = await app.inject({ url: "/raw" });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-handler")).toBe("raw");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("x-frame-options")).toBe("DENY");
+    expect(response.headers.get("content-security-policy")).toBe("default-src 'self'");
+  });
+
   it("should allow disabling all security headers via app options", async () => {
     const app = createApp({ security: false });
     app.get("/test", (_req, reply) => reply.json({ ok: true }));

@@ -1,8 +1,8 @@
 // @celsian/adapter-node — Standalone Node.js server adapter
 
-import { readFile, stat } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { extname, join, resolve } from "node:path";
+import { dirname, extname, join, resolve } from "node:path";
 import type { CelsianApp } from "@celsian/core";
 
 // Inline types — will be imported from @celsian/build when ThenJS ships
@@ -36,13 +36,13 @@ export interface ThenAdapter {
 const nodeAdapter: ThenAdapter = {
   name: "node",
 
-  async buildEnd() {
+  async buildEnd({ serverEntry, clientDir, staticDir }) {
     // Generate a standalone server entry that:
     // 1. Imports the server bundle
     // 2. Sets up static file serving
     // 3. Starts node:http server
 
-    const _entryCode = `
+    const entryCode = `
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { join, extname } from 'node:path';
@@ -72,8 +72,16 @@ const MIME_TYPES = {
 };
 
 async function tryStaticFile(pathname, dirs) {
-  // Decode URI to handle encoded traversal sequences (e.g., %2e%2e%2f)
-  const decodedPath = decodeURIComponent(pathname);
+  let decodedPath;
+  try {
+    // Decode URI to handle encoded traversal sequences (e.g., %2e%2e%2f)
+    decodedPath = decodeURIComponent(pathname);
+  } catch (error) {
+    if (error instanceof URIError) {
+      return { badRequest: true };
+    }
+    throw error;
+  }
   for (const dir of dirs) {
     const { resolve: resolvePath } = await import('node:path');
     const resolvedRoot = resolvePath(dir);
@@ -99,6 +107,11 @@ const server = createServer(async (req, res) => {
 
   // Try static files first
   const staticResult = await tryStaticFile(url.pathname, [CLIENT_DIR, STATIC_DIR]);
+  if (staticResult?.badRequest) {
+    res.statusCode = 400;
+    res.end('Bad Request');
+    return;
+  }
   if (staticResult) {
     res.setHeader('content-type', staticResult.mime);
     res.setHeader('cache-control', 'public, max-age=31536000, immutable');
@@ -146,8 +159,17 @@ server.listen(PORT, HOST, () => {
 });
 `;
 
-    // In a real implementation, write this to disk
-    console.log("[celsian:adapter-node] Generated server entry");
+    await mkdir(dirname(serverEntry), { recursive: true });
+    await mkdir(clientDir, { recursive: true });
+    await mkdir(staticDir, { recursive: true });
+    await writeFile(serverEntry, entryCode);
+    await writeFile(join(clientDir, ".gitkeep"), "");
+    await writeFile(join(staticDir, ".gitkeep"), "");
+
+    console.log("[celsian:adapter-node] Generated build artifacts:");
+    console.log(`  → ${serverEntry}`);
+    console.log(`  → ${join(clientDir, ".gitkeep")}`);
+    console.log(`  → ${join(staticDir, ".gitkeep")}`);
   },
 
   entryTemplate: "node-server",
@@ -181,7 +203,17 @@ export function serve(app: CelsianApp, options: NodeAdapterOptions = {}): void {
     // Try static files
     if (staticDir) {
       // Decode URI and resolve to prevent path traversal (e.g., /../../../etc/passwd)
-      const decodedPath = decodeURIComponent(url.pathname);
+      let decodedPath: string;
+      try {
+        decodedPath = decodeURIComponent(url.pathname);
+      } catch (error) {
+        if (error instanceof URIError) {
+          res.statusCode = 400;
+          res.end("Bad Request");
+          return;
+        }
+        throw error;
+      }
       const resolvedRoot = resolve(staticDir);
       const filePath = resolve(join(staticDir, decodedPath));
       // Ensure the resolved path is within the static directory
