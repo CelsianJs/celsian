@@ -159,6 +159,75 @@ app.route({
 // Invalid input returns 400 with structured issues automatically
 ```
 
+### JSX Server Rendering
+
+CelsianJS includes a built-in JSX runtime for server-side HTML rendering -- no React dependency needed. Supports both automatic and classic transforms.
+
+**Setup (automatic transform -- recommended):**
+
+```jsonc
+// tsconfig.json
+{
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "@celsian/core"
+  }
+}
+```
+
+**Setup (classic transform):**
+
+```jsonc
+// tsconfig.json
+{
+  "compilerOptions": {
+    "jsx": "react",
+    "jsxFactory": "h",
+    "jsxFragmentFactory": "Fragment"
+  }
+}
+```
+
+```typescript
+import { h, Fragment } from '@celsian/core/jsx';
+```
+
+**Usage:**
+
+```tsx
+import { renderToString, renderToDocument } from '@celsian/core';
+
+// Function components work like React
+function Layout({ title, children }: { title: string; children: any }) {
+  return (
+    <html>
+      <head><title>{title}</title></head>
+      <body>{children}</body>
+    </html>
+  );
+}
+
+function UserCard({ name, email }: { name: string; email: string }) {
+  return (
+    <div className="card">
+      <h2>{name}</h2>
+      <p>{email}</p>
+    </div>
+  );
+}
+
+app.get('/page', (req, reply) => {
+  const html = renderToDocument(
+    <Layout title="Users">
+      <UserCard name="Alice" email="alice@example.com" />
+    </Layout>
+  );
+  return reply.html(html);
+});
+```
+
+Supports `className`/`htmlFor` mapping, style objects, boolean attributes, void elements, `dangerouslySetInnerHTML`, Fragments, and XSS-safe escaping.
+
 ## Features at a Glance
 
 | Category | Features |
@@ -167,7 +236,7 @@ app.route({
 | **Hooks** | 8-hook lifecycle (onRequest through onResponse), route-level hooks |
 | **Plugins** | Scoped encapsulation, app/request/reply decorators |
 | **Validation** | Zod, TypeBox, Valibot auto-detect; body, querystring, params schemas |
-| **Reply** | json, html, stream, redirect, sendFile, download, cookies, 9 error helpers |
+| **Reply** | json, html, stream, redirect, sendFile, download, cookies, 9 error helpers, JSX SSR |
 | **Security** | Helmet-style headers, CORS, CSRF protection, JWT, fixed-window rate limiting |
 | **Background** | Task queue with retries, cron scheduling, Redis queue backend |
 | **Real-time** | WebSocket with broadcast and connection management |
