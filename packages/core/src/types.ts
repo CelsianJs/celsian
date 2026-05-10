@@ -289,4 +289,9 @@ export interface CelsianAppOptions {
   bodyLimit?: number;
   /** Per-request timeout in ms (default: 30000). Set to 0 to disable. */
   requestTimeout?: number;
+  /**
+   * Security headers configuration. Security headers are enabled by default.
+   * Pass `false` to disable, `true` for defaults, or a SecurityOptions object to customize.
+   */
+  security?: boolean | import("./plugins/security.js").SecurityOptions;
 }

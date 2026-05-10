@@ -13,6 +13,7 @@ import { createReply } from "./reply.js";
 import { buildRequest, buildRequestFast } from "./request.js";
 import { Router } from "./router.js";
 import { createEnqueue, type TaskDefinition, TaskRegistry, TaskWorker, type TaskWorkerOptions } from "./task.js";
+import { security } from "./plugins/security.js";
 import type {
   CelsianAppOptions,
   CelsianReply,
@@ -116,6 +117,12 @@ export class CelsianApp {
         fatal: noop,
         child: () => this.log,
       };
+    }
+
+    // Auto-register security headers (enabled by default)
+    if (options.security !== false) {
+      const securityOpts = typeof options.security === "object" ? options.security : {};
+      this.register(security(securityOpts), { encapsulate: false });
     }
   }
 

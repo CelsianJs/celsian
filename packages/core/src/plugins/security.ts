@@ -3,6 +3,8 @@
 import type { CelsianReply, CelsianRequest, HookHandler, PluginFunction } from "../types.js";
 
 export interface SecurityOptions {
+  /** Disable all security headers (default: false). When true, the plugin is a no-op. */
+  enabled?: boolean;
   /** X-Content-Type-Options: nosniff (default: true) */
   contentTypeOptions?: boolean;
   /** X-Frame-Options (default: 'DENY') */
@@ -19,12 +21,15 @@ export interface SecurityOptions {
   dnsPrefetchControl?: "on" | "off" | false;
   /** X-Download-Options (default: 'noopen') */
   downloadOptions?: string | false;
-  /** Content-Security-Policy (default: none — too app-specific) */
+  /** Content-Security-Policy (default: "default-src 'self'") */
   contentSecurityPolicy?: string | false;
 }
 
 export function security(options: SecurityOptions = {}): PluginFunction {
   return function securityPlugin(app) {
+    // Allow disabling the entire plugin
+    if (options.enabled === false) return;
+
     const hook: HookHandler = (_request: CelsianRequest, reply: CelsianReply) => {
       // X-Content-Type-Options
       if (options.contentTypeOptions !== false) {
@@ -75,9 +80,10 @@ export function security(options: SecurityOptions = {}): PluginFunction {
         reply.header("x-download-options", download);
       }
 
-      // Content-Security-Policy (opt-in only)
-      if (options.contentSecurityPolicy) {
-        reply.header("content-security-policy", options.contentSecurityPolicy);
+      // Content-Security-Policy (default: "default-src 'self'")
+      const csp = options.contentSecurityPolicy ?? "default-src 'self'";
+      if (csp !== false) {
+        reply.header("content-security-policy", csp);
       }
     };
 
