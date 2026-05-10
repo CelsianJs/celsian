@@ -31,7 +31,10 @@ export function buildApp() {
   // apply globally (not scoped to a child context).
 
   app.register(cors({ origin: CORS_ORIGIN }), { encapsulate: false });
-  app.register(rateLimit({ max: 100, window: 60_000, keyGenerator: req => req.headers.get("x-forwarded-for") ?? "local" }), { encapsulate: false });
+  app.register(
+    rateLimit({ max: 100, window: 60_000, keyGenerator: (req) => req.headers.get("x-forwarded-for") ?? "local" }),
+    { encapsulate: false },
+  );
 
   // Register JWT plugin at the app level — decorates app with `jwt.sign()` and `jwt.verify()`
   app.register(jwt({ secret: JWT_SECRET }), { encapsulate: false }).then(() => {

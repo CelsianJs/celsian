@@ -64,7 +64,7 @@ export class MemoryRateLimitStore implements RateLimitStore {
   }
 }
 
-let warnedNoKey = false;
+const warnedNoKey = false;
 
 function createDefaultKeyGenerator(trustProxy: boolean): (req: CelsianRequest) => string {
   if (!trustProxy) {
@@ -74,7 +74,11 @@ function createDefaultKeyGenerator(trustProxy: boolean): (req: CelsianRequest) =
   }
 
   return (req: CelsianRequest): string => {
-    return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? req.headers.get("x-real-ip") ?? "unknown-proxy-client";
+    return (
+      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+      req.headers.get("x-real-ip") ??
+      "unknown-proxy-client"
+    );
   };
 }
 

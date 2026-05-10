@@ -11,7 +11,12 @@ import { z } from "zod";
 const scryptAsync = promisify(scrypt);
 
 // ─── Config ───
-const JWT_SECRET = process.env.JWT_SECRET ?? "dev-secret-change-in-production";
+const DEFAULT_JWT_SECRET = "dev-secret-change-in-production";
+const JWT_SECRET = process.env.JWT_SECRET ?? DEFAULT_JWT_SECRET;
+
+if (process.env.NODE_ENV === "production" && JWT_SECRET === DEFAULT_JWT_SECRET) {
+  throw new Error("Set JWT_SECRET to a strong, unique secret before running auth-flow in production");
+}
 const ACCESS_TOKEN_EXPIRY = "15m";
 const _REFRESH_TOKEN_EXPIRY = "7d";
 
@@ -53,7 +58,10 @@ export function createAuthApp() {
   // Register plugins (security headers are enabled by default)
   app.register(cors({ origin: CORS_ORIGIN }), { encapsulate: false });
   app.register(jwt({ secret: JWT_SECRET }), { encapsulate: false });
-  app.register(rateLimit({ max: 100, window: 60_000, keyGenerator: req => req.headers.get("x-forwarded-for") ?? "local" }), { encapsulate: false });
+  app.register(
+    rateLimit({ max: 100, window: 60_000, keyGenerator: (req) => req.headers.get("x-forwarded-for") ?? "local" }),
+    { encapsulate: false },
+  );
 
   app.health();
 

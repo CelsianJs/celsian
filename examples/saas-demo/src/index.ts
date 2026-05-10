@@ -7,7 +7,12 @@ import { z } from "zod";
 
 // ─── Config ───
 
-const JWT_SECRET = process.env.JWT_SECRET ?? "celsian-demo-secret-change-me";
+const DEFAULT_JWT_SECRET = "celsian-demo-secret-change-me";
+const JWT_SECRET = process.env.JWT_SECRET ?? DEFAULT_JWT_SECRET;
+
+if (process.env.NODE_ENV === "production" && JWT_SECRET === DEFAULT_JWT_SECRET) {
+  throw new Error("Set JWT_SECRET to a strong, unique secret before running saas-demo in production");
+}
 const PORT = Number(process.env.PORT ?? 3000);
 
 // ─── In-Memory Data Store ───

@@ -68,7 +68,7 @@ describe("railwayAdapter", () => {
       expect(procfile).toBe("web: node 'dist/index.js'\n");
       expect(railwayJson.deploy.startCommand).toBe("node 'dist/index.js'");
       expect(dockerfile).toContain('CMD ["node","dist/index.js"]');
-      expect(dockerfile).toContain('http://localhost:3000/health');
+      expect(dockerfile).toContain("http://localhost:3000/health");
       expect(dockerfile).not.toContain("dist/server/entry.js");
       expect(dockerfile).not.toContain("/api/health");
     });

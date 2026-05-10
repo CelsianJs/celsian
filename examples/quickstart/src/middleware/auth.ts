@@ -12,7 +12,12 @@
 import { createJWTGuard, type JWTNamespace } from "@celsian/jwt";
 
 // In production, load this from an environment variable or secrets manager.
-export const JWT_SECRET = process.env.JWT_SECRET ?? "quickstart-dev-secret";
+const DEFAULT_JWT_SECRET = "quickstart-dev-secret";
+export const JWT_SECRET = process.env.JWT_SECRET ?? DEFAULT_JWT_SECRET;
+
+if (process.env.NODE_ENV === "production" && JWT_SECRET === DEFAULT_JWT_SECRET) {
+  throw new Error("Set JWT_SECRET to a strong, unique secret before running quickstart in production");
+}
 
 // Re-usable hook — attach to any route via `preHandler: authGuard`
 export const authGuard = createJWTGuard({ secret: JWT_SECRET });
