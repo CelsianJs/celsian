@@ -49,7 +49,7 @@ describe("railwayAdapter", () => {
 
       const railwayJson = JSON.parse(readFileSync(join(TMP_DIR, "railway.json"), "utf8"));
       expect(railwayJson.deploy.startCommand).toBe("node 'dist/server/entry.js'");
-      expect(railwayJson.deploy.healthcheckPath).toBe("/api/health");
+      expect(railwayJson.deploy.healthcheckPath).toBe("/health");
     });
 
     it("uses the generated server entry in Procfile, railway.json, and Dockerfile", async () => {
@@ -68,7 +68,9 @@ describe("railwayAdapter", () => {
       expect(procfile).toBe("web: node 'dist/index.js'\n");
       expect(railwayJson.deploy.startCommand).toBe("node 'dist/index.js'");
       expect(dockerfile).toContain('CMD ["node","dist/index.js"]');
+      expect(dockerfile).toContain('http://localhost:3000/health');
       expect(dockerfile).not.toContain("dist/server/entry.js");
+      expect(dockerfile).not.toContain("/api/health");
     });
   });
 });

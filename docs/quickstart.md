@@ -132,8 +132,8 @@ app.post('/login', async (req, reply) => {
   return reply.json({ token });
 });
 
-// Protected routes -- createJWTGuard() reads the secret from the registered plugin
-const requireAuth = createJWTGuard();
+// Protected routes -- bind the guard to this app secret explicitly
+const requireAuth = createJWTGuard({ secret: JWT_SECRET });
 
 app.route({
   method: 'GET',

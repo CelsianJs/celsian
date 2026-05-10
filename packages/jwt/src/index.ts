@@ -19,9 +19,6 @@ export interface JWTPayload {
   iat?: number;
 }
 
-// Module-level secret stash — set by the jwt() plugin so createJWTGuard() can read it without args.
-let _jwtSecret: string | null = null;
-
 /** Sign and verify methods exposed on `app.jwt` after registering the plugin. */
 export interface JWTNamespace {
   sign(payload: JWTPayload, options?: { expiresIn?: string | number }): Promise<string>;
@@ -42,9 +39,6 @@ export function jwt(options: JWTOptions): PluginFunction {
   const secretKey = new TextEncoder().encode(options.secret);
 
   return function jwtPlugin(app) {
-    // Stash the secret so createJWTGuard() can read it without explicit options
-    _jwtSecret = options.secret;
-
     const jwtInstance: JWTNamespace = {
       async sign(payload: JWTPayload, signOptions?: { expiresIn?: string | number }): Promise<string> {
         let builder = new jose.SignJWT(payload as jose.JWTPayload)
@@ -77,54 +71,25 @@ export function jwt(options: JWTOptions): PluginFunction {
 /**
  * Create a preHandler hook that verifies Bearer tokens and populates `request.user`.
  *
- * When called without arguments, reads the secret from the JWT plugin decoration (`app.jwt`).
- * This requires the JWT plugin to be registered first via `app.register(jwt({ secret }))`.
+ * Always pass explicit options so the guard is bound to the intended app secret.
  *
  * @example
  * ```ts
- * // Option 1: No args — reads secret from the registered JWT plugin
  * await app.register(jwt({ secret: process.env.JWT_SECRET! }));
- * app.addHook('preHandler', createJWTGuard());
- *
- * // Option 2: Explicit secret
  * app.addHook('preHandler', createJWTGuard({ secret: process.env.JWT_SECRET! }));
  * ```
  */
-export function createJWTGuard(options?: JWTOptions): HookHandler {
-  // If options are provided, use them directly (eager init)
-  if (options) {
-    const algorithms = options.algorithms ?? ["HS256"];
-    const secretKey = new TextEncoder().encode(options.secret);
-
-    const guard: HookHandler<void | Response> = async (request: CelsianRequest, reply: CelsianReply) => {
-      const auth = request.headers.get("authorization");
-      if (!auth?.startsWith("Bearer ")) {
-        return reply.status(401).json({ error: "Missing or invalid authorization header" });
-      }
-
-      const token = auth.slice(7);
-
-      try {
-        const { payload } = await jose.jwtVerify(token, secretKey, { algorithms });
-        (request as Record<string, unknown>).user = payload;
-      } catch {
-        return reply.status(401).json({ error: "Invalid or expired token" });
-      }
-    };
-
-    return guard as HookHandler;
+export function createJWTGuard(options: JWTOptions): HookHandler {
+  if (!options?.secret) {
+    throw new Error(
+      "createJWTGuard() requires an explicit { secret }. This prevents process-global JWT state from leaking across apps.",
+    );
   }
 
-  // No options — lazy guard that reads from _jwtSecret stashed during plugin registration
-  const lazyGuard: HookHandler<void | Response> = async (request: CelsianRequest, reply: CelsianReply) => {
-    const secret = _jwtSecret;
-    if (!secret) {
-      throw new Error(
-        "createJWTGuard() called without options, but the JWT plugin has not been registered. " +
-          "Either pass { secret } to createJWTGuard() or register the JWT plugin first with app.register(jwt({ secret })).",
-      );
-    }
+  const algorithms = options.algorithms ?? ["HS256"];
+  const secretKey = new TextEncoder().encode(options.secret);
 
+  const guard: HookHandler<void | Response> = async (request: CelsianRequest, reply: CelsianReply) => {
     const auth = request.headers.get("authorization");
     if (!auth?.startsWith("Bearer ")) {
       return reply.status(401).json({ error: "Missing or invalid authorization header" });
@@ -133,14 +98,14 @@ export function createJWTGuard(options?: JWTOptions): HookHandler {
     const token = auth.slice(7);
 
     try {
-      const { payload } = await jose.jwtVerify(token, new TextEncoder().encode(secret), { algorithms: ["HS256"] });
+      const { payload } = await jose.jwtVerify(token, secretKey, { algorithms });
       (request as Record<string, unknown>).user = payload;
     } catch {
       return reply.status(401).json({ error: "Invalid or expired token" });
     }
   };
 
-  return lazyGuard as HookHandler;
+  return guard as HookHandler;
 }
 
 // ─── Declaration Merging ───

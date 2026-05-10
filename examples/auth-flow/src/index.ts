@@ -53,7 +53,7 @@ export function createAuthApp() {
   // Register plugins (security headers are enabled by default)
   app.register(cors({ origin: CORS_ORIGIN }), { encapsulate: false });
   app.register(jwt({ secret: JWT_SECRET }), { encapsulate: false });
-  app.register(rateLimit({ max: 100, window: 60_000 }), { encapsulate: false });
+  app.register(rateLimit({ max: 100, window: 60_000, keyGenerator: req => req.headers.get("x-forwarded-for") ?? "local" }), { encapsulate: false });
 
   app.health();
 

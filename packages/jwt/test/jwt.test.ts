@@ -72,6 +72,29 @@ describe("@celsian/jwt", () => {
 });
 
 describe("createJWTGuard", () => {
+  it("requires explicit options to avoid process-global secret state", () => {
+    expect(() => (createJWTGuard as any)()).toThrow("requires an explicit { secret }");
+  });
+
+  it("keeps guards bound to their explicit app secret", async () => {
+    const app1 = createApp();
+    await app1.register(jwt({ secret: SECRET }), { encapsulate: false });
+    const jwt1 = app1.getDecoration("jwt") as JWTNamespace;
+    const guard1 = createJWTGuard({ secret: SECRET });
+
+    const app2 = createApp();
+    await app2.register(jwt({ secret: "different-secret-that-is-long-enough" }), { encapsulate: false });
+    const jwt2 = app2.getDecoration("jwt") as JWTNamespace;
+
+    app1.get("/protected", { preHandler: guard1 }, (req, reply) => reply.json({ user: (req as any).user }));
+
+    const token1 = await jwt1.sign({ sub: "app1" });
+    const token2 = await jwt2.sign({ sub: "app2" });
+
+    expect((await app1.inject({ url: "/protected", headers: { authorization: `Bearer ${token1}` } })).status).toBe(200);
+    expect((await app1.inject({ url: "/protected", headers: { authorization: `Bearer ${token2}` } })).status).toBe(401);
+  });
+
   it("should protect routes with JWT", async () => {
     const app = createApp();
     await app.register(jwt({ secret: SECRET }), { encapsulate: false });

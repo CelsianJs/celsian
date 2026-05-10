@@ -3,6 +3,20 @@ import { describe, expect, it } from "vitest";
 import { MemoryRateLimitStore, rateLimit } from "../src/index.js";
 
 describe("@celsian/rate-limit", () => {
+  it("refuses ambiguous default keying instead of silently disabling limits", () => {
+    expect(() => rateLimit({ max: 1, window: 60_000 })).toThrow("requires either a keyGenerator or trustProxy:true");
+  });
+
+  it("uses proxy headers only when explicitly trusted", async () => {
+    const app = createApp();
+    await app.register(rateLimit({ max: 1, window: 60_000, trustProxy: true }), { encapsulate: false });
+    app.get("/api", (_req, reply) => reply.json({ ok: true }));
+
+    const headers = { "x-forwarded-for": "203.0.113.10" };
+    expect((await app.inject({ url: "/api", headers })).status).toBe(200);
+    expect((await app.inject({ url: "/api", headers })).status).toBe(429);
+  });
+
   it("should allow requests within limit", async () => {
     const app = createApp();
     await app.register(

@@ -231,6 +231,7 @@ export function securityPlugins(): PluginFunction[] {
     rateLimit({
       max: 100,
       window: 60_000,
+      keyGenerator: (req) => req.headers.get('x-forwarded-for') ?? 'local',
     }),
   ];
 }

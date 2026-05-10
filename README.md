@@ -13,6 +13,7 @@ TypeScript backend framework built on Web Standard APIs. Runs everywhere -- Node
 ```bash
 npx create-celsian my-api
 cd my-api
+npm install
 npm run dev
 ```
 
@@ -99,7 +100,7 @@ No hunting for middleware packages:
 await app.register(security(), { encapsulate: false });  // Helmet-style headers
 await app.register(cors({ origin: 'https://myapp.com' }));
 await app.register(csrf(), { encapsulate: false });      // CSRF token protection
-await app.register(rateLimit({ max: 100, window: 60_000 }));
+await app.register(rateLimit({ max: 100, window: 60_000, keyGenerator: req => req.headers.get("x-api-key") ?? "public" }));
 await app.register(compress());
 await app.register(jwt({ secret: process.env.JWT_SECRET! }));
 await app.register(openapi({ title: 'My API' }));

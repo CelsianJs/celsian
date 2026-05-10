@@ -21,7 +21,7 @@ export interface FlyAdapterOptions {
   regions?: string[];
   /** Node.js version (default: '20') */
   nodeVersion?: string;
-  /** Health check path (default: '/api/health') */
+  /** Health check path (default: '/health') */
   healthCheckPath?: string;
   /** Health check interval in ms (default: 10000) */
   healthCheckInterval?: number;
@@ -65,7 +65,7 @@ export interface DeployAdapter {
 export function flyAdapter(options: FlyAdapterOptions = {}): DeployAdapter {
   const nodeVersion = options.nodeVersion ?? "20";
   const primaryRegion = options.primaryRegion ?? "iad";
-  const healthCheckPath = options.healthCheckPath ?? "/api/health";
+  const healthCheckPath = options.healthCheckPath ?? "/health";
   const healthCheckInterval = options.healthCheckInterval ?? 10_000;
   const memoryMb = options.memoryMb ?? 256;
   const cpuKind = options.cpuKind ?? "shared";

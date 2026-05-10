@@ -36,6 +36,7 @@ export class MemoryRateLimitStore implements RateLimitStore {
         }
       }
     }, 60_000);
+    this.cleanupTimer.unref?.();
   }
 
   async increment(key: string, window: number): Promise<{ count: number; resetAt: number }> {
@@ -66,27 +67,14 @@ export class MemoryRateLimitStore implements RateLimitStore {
 let warnedNoKey = false;
 
 function createDefaultKeyGenerator(trustProxy: boolean): (req: CelsianRequest) => string {
-  if (trustProxy) {
-    return (req: CelsianRequest): string => {
-      return (
-        req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-        req.headers.get("x-real-ip") ??
-        `anonymous-${Date.now().toString(36)}`
-      );
-    };
+  if (!trustProxy) {
+    throw new Error(
+      "rateLimit() requires either a keyGenerator or trustProxy:true. Refusing to install a limiter that cannot identify clients.",
+    );
   }
-  // Without trustProxy and no custom keyGenerator, every request gets a unique key,
-  // effectively disabling rate limiting. Warn developers once.
-  return (_req: CelsianRequest): string => {
-    if (!warnedNoKey) {
-      warnedNoKey = true;
-      console.warn(
-        "[@celsian/rate-limit] WARNING: trustProxy is false and no custom keyGenerator was provided. " +
-          "Each request gets a unique key, so rate limiting is effectively disabled. " +
-          "Set trustProxy:true (behind a reverse proxy) or provide a custom keyGenerator.",
-      );
-    }
-    return `anonymous-${Date.now().toString(36)}`;
+
+  return (req: CelsianRequest): string => {
+    return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? req.headers.get("x-real-ip") ?? "unknown-proxy-client";
   };
 }
 

@@ -52,6 +52,7 @@ describe("flyAdapter", () => {
       const flyToml = readFileSync(join(TMP_DIR, "fly.toml"), "utf8");
       expect(flyToml).toContain("app = 'test-app'");
       expect(flyToml).toContain("primary_region = 'iad'");
+      expect(flyToml).toContain("path = '/health'");
     });
 
     it("uses the generated server entry in the Docker CMD", async () => {
