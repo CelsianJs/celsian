@@ -38,7 +38,7 @@ describe("Range request support in sendFile", () => {
     expect(response.status).toBe(200);
     const etag = response.headers.get("etag");
     expect(etag).toBeTruthy();
-    expect(etag).toMatch(/^"[a-f0-9]+"$/);
+    expect(etag).toMatch(/^"[a-z0-9]+-[a-z0-9]+-[a-z0-9.]+"$/);
   });
 
   it("should include Last-Modified header", async () => {

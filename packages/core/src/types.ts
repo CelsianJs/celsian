@@ -93,8 +93,10 @@ export interface CelsianReply {
 export interface SendFileOptions {
   /** Root directory for resolving relative file paths. Enables path traversal protection. */
   root?: string;
-  /** Pass the incoming request to enable Range request support (206 Partial Content). */
+  /** Pass the incoming request to enable Range request support (206 Partial Content) and conditional GET (304). */
   request?: Request;
+  /** File size threshold (bytes) above which a warning is logged. Default: 50MB. Set to 0 to disable. */
+  largeFileThreshold?: number;
 }
 
 // ─── Route Handler ───
