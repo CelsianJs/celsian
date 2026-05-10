@@ -623,6 +623,36 @@ export class CelsianApp {
     if (this.readyPromise) await this.readyPromise;
   }
 
+  // ─── Convenience: listen() ───
+
+  /**
+   * Start the server on the given port. Sugar for `serve(app, { port, ... })`.
+   *
+   * @param port - Port number to listen on (default: 3000)
+   * @param callback - Optional callback called when the server is ready
+   * @returns A handle with a `close()` method for graceful shutdown
+   *
+   * @example
+   * ```ts
+   * app.listen(3000, ({ port }) => console.log(`Running on ${port}`));
+   *
+   * // Or with await:
+   * const { close } = await app.listen(3000);
+   * ```
+   */
+  async listen(
+    port?: number | import("./serve.js").ServeOptions,
+    callback?: (info: { port: number; host: string }) => void,
+  ): Promise<import("./serve.js").ServeResult> {
+    const { serve } = await import("./serve.js");
+    const options: import("./serve.js").ServeOptions =
+      typeof port === "object" ? port : { port: port ?? 3000 };
+    if (callback && !options.onReady) {
+      options.onReady = callback;
+    }
+    return serve(this, options);
+  }
+
   // ─── Test Injection ───
 
   /**
