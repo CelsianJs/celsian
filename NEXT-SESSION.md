@@ -106,3 +106,19 @@ Verification:
 - `npx -y pnpm@9.15.0 exec vitest run packages/create-celsian/test/scaffolder.test.ts` → 14 tests passed
 - `npx -y pnpm@9.15.0 --filter create-celsian build` passed
 - `git diff --check` passed
+
+## 2026-05-10 — Registry smoke release follow-up
+
+Gold-standard re-review found that release automation had strong pre-publish tarball smoke but only manual post-publish `npm view` checks. Addressed locally:
+
+- Added `scripts/verify-registry-install.mjs` and `pnpm verify:registry` to install the published Celsian package set into a clean temp consumer, import public packages, verify installed CLI binaries, run a `create-celsian` scaffold smoke, and write `artifacts/registry-smoke.json`.
+- Release workflow now runs the registry smoke after Changesets actually publishes and uploads the smoke artifact with `if-no-files-found: error`.
+- README deployment wording now distinguishes adapter/runtime support from unqualified live-provider claims.
+
+Verification:
+- `npx -y pnpm@9.15.0 verify:publish` passed: 17 packed package artifacts, clean consumer install/import smoke
+- `node --check scripts/verify-registry-install.mjs` passed
+- `git diff --check` passed
+
+Not run:
+- `pnpm verify:registry` is post-publish only and needs freshly published npm versions to prove the real registry path.

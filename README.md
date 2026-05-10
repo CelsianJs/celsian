@@ -1,8 +1,8 @@
 # CelsianJS
 
-TypeScript backend framework built on Web Standard APIs. Runs everywhere -- Node.js, Bun, Deno, Cloudflare Workers, AWS Lambda, Vercel.
+TypeScript backend framework built on Web Standard APIs. Ships runtime adapters for Node.js, Bun, Deno, Cloudflare Workers, AWS Lambda, and Vercel.
 
-- **Multi-runtime** -- Write once, deploy to any JavaScript runtime. Built on `Request`/`Response`, not `req`/`res`.
+- **Multi-runtime** -- Write once for Web Standard `Request`/`Response`, then deploy with the adapter that matches your target runtime.
 - **Significantly faster than Express** -- Radix-tree router, zero-copy request building, pre-stringified error paths. 1.3x-1.7x faster across all scenarios.
 - **First-party batteries** -- Background tasks, cron, WebSocket, CORS, CSRF protection, security headers, DB analytics, rate limiting, JWT, caching, compression, and OpenAPI docs via core APIs plus first-party packages.
 - **Fastify-style plugin encapsulation** -- Scoped hooks and decorations by default. No accidental middleware leaks.
@@ -522,7 +522,7 @@ const body = await response.json();  // { hello: 'world' }
 
 ## Deployment
 
-Swap the entry point to deploy anywhere. See [Deployment Guide](docs/deployment.md) for full instructions.
+Swap the entry point for the JavaScript runtime you are deploying to. See [Deployment Guide](docs/deployment.md) for full instructions and provider-specific credential/config requirements.
 
 ```typescript
 serve(app, { port: 3000 });                              // Node / Bun / Deno
@@ -533,7 +533,7 @@ export default createVercelHandler(app);                  // Vercel Serverless
 export default createVercelEdgeHandler(app);              // Vercel Edge
 ```
 
-Fly.io and Railway adapters auto-generate deployment configs (fly.toml, Dockerfile, railway.json).
+Fly.io and Railway adapters auto-generate deployment configs (`fly.toml`, Dockerfile, `railway.json`). Adapter packages are covered by local generation/package smoke tests; live cloud deployment still depends on each provider's credentials and project configuration.
 
 ## Benchmark Results
 
