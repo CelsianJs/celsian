@@ -51,6 +51,39 @@ describe("app.listen()", () => {
 
   it("should default to port 3000 when no port given", async () => {
     const app = createApp();
-    expect(typeof app.listen).toBe("function");
+    app.get("/default", (_req, reply) => reply.json({ ok: true }));
+
+    // Port 3000 is commonly occupied in dev/CI, so we test the default
+    // wiring by observing that listen() attempts port 3000. If it binds
+    // successfully, verify via HTTP. If EADDRINUSE fires, the port number
+    // in the error itself proves the default was applied correctly.
+    interface ListenError extends Error { code?: string; port?: number }
+
+    const result = await new Promise<{ port: number } | { error: ListenError }>((resolve) => {
+      // Capture EADDRINUSE before it becomes an uncaught exception
+      const onError = (err: ListenError) => {
+        if (err.code === "EADDRINUSE") {
+          process.removeListener("uncaughtException", onError);
+          resolve({ error: err });
+        }
+      };
+      process.on("uncaughtException", onError);
+
+      app.listen(undefined, (info) => {
+        process.removeListener("uncaughtException", onError);
+        resolve({ port: info.port });
+      }).then((h) => {
+        handle = h;
+      });
+    });
+
+    if ("error" in result) {
+      // EADDRINUSE on port 3000 proves the default was applied
+      expect(result.error.port).toBe(3000);
+    } else {
+      expect(result.port).toBe(3000);
+      const response = await fetch("http://localhost:3000/default");
+      expect(response.status).toBe(200);
+    }
   });
 });

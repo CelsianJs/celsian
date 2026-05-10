@@ -12,15 +12,11 @@ export interface CompressOptions {
   encodings?: CompressionEncoding[];
   /** Brotli quality level 0-11 (default: 4 — good balance of speed and ratio) */
   brotliQuality?: number;
-  /** Gzip compression level 1-9 (default: 6) */
-  gzipLevel?: number;
 }
 
 const DEFAULT_THRESHOLD = 1024;
 const DEFAULT_ENCODINGS: CompressionEncoding[] = ["br", "gzip", "deflate"];
 const DEFAULT_BROTLI_QUALITY = 4;
-const DEFAULT_GZIP_LEVEL = 6;
-
 /**
  * Negotiate the best compression encoding from Accept-Encoding header.
  * Returns the first supported encoding found in the accept list,
@@ -85,6 +81,11 @@ function compressBody(
  * Response compression plugin supporting Brotli, Gzip, and Deflate.
  * Wraps `reply.json()`, `.send()`, and `.html()` to compress responses above threshold.
  *
+ * **Limitation**: `reply.stream()` is NOT compressed. Streams are typically
+ * binary/chunked data where the caller controls encoding, so automatic
+ * compression is intentionally skipped. If you need compressed streaming,
+ * pipe through a `CompressionStream` before passing to `reply.stream()`.
+ *
  * Brotli is preferred over gzip when both are accepted, as it provides
  * ~15-25% better compression ratios for text content.
  *
@@ -97,7 +98,6 @@ function compressBody(
  * await app.register(compress({
  *   threshold: 512,
  *   brotliQuality: 6,
- *   gzipLevel: 9,
  * }));
  *
  * // Gzip only (disable Brotli)
@@ -110,8 +110,6 @@ export function compress(options: CompressOptions = {}): PluginFunction {
   const threshold = options.threshold ?? DEFAULT_THRESHOLD;
   const encodings = options.encodings ?? DEFAULT_ENCODINGS;
   const brotliQuality = options.brotliQuality ?? DEFAULT_BROTLI_QUALITY;
-  // gzipLevel is reserved for future use when we switch to node:zlib for gzip too
-  const _gzipLevel = options.gzipLevel ?? DEFAULT_GZIP_LEVEL;
 
   return function compressPlugin(app) {
     const hook: HookHandler = (request: CelsianRequest, reply: CelsianReply) => {

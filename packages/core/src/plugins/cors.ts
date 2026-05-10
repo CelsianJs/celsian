@@ -88,6 +88,11 @@ export function cors(options: CORSOptions): PluginFunction {
           headers["access-control-max-age"] = String(opts.maxAge);
         }
 
+        // When origin is not wildcard, caches must key on the Origin header
+        if (allowOrigin !== "*") {
+          headers["vary"] = "origin";
+        }
+
         return new Response(null, { status: 204, headers });
       },
     });
@@ -101,6 +106,19 @@ export function cors(options: CORSOptions): PluginFunction {
       if (!allowOrigin) return;
 
       reply.header("access-control-allow-origin", allowOrigin);
+
+      // When origin is not wildcard, caches must key on the Origin header
+      if (allowOrigin !== "*") {
+        const existing = reply.headers["vary"];
+        if (existing) {
+          // Append Origin if not already present (case-insensitive check)
+          if (!/\borigin\b/i.test(existing)) {
+            reply.header("vary", `${existing}, Origin`);
+          }
+        } else {
+          reply.header("vary", "Origin");
+        }
+      }
 
       if (opts.credentials) {
         reply.header("access-control-allow-credentials", "true");

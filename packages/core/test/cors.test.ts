@@ -166,4 +166,88 @@ describe("CORS Plugin", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("access-control-allow-origin")).toBe("http://allowed.com");
   });
+
+  // ─── Vary: Origin for non-wildcard origins ───
+
+  it("should add Vary: Origin on preflight when origin is not wildcard", async () => {
+    const app = createApp({ security: false });
+    await app.register(cors({ origin: "http://allowed.com" }));
+    app.get("/test", (_req, reply) => reply.json({ ok: true }));
+
+    const response = await app.inject({
+      method: "OPTIONS",
+      url: "/test",
+      headers: { origin: "http://allowed.com" },
+    });
+    expect(response.status).toBe(204);
+    expect(response.headers.get("vary")).toMatch(/origin/i);
+  });
+
+  it("should add Vary: Origin on actual requests when origin is not wildcard", async () => {
+    const app = createApp({ security: false });
+    await app.register(cors({ origin: "http://allowed.com" }), { encapsulate: false });
+    app.get("/test", (_req, reply) => reply.json({ ok: true }));
+
+    const response = await app.inject({
+      url: "/test",
+      headers: { origin: "http://allowed.com" },
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("vary")).toMatch(/origin/i);
+  });
+
+  it("should NOT add Vary: Origin when origin is wildcard *", async () => {
+    const app = createApp({ security: false });
+    await app.register(cors({ origin: "*" }), { encapsulate: false });
+    app.get("/test", (_req, reply) => reply.json({ ok: true }));
+
+    const preflight = await app.inject({
+      method: "OPTIONS",
+      url: "/test",
+      headers: { origin: "http://example.com" },
+    });
+    expect(preflight.headers.get("vary")).toBeNull();
+
+    const actual = await app.inject({
+      url: "/test",
+      headers: { origin: "http://example.com" },
+    });
+    expect(actual.headers.get("vary")).toBeNull();
+  });
+
+  it("should add Vary: Origin for array origins on preflight and actual requests", async () => {
+    const app = createApp({ security: false });
+    await app.register(cors({ origin: ["http://a.com", "http://b.com"] }), { encapsulate: false });
+    app.get("/test", (_req, reply) => reply.json({ ok: true }));
+
+    const preflight = await app.inject({
+      method: "OPTIONS",
+      url: "/test",
+      headers: { origin: "http://a.com" },
+    });
+    expect(preflight.headers.get("vary")).toMatch(/origin/i);
+
+    const actual = await app.inject({
+      url: "/test",
+      headers: { origin: "http://b.com" },
+    });
+    expect(actual.headers.get("vary")).toMatch(/origin/i);
+  });
+
+  it("should append to existing Vary header without overwriting", async () => {
+    const app = createApp({ security: false });
+    await app.register(cors({ origin: "http://allowed.com" }), { encapsulate: false });
+    app.get("/test", (_req, reply) => {
+      reply.header("vary", "Accept-Encoding");
+      return reply.json({ ok: true });
+    });
+
+    const response = await app.inject({
+      url: "/test",
+      headers: { origin: "http://allowed.com" },
+    });
+    const vary = response.headers.get("vary") ?? "";
+    expect(vary).toMatch(/Accept-Encoding/);
+    expect(vary).toMatch(/Origin/i);
+  });
 });

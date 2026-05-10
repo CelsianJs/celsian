@@ -152,6 +152,11 @@ function extractZodProperties(shape: Record<string, unknown>): PropertyInfo[] {
  * Build a serializer function for an object with known properties.
  * The generated function avoids JSON.stringify's key enumeration by
  * iterating a fixed set of keys.
+ *
+ * **Key-stripping behavior**: Only properties declared in the schema are
+ * serialized. Any extra keys present on the data object are silently
+ * dropped — the same behavior as fast-json-stringify, but different from
+ * `JSON.stringify` which includes all enumerable own properties.
  */
 function buildObjectSerializer(properties: PropertyInfo[]): FastSerializer {
   // For each property, generate the key prefix string once (e.g. `"name":`)
