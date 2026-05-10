@@ -63,3 +63,23 @@ Remaining non-blocking review items:
 
 - Existing `pnpm lint` emits pre-existing warnings across examples/tests; release workflow runs it, but the repo's Biome configuration treats these as warnings rather than release-blocking errors.
 - Private platform packages/docs still need clearer wording if/when those packages become public-facing.
+
+## 2026-05-10 — Adapter Patch Release
+
+Published follow-up public OSS adapter patch after adapter release hardening:
+
+- `@celsian/adapter-fly@0.3.3`
+- `@celsian/adapter-railway@0.3.3`
+
+Pre-publish verification:
+
+- `npx -y pnpm@9.15.0 build`
+- `npx -y pnpm@9.15.0 test` → 77 files, 927 tests passed, 7 skipped
+- `npx -y pnpm@9.15.0 audit:release` → 0 known prod vulnerabilities
+- `bash scripts/verify-publish.sh` → 17 package artifacts checked
+- filtered publish dry-run for both adapter packages passed
+
+Post-publish verification:
+
+- `npm view @celsian/adapter-fly@0.3.3 version` → `0.3.3`
+- `npm view @celsian/adapter-railway@0.3.3 version` → `0.3.3`
