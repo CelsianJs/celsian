@@ -44,6 +44,21 @@
       "types": "./dist/plugins/analytics.d.ts",
       "import": "./dist/plugins/analytics.js",
       "default": "./dist/plugins/analytics.js"
+    },
+    "./jsx": {
+      "types": "./dist/jsx.d.ts",
+      "import": "./dist/jsx.js",
+      "default": "./dist/jsx.js"
+    },
+    "./jsx-runtime": {
+      "types": "./dist/jsx-runtime.d.ts",
+      "import": "./dist/jsx-runtime.js",
+      "default": "./dist/jsx-runtime.js"
+    },
+    "./jsx-dev-runtime": {
+      "types": "./dist/jsx-dev-runtime.d.ts",
+      "import": "./dist/jsx-dev-runtime.js",
+      "default": "./dist/jsx-dev-runtime.js"
     }
   },
   "files": [

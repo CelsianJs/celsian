@@ -5,6 +5,7 @@ export type {
   CelsianConfig,
   CelsianReply,
   CelsianRequest,
+  Child,
   CORSOptions,
   CookieOptions,
   DatabaseOptions,
@@ -26,6 +27,7 @@ export type {
   SecurityOptions,
   ServeOptions,
   ServeResult,
+  VNode,
 } from "@celsian/core";
 // Core
 export {
@@ -38,11 +40,16 @@ export {
   createReply,
   database,
   defineConfig,
+  Fragment,
   generateRequestId,
+  h,
   HttpError,
   loadConfig,
   openapi,
   parseCookies,
+  raw,
+  renderToDocument,
+  renderToString,
   Router,
   security,
   serializeCookie,
