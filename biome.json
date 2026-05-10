@@ -21,6 +21,10 @@
       "complexity": {
         "noForEach": "off",
         "noBannedTypes": "warn"
+      },
+      "correctness": {
+        "noUnusedImports": "error",
+        "noUnusedFunctionParameters": "error"
       }
     }
   },

@@ -3,7 +3,6 @@
 import type { CelsianApp } from "../packages/core/src/app.js";
 import { createApp } from "../packages/core/src/app.js";
 import { cors } from "../packages/core/src/plugins/cors.js";
-import { security } from "../packages/core/src/plugins/security.js";
 import type { HookHandler, PluginFunction } from "../packages/core/src/types.js";
 
 // Custom logging middleware that collects log entries

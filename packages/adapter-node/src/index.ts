@@ -36,7 +36,7 @@ export interface ThenAdapter {
 const nodeAdapter: ThenAdapter = {
   name: "node",
 
-  async buildEnd({ serverEntry, clientDir, staticDir }) {
+  async buildEnd() {
     // Generate a standalone server entry that:
     // 1. Imports the server bundle
     // 2. Sets up static file serving

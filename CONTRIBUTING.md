@@ -7,14 +7,16 @@ Thank you for your interest in contributing to CelsianJS. This guide covers setu
 ### Prerequisites
 
 - Node.js 20+
-- pnpm 9+
+- pnpm 9.15.0 (pinned by `packageManager`; use Corepack or `npx pnpm@9.15.0 ...`)
 
 ### Setup
 
 ```bash
 git clone https://github.com/CelsianJs/celsian.git
 cd celsian
-pnpm install
+corepack enable
+corepack prepare pnpm@9.15.0 --activate
+pnpm install --frozen-lockfile
 pnpm build
 pnpm test
 ```
@@ -49,6 +51,7 @@ packages/
 
 - **TypeScript** for all source code
 - **Biome** for linting and formatting: `pnpm lint` / `pnpm lint:fix`
+- CI runs `pnpm lint:ci`; selected high-signal warnings such as unused imports and unused function parameters are errors, while the existing `any` / non-null warning backlog remains visible but non-blocking until it can be reduced safely.
 - **2-space indentation**, no tabs
 - **No external runtime dependencies** in `@celsian/core` (depends only on `@celsian/schema`, an internal workspace package)
 - Use `CelsianError` or `HttpError` instead of bare `throw new Error()` in library code
@@ -88,7 +91,7 @@ packages/
 
 1. Fork the repository and create a feature branch from `main`
 2. Make your changes with clear, descriptive commits
-3. Ensure `pnpm build && pnpm test && pnpm lint` all pass
+3. Ensure `pnpm build && pnpm test && pnpm typecheck && pnpm lint:ci && pnpm verify:publish` all pass where practical
 4. Open a PR against `main` with:
    - A clear title describing the change
    - A description of what and why
