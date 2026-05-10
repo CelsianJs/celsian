@@ -13,7 +13,7 @@ import { createReply } from "./reply.js";
 import { buildRequest, buildRequestFast } from "./request.js";
 import { Router } from "./router.js";
 import { createEnqueue, type TaskDefinition, TaskRegistry, TaskWorker, type TaskWorkerOptions } from "./task.js";
-import { security } from "./plugins/security.js";
+import { buildSecurityHeaders, security } from "./plugins/security.js";
 import type {
   CelsianAppOptions,
   CelsianReply,
@@ -91,6 +91,9 @@ export class CelsianApp {
   private readonly cachedBodyLimit: number;
   private readonly cachedRequestTimeout: number;
 
+  // Pre-computed security headers for 404/405 responses (where onRequest hooks don't run)
+  private readonly errorResponseHeaders: Record<string, string>;
+
   constructor(private options: CelsianAppOptions = {}) {
     this.rootContext = new EncapsulationContext(null, options.prefix ?? "", this.router);
     this.pluginContext = this.rootContext.toPluginContext();
@@ -99,6 +102,17 @@ export class CelsianApp {
     this.hasLogger = !!options.logger;
     this.cachedBodyLimit = options.bodyLimit ?? 1_048_576;
     this.cachedRequestTimeout = options.requestTimeout ?? 30_000;
+
+    // Pre-compute security headers for error responses (404/405)
+    if (options.security !== false) {
+      const securityOpts = typeof options.security === "object" ? options.security : {};
+      this.errorResponseHeaders = {
+        ...CelsianApp.JSON_CONTENT_TYPE,
+        ...buildSecurityHeaders(securityOpts),
+      };
+    } else {
+      this.errorResponseHeaders = { ...CelsianApp.JSON_CONTENT_TYPE };
+    }
 
     // Logger setup
     if (options.logger === true) {
@@ -703,7 +717,7 @@ export class CelsianApp {
       if (this.router.hasPath(pathname)) {
         return new Response(CelsianApp.METHOD_NOT_ALLOWED_BODY, {
           status: 405,
-          headers: CelsianApp.JSON_CONTENT_TYPE,
+          headers: this.errorResponseHeaders,
         });
       }
       if (this.notFoundHandler) {
@@ -725,13 +739,13 @@ export class CelsianApp {
           console.error("[celsian]", error);
           return new Response(CelsianApp.NOT_FOUND_BODY, {
             status: 404,
-            headers: CelsianApp.JSON_CONTENT_TYPE,
+            headers: this.errorResponseHeaders,
           });
         }
       }
       return new Response(CelsianApp.NOT_FOUND_BODY, {
         status: 404,
-        headers: CelsianApp.JSON_CONTENT_TYPE,
+        headers: this.errorResponseHeaders,
       });
     }
 

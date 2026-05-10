@@ -25,65 +25,75 @@ export interface SecurityOptions {
   contentSecurityPolicy?: string | false;
 }
 
+/**
+ * Pre-compute security headers from options into a plain object.
+ * Used by both the onRequest hook and the app's pre-route error responses (404/405).
+ */
+export function buildSecurityHeaders(options: SecurityOptions = {}): Record<string, string> {
+  if (options.enabled === false) return {};
+
+  const headers: Record<string, string> = {};
+
+  if (options.contentTypeOptions !== false) {
+    headers["x-content-type-options"] = "nosniff";
+  }
+
+  const frame = options.frameOptions ?? "DENY";
+  if (frame !== false) {
+    headers["x-frame-options"] = frame;
+  }
+
+  if (options.xssProtection !== false) {
+    headers["x-xss-protection"] = "0";
+  }
+
+  const hsts = options.hsts ?? { maxAge: 31536000, includeSubDomains: true };
+  if (hsts !== false) {
+    let value = `max-age=${hsts.maxAge ?? 31536000}`;
+    if (hsts.includeSubDomains !== false) value += "; includeSubDomains";
+    if (hsts.preload) value += "; preload";
+    headers["strict-transport-security"] = value;
+  }
+
+  const referrer = options.referrerPolicy ?? "strict-origin-when-cross-origin";
+  if (referrer !== false) {
+    headers["referrer-policy"] = referrer;
+  }
+
+  const crossDomain = options.crossDomainPolicy ?? "none";
+  if (crossDomain !== false) {
+    headers["x-permitted-cross-domain-policies"] = crossDomain;
+  }
+
+  const dns = options.dnsPrefetchControl ?? "off";
+  if (dns !== false) {
+    headers["x-dns-prefetch-control"] = dns;
+  }
+
+  const download = options.downloadOptions ?? "noopen";
+  if (download !== false) {
+    headers["x-download-options"] = download;
+  }
+
+  const csp = options.contentSecurityPolicy ?? "default-src 'self'";
+  if (csp !== false) {
+    headers["content-security-policy"] = csp;
+  }
+
+  return headers;
+}
+
 export function security(options: SecurityOptions = {}): PluginFunction {
   return function securityPlugin(app) {
     // Allow disabling the entire plugin
     if (options.enabled === false) return;
 
+    // Pre-compute headers once at registration time
+    const securityHeaders = buildSecurityHeaders(options);
+
     const hook: HookHandler = (_request: CelsianRequest, reply: CelsianReply) => {
-      // X-Content-Type-Options
-      if (options.contentTypeOptions !== false) {
-        reply.header("x-content-type-options", "nosniff");
-      }
-
-      // X-Frame-Options
-      const frame = options.frameOptions ?? "DENY";
-      if (frame !== false) {
-        reply.header("x-frame-options", frame);
-      }
-
-      // X-XSS-Protection: send 0 to disable broken legacy filter
-      if (options.xssProtection !== false) {
-        reply.header("x-xss-protection", "0");
-      }
-
-      // Strict-Transport-Security
-      const hsts = options.hsts ?? { maxAge: 31536000, includeSubDomains: true };
-      if (hsts !== false) {
-        let value = `max-age=${hsts.maxAge ?? 31536000}`;
-        if (hsts.includeSubDomains !== false) value += "; includeSubDomains";
-        if (hsts.preload) value += "; preload";
-        reply.header("strict-transport-security", value);
-      }
-
-      // Referrer-Policy
-      const referrer = options.referrerPolicy ?? "strict-origin-when-cross-origin";
-      if (referrer !== false) {
-        reply.header("referrer-policy", referrer);
-      }
-
-      // X-Permitted-Cross-Domain-Policies
-      const crossDomain = options.crossDomainPolicy ?? "none";
-      if (crossDomain !== false) {
-        reply.header("x-permitted-cross-domain-policies", crossDomain);
-      }
-
-      // X-DNS-Prefetch-Control
-      const dns = options.dnsPrefetchControl ?? "off";
-      if (dns !== false) {
-        reply.header("x-dns-prefetch-control", dns);
-      }
-
-      // X-Download-Options
-      const download = options.downloadOptions ?? "noopen";
-      if (download !== false) {
-        reply.header("x-download-options", download);
-      }
-
-      // Content-Security-Policy (default: "default-src 'self'")
-      const csp = options.contentSecurityPolicy ?? "default-src 'self'";
-      if (csp !== false) {
-        reply.header("content-security-policy", csp);
+      for (const [key, value] of Object.entries(securityHeaders)) {
+        reply.header(key, value);
       }
     };
 

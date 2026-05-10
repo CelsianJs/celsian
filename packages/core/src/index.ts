@@ -36,7 +36,7 @@ export { withETag } from "./plugins/etag.js";
 export type { OpenAPIOptions } from "./plugins/openapi.js";
 export { openapi } from "./plugins/openapi.js";
 export type { SecurityOptions } from "./plugins/security.js";
-export { security } from "./plugins/security.js";
+export { buildSecurityHeaders, security } from "./plugins/security.js";
 export type { QueueBackend, QueueMessage } from "./queue.js";
 export { generateQueueId, MemoryQueue } from "./queue.js";
 export { createReply } from "./reply.js";
