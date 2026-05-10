@@ -243,6 +243,30 @@ export class CelsianApp {
     }
   }
 
+  /** Register a handler for ALL HTTP methods on a path. */
+  all<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void;
+  all<T extends string, TBody, TQuery>(
+    url: T,
+    options: RouteSchemaOptions<TBody, TQuery>,
+    handler: TypedSchemaHandler<ExtractRouteParams<T>>,
+  ): void;
+  all<T extends string>(
+    url: T,
+    handlerOrOpts: TypedRouteHandler<ExtractRouteParams<T>> | RouteSchemaOptions,
+    handler?: TypedSchemaHandler,
+  ): void {
+    const methods: import("./types.js").RouteMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
+    if (typeof handlerOrOpts === "function") {
+      for (const method of methods) {
+        this.pluginContext.route({ method, url, handler: handlerOrOpts as RouteHandler });
+      }
+    } else {
+      for (const method of methods) {
+        this._routeWithSchema(method, url, handlerOrOpts, handler!);
+      }
+    }
+  }
+
   /** Internal: register a route with schema options from the typed overload */
   private _routeWithSchema(
     method: import("./types.js").RouteMethod,
