@@ -3,7 +3,12 @@
 import type { HookHandler, PluginFunction } from "../types.js";
 
 export interface CORSOptions {
-  origin?: string | string[] | ((origin: string) => boolean);
+  /**
+   * Allowed origin(s). Required — no default wildcard.
+   * Pass a string, array of strings, or a function for dynamic matching.
+   * Use `"*"` only for truly public APIs with no credentials.
+   */
+  origin: string | string[] | ((origin: string) => boolean);
   methods?: string[];
   allowedHeaders?: string[];
   exposedHeaders?: string[];
@@ -11,8 +16,7 @@ export interface CORSOptions {
   maxAge?: number;
 }
 
-const DEFAULTS: Required<CORSOptions> = {
-  origin: "*",
+const DEFAULTS: Omit<Required<CORSOptions>, "origin"> = {
   methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE"],
   allowedHeaders: [],
   exposedHeaders: [],
@@ -33,7 +37,20 @@ function resolveOriginHeader(origin: string, opts: Required<CORSOptions>): strin
   return opts.origin === "*" && !opts.credentials ? "*" : origin;
 }
 
-export function cors(options: CORSOptions = {}): PluginFunction {
+export function cors(options: CORSOptions): PluginFunction {
+  if (!options || options.origin === undefined) {
+    throw new Error(
+      "[celsian] CORS origin is required. Pass an explicit origin (e.g. 'http://localhost:3000') " +
+        "or '*' for public APIs. Wildcard '*' is incompatible with credentials:true.",
+    );
+  }
+  if (options.origin === "*" && options.credentials) {
+    throw new Error(
+      "[celsian] CORS origin '*' is incompatible with credentials:true. " +
+        "Browsers will reject Set-Cookie headers when the CORS origin is a wildcard. " +
+        "Set origin to a specific value.",
+    );
+  }
   const opts = { ...DEFAULTS, ...options };
 
   return function corsPlugin(app) {

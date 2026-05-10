@@ -317,8 +317,8 @@ describe("CelsianApp", () => {
 
   it("should return 404 (not 405) for non-existent paths with CORS enabled", async () => {
     const { cors } = await import("../src/plugins/cors.js");
-    const app = createApp();
-    app.register(cors(), { encapsulate: false });
+    const app = createApp({ security: false });
+    app.register(cors({ origin: "*" }), { encapsulate: false });
     app.get("/exists", (_req, reply) => reply.json({ ok: true }));
 
     const response = await app.handle(new Request("http://localhost/nope"));

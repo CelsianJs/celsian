@@ -51,8 +51,9 @@ app.cron("cleanup-done-tasks", "5m", () => {
   if (cleaned > 0) console.log(`[cron] Cleaned ${cleaned} completed tasks`);
 });
 
-// ─── Middleware ───
-await app.register(cors({ origin: "*", credentials: true }), { encapsulate: false });
+// ─── Middleware (security headers enabled by default) ───
+const CORS_ORIGIN = process.env.CORS_ORIGIN ?? "http://localhost:3000";
+await app.register(cors({ origin: CORS_ORIGIN, credentials: true }), { encapsulate: false });
 
 // ─── REST: Health ───
 app.health();

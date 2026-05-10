@@ -1,13 +1,14 @@
-import { cors, createApp, security, serve } from "@celsian/core";
+import { cors, createApp, serve } from "@celsian/core";
+
+const CORS_ORIGIN = process.env.CORS_ORIGIN ?? "http://localhost:3000";
 
 const app = createApp({
   logger: true,
   trustProxy: true,
 });
 
-// Plugins
-await app.register(cors(), { encapsulate: false });
-await app.register(security(), { encapsulate: false });
+// Plugins (security headers are enabled by default)
+await app.register(cors({ origin: CORS_ORIGIN }), { encapsulate: false });
 
 // Health probes (for Docker HEALTHCHECK + orchestrators)
 app.health();

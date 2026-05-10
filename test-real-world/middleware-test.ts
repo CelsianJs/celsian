@@ -32,16 +32,14 @@ export function createRequestLogger() {
 // ─── App with security headers only (no CORS to avoid onSend bug) ───
 
 export function buildSecurityApp(): CelsianApp {
-  const app = createApp();
-
-  app.register(
-    security({
+  // Security headers are enabled by default, but we also register explicit options here
+  const app = createApp({
+    security: {
       contentTypeOptions: true,
       frameOptions: "DENY",
       hsts: { maxAge: 31536000, includeSubDomains: true },
-    }),
-    { encapsulate: false },
-  );
+    },
+  });
 
   app.get("/test", (_req, reply) => reply.json({ ok: true }));
   return app;
@@ -50,11 +48,11 @@ export function buildSecurityApp(): CelsianApp {
 // ─── App with CORS only ───
 
 export function buildCorsApp(options?: { corsOrigin?: string | string[] }): CelsianApp {
-  const app = createApp();
+  const app = createApp({ security: false });
 
   app.register(
     cors({
-      origin: options?.corsOrigin ?? "*",
+      origin: options?.corsOrigin ?? (() => true),
       credentials: true,
       maxAge: 3600,
     }),

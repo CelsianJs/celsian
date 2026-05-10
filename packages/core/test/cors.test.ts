@@ -3,9 +3,18 @@ import { createApp } from "../src/app.js";
 import { cors } from "../src/plugins/cors.js";
 
 describe("CORS Plugin", () => {
+  it("should require explicit origin configuration", () => {
+    expect(() => (cors as any)()).toThrow("CORS origin is required");
+    expect(() => (cors as any)({})).toThrow("CORS origin is required");
+  });
+
+  it("should reject wildcard origin with credentials", () => {
+    expect(() => cors({ origin: "*", credentials: true })).toThrow("incompatible with credentials:true");
+  });
+
   it("should handle OPTIONS preflight with 204", async () => {
-    const app = createApp();
-    await app.register(cors());
+    const app = createApp({ security: false });
+    await app.register(cors({ origin: "*" }));
     app.get("/api/data", (_req, reply) => reply.json({ ok: true }));
 
     const response = await app.inject({
@@ -18,8 +27,8 @@ describe("CORS Plugin", () => {
   });
 
   it("should set CORS headers on regular requests", async () => {
-    const app = createApp();
-    await app.register(cors());
+    const app = createApp({ security: false });
+    await app.register(cors({ origin: "*" }));
     app.get("/api/data", (_req, reply) => reply.json({ ok: true }));
 
     const response = await app.inject({
@@ -30,7 +39,7 @@ describe("CORS Plugin", () => {
   });
 
   it("should respect specific origin", async () => {
-    const app = createApp();
+    const app = createApp({ security: false });
     await app.register(cors({ origin: "http://allowed.com" }));
     app.get("/api/data", (_req, reply) => reply.json({ ok: true }));
 
@@ -43,7 +52,7 @@ describe("CORS Plugin", () => {
   });
 
   it("should support array of origins", async () => {
-    const app = createApp();
+    const app = createApp({ security: false });
     await app.register(
       cors({
         origin: ["http://a.com", "http://b.com"],
@@ -60,7 +69,7 @@ describe("CORS Plugin", () => {
   });
 
   it("should support origin function", async () => {
-    const app = createApp();
+    const app = createApp({ security: false });
     await app.register(
       cors({
         origin: (o) => o.endsWith(".example.com"),
@@ -77,8 +86,8 @@ describe("CORS Plugin", () => {
   });
 
   it("should include credentials header when enabled", async () => {
-    const app = createApp();
-    await app.register(cors({ credentials: true }));
+    const app = createApp({ security: false });
+    await app.register(cors({ origin: "http://example.com", credentials: true }));
     app.get("/test", (_req, reply) => reply.json({ ok: true }));
 
     const response = await app.inject({
@@ -90,8 +99,8 @@ describe("CORS Plugin", () => {
   });
 
   it("should include max-age on preflight", async () => {
-    const app = createApp();
-    await app.register(cors({ maxAge: 3600 }));
+    const app = createApp({ security: false });
+    await app.register(cors({ origin: "*", maxAge: 3600 }));
     app.get("/test", (_req, reply) => reply.json({ ok: true }));
 
     const response = await app.inject({
@@ -103,8 +112,8 @@ describe("CORS Plugin", () => {
   });
 
   it("should include allowed methods", async () => {
-    const app = createApp();
-    await app.register(cors({ methods: ["GET", "POST"] }));
+    const app = createApp({ security: false });
+    await app.register(cors({ origin: "*", methods: ["GET", "POST"] }));
     app.get("/test", (_req, reply) => reply.json({ ok: true }));
 
     const response = await app.inject({
@@ -118,7 +127,7 @@ describe("CORS Plugin", () => {
   // ─── BUG-12: CORS should not leak headers to disallowed origins ───
 
   it("should not leak CORS headers for disallowed origins on preflight", async () => {
-    const app = createApp();
+    const app = createApp({ security: false });
     await app.register(cors({ origin: "http://allowed.com" }));
     app.get("/test", (_req, reply) => reply.json({ ok: true }));
 
@@ -133,7 +142,7 @@ describe("CORS Plugin", () => {
   });
 
   it("should not set CORS headers on actual requests from disallowed origins", async () => {
-    const app = createApp();
+    const app = createApp({ security: false });
     await app.register(cors({ origin: "http://allowed.com" }), { encapsulate: false });
     app.get("/test", (_req, reply) => reply.json({ ok: true }));
 
@@ -146,7 +155,7 @@ describe("CORS Plugin", () => {
   });
 
   it("should apply CORS headers to actual requests from allowed origins", async () => {
-    const app = createApp();
+    const app = createApp({ security: false });
     await app.register(cors({ origin: "http://allowed.com" }), { encapsulate: false });
     app.get("/test", (_req, reply) => reply.json({ ok: true }));
 

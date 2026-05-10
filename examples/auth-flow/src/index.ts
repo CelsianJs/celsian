@@ -3,7 +3,7 @@
 
 import { randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
-import { cors, createApp, HttpError, security, serve } from "@celsian/core";
+import { cors, createApp, HttpError, serve } from "@celsian/core";
 import { createJWTGuard, type JWTNamespace, jwt } from "@celsian/jwt";
 import { rateLimit } from "@celsian/rate-limit";
 import { z } from "zod";
@@ -45,12 +45,13 @@ function generateId(): string {
 }
 
 // ─── App Setup ───
+const CORS_ORIGIN = process.env.CORS_ORIGIN ?? "http://localhost:3000";
+
 export function createAuthApp() {
   const app = createApp({ logger: true });
 
-  // Register plugins
-  app.register(cors(), { encapsulate: false });
-  app.register(security(), { encapsulate: false });
+  // Register plugins (security headers are enabled by default)
+  app.register(cors({ origin: CORS_ORIGIN }), { encapsulate: false });
   app.register(jwt({ secret: JWT_SECRET }), { encapsulate: false });
   app.register(rateLimit({ max: 100, window: 60_000 }), { encapsulate: false });
 

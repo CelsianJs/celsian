@@ -46,8 +46,9 @@ function hashPassword(password: string): string {
 
 const app = createApp({ logger: true });
 
-// Plugins
-await app.register(cors({ origin: "*" }), { encapsulate: false });
+// Plugins (security headers enabled by default)
+const CORS_ORIGIN = process.env.CORS_ORIGIN ?? "http://localhost:3000";
+await app.register(cors({ origin: CORS_ORIGIN }), { encapsulate: false });
 await app.register(jwt({ secret: JWT_SECRET }));
 await app.register(
   openapi({ title: "SaaS Demo API", version: "1.0.0", description: "CelsianJS SaaS backend in one file" }),
