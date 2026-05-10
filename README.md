@@ -323,7 +323,7 @@ curl -X POST http://localhost:3000/login \
 | `@celsian/jwt` | JWT sign/verify plugin with route guard helper |
 | `@celsian/cache` | KV store, response caching, session management |
 | `@celsian/rate-limit` | Fixed-window rate limiter with pluggable store |
-| `@celsian/compress` | Response compression (gzip/deflate via CompressionStream) |
+| `@celsian/compress` | Response compression (Brotli, gzip, deflate) |
 | `@celsian/queue-redis` | Redis-backed task queue for production |
 
 ### Deployment Adapters
