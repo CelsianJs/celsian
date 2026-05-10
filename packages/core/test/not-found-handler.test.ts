@@ -47,6 +47,39 @@ describe("setNotFoundHandler", () => {
   });
 });
 
+describe("spaFallback", () => {
+  it("should serve custom HTML for unmatched routes via handler", async () => {
+    const app = createApp({ security: false });
+    app.get("/api/data", (_req, reply) => reply.json({ ok: true }));
+
+    app.spaFallback((_req, reply) => {
+      return reply.html("<html><body><div id='app'></div></body></html>");
+    });
+
+    // API route still works
+    const apiRes = await app.handle(new Request("http://localhost/api/data"));
+    expect(apiRes.status).toBe(200);
+    const data = await apiRes.json();
+    expect(data.ok).toBe(true);
+
+    // Unknown routes get the SPA HTML
+    const spaRes = await app.handle(new Request("http://localhost/dashboard"));
+    expect(spaRes.status).toBe(200);
+    const body = await spaRes.text();
+    expect(body).toContain("<div id='app'></div>");
+  });
+
+  it("should still return 405 for wrong method with SPA fallback", async () => {
+    const app = createApp({ security: false });
+    app.get("/api/users", (_req, reply) => reply.json([]));
+
+    app.spaFallback((_req, reply) => reply.html("<html></html>"));
+
+    const response = await app.handle(new Request("http://localhost/api/users", { method: "DELETE" }));
+    expect(response.status).toBe(405);
+  });
+});
+
 describe("setErrorHandler", () => {
   it("should use custom error handler", async () => {
     const app = createApp();

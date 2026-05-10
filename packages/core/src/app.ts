@@ -293,6 +293,35 @@ export class CelsianApp {
     this.notFoundHandler = handler;
   }
 
+  /**
+   * SPA fallback: serve an HTML file (or custom handler) for any unmatched route.
+   * Useful for single-page applications where the client router handles paths.
+   *
+   * @param handlerOrPath - A file path to an HTML file, or a custom RouteHandler.
+   *   When a string is given, the file is served with `text/html` content type.
+   *
+   * @example
+   * ```ts
+   * // Serve index.html for all unmatched routes
+   * app.spaFallback('./dist/index.html');
+   *
+   * // Or with a custom handler
+   * app.spaFallback((req, reply) => {
+   *   return reply.html('<html><body>App</body></html>');
+   * });
+   * ```
+   */
+  spaFallback(handlerOrPath: string | RouteHandler): void {
+    if (typeof handlerOrPath === "string") {
+      const filePath = handlerOrPath;
+      this.notFoundHandler = async (_req, reply) => {
+        return reply.sendFile(filePath);
+      };
+    } else {
+      this.notFoundHandler = handlerOrPath;
+    }
+  }
+
   /** Set a custom error handler that receives thrown errors before the default handler. */
   setErrorHandler(
     handler: (error: Error, request: CelsianRequest, reply: CelsianReply) => Response | Promise<Response>,
