@@ -40,6 +40,8 @@ export { security } from "./plugins/security.js";
 export type { QueueBackend, QueueMessage } from "./queue.js";
 export { generateQueueId, MemoryQueue } from "./queue.js";
 export { createReply } from "./reply.js";
+export type { FastSerializer } from "./reply.js";
+export { compileSerializer } from "./serializer.js";
 export { buildRequest } from "./request.js";
 export { Router } from "./router.js";
 export type { ServeOptions, ServeResult } from "./serve.js";

@@ -173,6 +173,8 @@ export interface InternalRoute {
   kind: "serverless" | "hot" | "task";
   schema?: RouteOptions["schema"];
   hooks: RouteHooks;
+  /** Pre-compiled JSON serializer built from schema.response at registration time */
+  serializer?: ((data: unknown) => string) | null;
 }
 
 export interface RouteHooks {

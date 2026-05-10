@@ -1,5 +1,6 @@
 // @celsian/core — Radix tree router with URL pattern matching
 
+import { compileSerializer } from "./serializer.js";
 import type { InternalRoute, RouteHandler, RouteHooks, RouteMatch, RouteMethod } from "./types.js";
 
 interface RadixNode {
@@ -71,6 +72,17 @@ export class Router {
       }
     }
 
+    // Pre-compile response serializer from schema.response (if defined)
+    // Uses the 200 status schema by default, falling back to the first defined status
+    let serializer: InternalRoute["serializer"] = null;
+    if (schema?.response) {
+      const responseSchemas = schema.response as Record<number, unknown>;
+      const targetSchema = responseSchemas[200] ?? Object.values(responseSchemas)[0];
+      if (targetSchema) {
+        serializer = compileSerializer(targetSchema);
+      }
+    }
+
     const route: InternalRoute = {
       method,
       url,
@@ -83,6 +95,7 @@ export class Router {
         preSerialization: hooks?.preSerialization ?? [],
         onSend: hooks?.onSend ?? [],
       },
+      serializer,
     };
 
     node.routes.set(method, route);

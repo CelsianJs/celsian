@@ -691,7 +691,7 @@ export class CelsianApp {
       (celsianRequest as Record<string, unknown>).requestId = requestId;
     }
 
-    const reply = createReply();
+    const reply = createReply(match.route.serializer);
 
     // Apply reply decorations (skip loop if none registered)
     if (this.rootContext.replyDecorations.size > 0) {
