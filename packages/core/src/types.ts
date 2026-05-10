@@ -97,6 +97,8 @@ export interface SendFileOptions {
   request?: Request;
   /** File size threshold (bytes) above which a warning is logged. Default: 50MB. Set to 0 to disable. */
   largeFileThreshold?: number;
+  /** Set the Cache-Control header. Pass a string like `"public, max-age=31536000"` or `false` to skip. */
+  cacheControl?: string | false;
 }
 
 // ─── Route Handler ───

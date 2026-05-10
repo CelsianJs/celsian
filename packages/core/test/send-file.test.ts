@@ -144,3 +144,50 @@ describe("reply.download", () => {
     expect(response.status).toBe(404);
   });
 });
+
+describe("sendFile cacheControl option", () => {
+  it("should set Cache-Control header when cacheControl is a string", async () => {
+    const app = createApp();
+    app.get("/file", async (_req, reply) =>
+      reply.sendFile(join(TMP_DIR, "hello.txt"), { cacheControl: "public, max-age=31536000" }),
+    );
+
+    const response = await app.handle(new Request("http://localhost/file"));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("public, max-age=31536000");
+  });
+
+  it("should not set Cache-Control header when cacheControl is false", async () => {
+    const app = createApp();
+    app.get("/file", async (_req, reply) =>
+      reply.sendFile(join(TMP_DIR, "hello.txt"), { cacheControl: false }),
+    );
+
+    const response = await app.handle(new Request("http://localhost/file"));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBeNull();
+  });
+
+  it("should not set Cache-Control header when cacheControl is omitted", async () => {
+    const app = createApp();
+    app.get("/file", async (_req, reply) =>
+      reply.sendFile(join(TMP_DIR, "hello.txt")),
+    );
+
+    const response = await app.handle(new Request("http://localhost/file"));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBeNull();
+  });
+
+  it("should set Cache-Control on download responses", async () => {
+    const app = createApp();
+    app.get("/dl", async (_req, reply) =>
+      reply.download(join(TMP_DIR, "hello.txt"), "export.txt", { cacheControl: "no-cache" }),
+    );
+
+    const response = await app.handle(new Request("http://localhost/dl"));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-cache");
+    expect(response.headers.get("content-disposition")).toBe('attachment; filename="export.txt"');
+  });
+});

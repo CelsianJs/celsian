@@ -332,6 +332,11 @@ async function serveFile(
       ...replyHeaders,
     };
 
+    // Apply Cache-Control header if specified
+    if (options?.cacheControl !== undefined && options.cacheControl !== false) {
+      baseHeaders["cache-control"] = options.cacheControl;
+    }
+
     // ─── Range request handling ───
     const rangeHeader = options?.request?.headers.get("range");
     if (rangeHeader && options?.request) {
