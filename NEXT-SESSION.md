@@ -83,3 +83,14 @@ Post-publish verification:
 
 - `npm view @celsian/adapter-fly@0.3.3 version` → `0.3.3`
 - `npm view @celsian/adapter-railway@0.3.3 version` → `0.3.3`
+
+## 2026-05-10 — README install accuracy follow-up
+
+Fresh product-review found that the manual install path showed `@celsian/core` while the middleware example used first-party packages from separate package names. Addressed locally:
+
+- README now distinguishes the core router/runtime install from first-party battery packages.
+- Middleware example explicitly installs/imports `@celsian/rate-limit`, `@celsian/jwt`, and `@celsian/compress`.
+- Top-level positioning now says first-party batteries instead of implying every plugin exports from core.
+
+Verification:
+- `git diff --check`

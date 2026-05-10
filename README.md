@@ -4,7 +4,7 @@ TypeScript backend framework built on Web Standard APIs. Runs everywhere -- Node
 
 - **Multi-runtime** -- Write once, deploy to any JavaScript runtime. Built on `Request`/`Response`, not `req`/`res`.
 - **Significantly faster than Express** -- Radix-tree router, zero-copy request building, pre-stringified error paths. 1.3x-1.7x faster across all scenarios.
-- **Built-in everything** -- Background tasks, cron, WebSocket, CORS, CSRF protection, security headers, DB analytics, rate limiting, JWT, caching, compression, OpenAPI docs.
+- **First-party batteries** -- Background tasks, cron, WebSocket, CORS, CSRF protection, security headers, DB analytics, rate limiting, JWT, caching, compression, and OpenAPI docs via core APIs plus first-party packages.
 - **Fastify-style plugin encapsulation** -- Scoped hooks and decorations by default. No accidental middleware leaks.
 - **Schema-agnostic validation** -- Auto-detects Zod, TypeBox, or Valibot. No config, no adapters.
 
@@ -17,7 +17,7 @@ npm install
 npm run dev
 ```
 
-Or manually:
+Or manually for the core router/runtime:
 
 ```bash
 npm install @celsian/core
@@ -94,9 +94,20 @@ Benchmarked on Node.js v22, Apple Silicon, 10 connections for 10 seconds per sce
 
 ### Built-In Everything
 
-No hunting for middleware packages:
+Celsian's batteries ship as first-party packages. Install the extras you use:
+
+```bash
+npm install @celsian/core @celsian/rate-limit @celsian/jwt @celsian/compress
+```
 
 ```typescript
+import { createApp, security, cors, csrf, openapi } from '@celsian/core';
+import { rateLimit } from '@celsian/rate-limit';
+import { jwt } from '@celsian/jwt';
+import { compress } from '@celsian/compress';
+
+const app = createApp();
+
 await app.register(security(), { encapsulate: false });  // Helmet-style headers
 await app.register(cors({ origin: 'https://myapp.com' }));
 await app.register(csrf(), { encapsulate: false });      // CSRF token protection
