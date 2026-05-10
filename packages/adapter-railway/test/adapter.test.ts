@@ -48,8 +48,27 @@ describe("railwayAdapter", () => {
       expect(existsSync(join(TMP_DIR, ".env.example"))).toBe(true);
 
       const railwayJson = JSON.parse(readFileSync(join(TMP_DIR, "railway.json"), "utf8"));
-      expect(railwayJson.deploy.startCommand).toBe("node dist/server/entry.js");
+      expect(railwayJson.deploy.startCommand).toBe("node 'dist/server/entry.js'");
       expect(railwayJson.deploy.healthcheckPath).toBe("/api/health");
+    });
+
+    it("uses the generated server entry in Procfile, railway.json, and Dockerfile", async () => {
+      const adapter = railwayAdapter({ dockerfile: true });
+      await adapter.buildEnd({
+        serverEntry: "dist/index.js",
+        clientDir: "dist/client",
+        staticDir: "dist/static",
+        outDir: TMP_DIR,
+      });
+
+      const procfile = readFileSync(join(TMP_DIR, "Procfile"), "utf8");
+      const railwayJson = JSON.parse(readFileSync(join(TMP_DIR, "railway.json"), "utf8"));
+      const dockerfile = readFileSync(join(TMP_DIR, "Dockerfile"), "utf8");
+
+      expect(procfile).toBe("web: node 'dist/index.js'\n");
+      expect(railwayJson.deploy.startCommand).toBe("node 'dist/index.js'");
+      expect(dockerfile).toContain('CMD ["node","dist/index.js"]');
+      expect(dockerfile).not.toContain("dist/server/entry.js");
     });
   });
 });

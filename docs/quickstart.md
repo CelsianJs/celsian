@@ -4,7 +4,7 @@ Get a CelsianJS API running from zero to deployed in under 10 minutes.
 
 ## Prerequisites
 
-- Node.js 18+ (or Bun, or Deno)
+- Node.js 20+ (or Bun, or Deno)
 - npm, pnpm, or yarn
 
 ## Scaffold a Project

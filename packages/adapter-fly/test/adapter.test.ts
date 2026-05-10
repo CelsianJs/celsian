@@ -53,5 +53,19 @@ describe("flyAdapter", () => {
       expect(flyToml).toContain("app = 'test-app'");
       expect(flyToml).toContain("primary_region = 'iad'");
     });
+
+    it("uses the generated server entry in the Docker CMD", async () => {
+      const adapter = flyAdapter();
+      await adapter.buildEnd({
+        serverEntry: "dist/index.js",
+        clientDir: "dist/client",
+        staticDir: "dist/static",
+        outDir: TMP_DIR,
+      });
+
+      const dockerfile = readFileSync(join(TMP_DIR, "Dockerfile"), "utf8");
+      expect(dockerfile).toContain('CMD ["node","dist/index.js"]');
+      expect(dockerfile).not.toContain("dist/server/entry.js");
+    });
   });
 });

@@ -39,3 +39,27 @@ pnpm audit:release
 - `pnpm audit --audit-level=moderate` still reports advisories through private example dev tooling (`examples/cloudflare-worker > wrangler@3.114.17` via `undici@5.29.0` and `esbuild@0.17.19`).
 - This is intentionally not force-overridden: Wrangler 4 requires Node 22+, while the repo still advertises Node `>=20`.
 - Use `pnpm audit:release` / CI production audit for publish blocking until the example's Node/Wrangler policy is changed explicitly.
+
+## 2026-05-10 — Adapter Release Gate Follow-up
+
+Product-review recheck after public publish found no P0s, but did find Celsian deployment adapter and release gate P1s. Addressed:
+
+- Fly adapter now threads the compiler-provided `serverEntry` into the generated Dockerfile `CMD` instead of hardcoding `dist/server/entry.js`.
+- Railway adapter now threads `serverEntry` into `Procfile`, `railway.json.deploy.startCommand`, and optional Dockerfile `CMD`.
+- Added adapter tests for non-default `dist/index.js` server entries.
+- Release workflow now runs build, typecheck, lint, test, production audit, and workspace-reference artifact verification before Changesets publish.
+- Quickstart Node prerequisite now matches package engines (`Node.js 20+`).
+
+Verification run with pnpm 9.15.0 via `npx -y pnpm@9.15.0` because global pnpm is 8.11.0 and Corepack is currently failing signature-key verification locally:
+
+- Adapter focused tests: 8 passed
+- `pnpm build` passed
+- `pnpm test` passed: 77 files, 927 tests passed, 7 skipped
+- `pnpm audit:release` passed: 0 known prod vulnerabilities
+- `bash scripts/verify-publish.sh` passed: 17 package artifacts checked, no unresolved `workspace:` refs
+- `git diff --check` passed
+
+Remaining non-blocking review items:
+
+- Existing `pnpm lint` emits pre-existing warnings across examples/tests; release workflow runs it, but the repo's Biome configuration treats these as warnings rather than release-blocking errors.
+- Private platform packages/docs still need clearer wording if/when those packages become public-facing.
