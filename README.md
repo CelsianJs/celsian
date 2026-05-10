@@ -236,13 +236,13 @@ Supports `className`/`htmlFor` mapping, style objects, boolean attributes, void 
 | **Hooks** | 8-hook lifecycle (onRequest through onResponse), route-level hooks |
 | **Plugins** | Scoped encapsulation, app/request/reply decorators |
 | **Validation** | Zod, TypeBox, Valibot auto-detect; body, querystring, params schemas |
-| **Reply** | json, html, stream, redirect, sendFile, download, cookies, 9 error helpers, JSX SSR |
+| **Reply** | json, html, stream, redirect, sendFile (Range/ETag/304), download, cookies, 9 error helpers, JSX SSR |
 | **Security** | Helmet-style headers, CORS, CSRF protection, JWT, fixed-window rate limiting |
 | **Background** | Task queue with retries, cron scheduling, Redis queue backend |
 | **Real-time** | WebSocket with broadcast and connection management |
 | **Database** | Connection pool plugin, transactions, query analytics, Server-Timing |
 | **Caching** | Response cache, session management (KV store) |
-| **Infra** | Compression, OpenAPI 3.1 + Swagger UI, structured logging, inject() testing |
+| **Infra** | Brotli/gzip/deflate compression, OpenAPI 3.1 + Swagger UI, structured logging, inject() testing |
 | **Deploy** | Node, Bun, Deno, Workers, Lambda, Vercel, Fly.io, Railway, graceful shutdown |
 
 ## Core Concepts
@@ -307,6 +307,46 @@ reply.tooManyRequests();              // 429
 // Cookies + chaining
 reply.cookie('session', token, { httpOnly: true, secure: true });
 return reply.status(201).header('x-custom', 'value').json({ id: '1' });
+```
+
+#### File Serving with Range Requests
+
+`sendFile` and `download` support Range requests (HTTP 206), conditional GET (304), ETag, and Last-Modified headers. Pass `options.request` to enable these features:
+
+```typescript
+app.get('/files/:name', async (req, reply) => {
+  return reply.sendFile(req.params.name, {
+    root: './uploads',         // Resolve relative to this directory (with traversal protection)
+    request: req,              // Enable Range requests + conditional GET (304)
+    cacheControl: 'public, max-age=3600',  // Set Cache-Control header
+  });
+});
+
+// Download with Range support (for resumable downloads)
+app.get('/export/:id', async (req, reply) => {
+  return reply.download(`./data/${req.params.id}.csv`, 'export.csv', {
+    request: req,
+  });
+});
+```
+
+Supported Range formats: `bytes=0-499`, `bytes=500-`, `bytes=-500`, and multi-range (`bytes=0-499, 1000-1499`). Invalid ranges return 416 Range Not Satisfiable.
+
+#### Compression with Brotli
+
+The compression plugin prefers Brotli over gzip when the client supports it, providing better compression ratios for text content:
+
+```typescript
+import { compress } from '@celsian/compress';
+
+// Brotli + gzip + deflate (default)
+await app.register(compress());
+
+// Custom Brotli quality (0-11, default 4)
+await app.register(compress({ brotliQuality: 6 }));
+
+// Gzip/deflate only (disable Brotli)
+await app.register(compress({ encodings: ['gzip', 'deflate'] }));
 ```
 
 ### Error Handling
