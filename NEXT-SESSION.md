@@ -122,3 +122,14 @@ Verification:
 
 Not run:
 - `pnpm verify:registry` is post-publish only and needs freshly published npm versions to prove the real registry path.
+
+## 2026-05-10 — PR CI package-smoke follow-up
+
+Gold-standard re-review found the release workflow ran publish-artifact smoke, but PR CI did not. Addressed locally:
+
+- `.github/workflows/test.yml` now has read-only permissions and concurrency cancellation.
+- Added a PR CI `package-smoke` job that builds and runs `pnpm verify:publish` so packed-package consumer smoke is exercised before release.
+
+Verification:
+- `npx -y pnpm@9.15.0 verify:publish` passed: 17 packed package artifacts, clean consumer install/import smoke
+- `git diff --check` passed
