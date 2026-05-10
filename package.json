@@ -14,11 +14,12 @@
     "release": "changeset publish --provenance",
     "bench": "pnpm --filter celsian-benchmarks exec tsx run.ts",
     "test:bench": "CELSIAN_INCLUDE_BENCH=1 vitest run packages/cache/test/bench.test.ts",
-    "verify:publish": "scripts/verify-publish.sh",
+    "verify:publish": "pnpm assert:release-private && scripts/verify-publish.sh",
     "audit:release": "pnpm audit --prod --audit-level=moderate",
     "setup:pnpm": "corepack enable && corepack prepare pnpm@9.15.0 --activate",
     "lint:ci": "biome ci .",
-    "verify:registry": "node scripts/verify-registry-install.mjs"
+    "verify:registry": "node scripts/verify-registry-install.mjs",
+    "assert:release-private": "node scripts/assert-release-private.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.9",

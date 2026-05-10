@@ -5,6 +5,21 @@ All notable changes to CelsianJS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.x] - 2026-05-10
+
+### Release status
+
+- Current published package line uses mixed `0.3.x` versions managed by Changesets. Root changelog entries below summarize the line; package-specific release notes remain in Changesets and npm metadata.
+
+### Added
+
+- Package publish smoke verification for packed artifacts and post-publish npm registry installs.
+- CI package-smoke job and private release assertions for platform/edge-router/example packages.
+
+### Changed
+
+- Release verification now fails if private deployment-platform packages or examples are accidentally made publishable.
+
 ## [0.2.0] - 2026-03-26
 
 ### Added

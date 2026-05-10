@@ -31,6 +31,7 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+      - run: pnpm assert:release-private
       - run: pnpm build
       - run: pnpm test
       - run: pnpm typecheck
@@ -48,6 +49,7 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+      - run: pnpm assert:release-private
       - run: pnpm build
 
       - name: Verify publish artifacts
