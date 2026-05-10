@@ -94,3 +94,15 @@ Fresh product-review found that the manual install path showed `@celsian/core` w
 
 Verification:
 - `git diff --check`
+
+## 2026-05-10 — Scaffold install determinism follow-up
+
+Fresh PM/gold-standard re-review found two local trust gaps: `create-celsian` templates still floated generated dependencies to `latest`, and local release verification was easy to run with a stale global pnpm. Addressed locally:
+
+- `create-celsian` basic/full/REST/RPC templates now pin generated Celsian package ranges to the current `^0.3.6` release line instead of `latest`.
+- README now calls out the repo-pinned `pnpm@9.15.0` workflow and recommends `npm run setup:pnpm` or `npx -y pnpm@9.15.0 ...` when Corepack/global pnpm is stale.
+
+Verification:
+- `npx -y pnpm@9.15.0 exec vitest run packages/create-celsian/test/scaffolder.test.ts` → 14 tests passed
+- `npx -y pnpm@9.15.0 --filter create-celsian build` passed
+- `git diff --check` passed

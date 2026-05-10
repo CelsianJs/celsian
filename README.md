@@ -8,6 +8,18 @@ TypeScript backend framework built on Web Standard APIs. Runs everywhere -- Node
 - **Fastify-style plugin encapsulation** -- Scoped hooks and decorations by default. No accidental middleware leaks.
 - **Schema-agnostic validation** -- Auto-detects Zod, TypeBox, or Valibot. No config, no adapters.
 
+## Local pnpm note
+
+This monorepo is pinned to `pnpm@9.15.0`. For local release verification, prefer:
+
+```bash
+npm run setup:pnpm
+# or, if Corepack is unavailable locally:
+npx -y pnpm@9.15.0 <script>
+```
+
+CI and release gates should use the pinned package manager version, not an older global pnpm.
+
 ## Quick Start
 
 ```bash

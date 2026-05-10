@@ -10,7 +10,7 @@ export const restApiTemplate = {
         start: "node dist/index.js",
       },
       dependencies: {
-        celsian: "latest",
+        celsian: "^0.3.6",
         "@sinclair/typebox": "^0.34.0",
       },
       devDependencies: {
