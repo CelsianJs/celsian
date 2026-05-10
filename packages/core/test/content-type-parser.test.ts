@@ -95,4 +95,108 @@ describe("addContentTypeParser", () => {
     const body = await xmlResponse.json();
     expect(body.body).toEqual({ type: "yaml", text: "key: value" });
   });
+
+  it("should override built-in JSON parser when registered", async () => {
+    const app = createApp();
+
+    app.addContentTypeParser("application/json", async (request) => {
+      const text = await request.text();
+      return { customParsed: true, data: JSON.parse(text) };
+    });
+
+    app.post("/data", (req, reply) => reply.json({ body: req.parsedBody }));
+
+    const response = await app.handle(
+      new Request("http://localhost/data", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key: "value" }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.body).toEqual({ customParsed: true, data: { key: "value" } });
+  });
+
+  it("should handle binary content types with arrayBuffer", async () => {
+    const app = createApp();
+
+    app.addContentTypeParser("application/x-protobuf", async (request) => {
+      const buffer = await request.arrayBuffer();
+      return { format: "protobuf", byteLength: buffer.byteLength };
+    });
+
+    app.post("/binary", (req, reply) => reply.json({ body: req.parsedBody }));
+
+    const binaryData = new Uint8Array([0x08, 0x96, 0x01]);
+    const response = await app.handle(
+      new Request("http://localhost/binary", {
+        method: "POST",
+        headers: { "content-type": "application/x-protobuf" },
+        body: binaryData,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.body).toEqual({ format: "protobuf", byteLength: 3 });
+  });
+
+  it("should handle msgpack content type", async () => {
+    const app = createApp();
+
+    app.addContentTypeParser("application/msgpack", async (request) => {
+      const buffer = await request.arrayBuffer();
+      return { format: "msgpack", size: buffer.byteLength };
+    });
+
+    app.post("/msgpack", (req, reply) => reply.json({ body: req.parsedBody }));
+
+    const response = await app.handle(
+      new Request("http://localhost/msgpack", {
+        method: "POST",
+        headers: { "content-type": "application/msgpack" },
+        body: new Uint8Array([0x82, 0xa1, 0x61, 0x01]),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.body.format).toBe("msgpack");
+  });
+});
+
+describe("removeContentTypeParser", () => {
+  it("should remove a registered parser", async () => {
+    const app = createApp();
+
+    app.addContentTypeParser("application/xml", async (request) => {
+      return { xml: await request.text() };
+    });
+
+    expect(app.hasContentTypeParser("application/xml")).toBe(true);
+    expect(app.removeContentTypeParser("application/xml")).toBe(true);
+    expect(app.hasContentTypeParser("application/xml")).toBe(false);
+  });
+
+  it("should return false when removing non-existent parser", () => {
+    const app = createApp();
+    expect(app.removeContentTypeParser("application/xml")).toBe(false);
+  });
+});
+
+describe("hasContentTypeParser", () => {
+  it("should return true for registered parser", () => {
+    const app = createApp();
+    app.addContentTypeParser("application/xml", async (request) => {
+      return await request.text();
+    });
+    expect(app.hasContentTypeParser("application/xml")).toBe(true);
+  });
+
+  it("should return false for unregistered parser", () => {
+    const app = createApp();
+    expect(app.hasContentTypeParser("application/xml")).toBe(false);
+  });
 });

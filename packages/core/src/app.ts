@@ -350,9 +350,61 @@ export class CelsianApp {
 
   // ─── Content-Type Parsers ───
 
-  /** Register a custom body parser for a content-type (exact or prefix match). */
+  /**
+   * Register a custom body parser for a content-type (exact or prefix match).
+   * Custom parsers take priority over built-in parsers for JSON, form-data, and text.
+   *
+   * @param contentType - MIME type to match (e.g. 'application/xml', 'application/x-protobuf')
+   * @param parser - Async function receiving the raw Request and returning parsed data
+   *
+   * @example
+   * ```ts
+   * // XML parser
+   * app.addContentTypeParser('application/xml', async (request) => {
+   *   const text = await request.text();
+   *   return parseXML(text);
+   * });
+   *
+   * // Protocol Buffers parser
+   * app.addContentTypeParser('application/x-protobuf', async (request) => {
+   *   const buffer = await request.arrayBuffer();
+   *   return MyMessage.decode(new Uint8Array(buffer));
+   * });
+   *
+   * // MessagePack parser
+   * app.addContentTypeParser('application/msgpack', async (request) => {
+   *   const buffer = await request.arrayBuffer();
+   *   return decode(new Uint8Array(buffer));
+   * });
+   *
+   * // Override built-in JSON parser
+   * app.addContentTypeParser('application/json', async (request) => {
+   *   const text = await request.text();
+   *   return customJsonParse(text);
+   * });
+   * ```
+   */
   addContentTypeParser(contentType: string, parser: (request: Request) => Promise<unknown>): void {
     this.contentTypeParsers.set(contentType, parser);
+  }
+
+  /**
+   * Remove a previously registered custom content-type parser.
+   *
+   * @param contentType - The MIME type to remove the parser for
+   * @returns true if the parser was found and removed, false otherwise
+   */
+  removeContentTypeParser(contentType: string): boolean {
+    return this.contentTypeParsers.delete(contentType);
+  }
+
+  /**
+   * Check if a custom parser is registered for a content-type.
+   *
+   * @param contentType - The MIME type to check
+   */
+  hasContentTypeParser(contentType: string): boolean {
+    return this.contentTypeParsers.has(contentType);
   }
 
   // ─── Task System ───
