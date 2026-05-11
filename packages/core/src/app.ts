@@ -1145,6 +1145,14 @@ export class CelsianApp {
     });
   }
 
+  private mergeErrorHeaders(response: Response, reply: CelsianReply): Response {
+    return this.mergeReplyHeaders(
+      this.mergeReplyHeaders(response, this.errorResponseHeaders, false),
+      reply.headers,
+      false,
+    );
+  }
+
   private async readBodyBytes(request: CelsianRequest, bodyLimit: number): Promise<ArrayBuffer> {
     const bytes = await request.arrayBuffer();
     if (bodyLimit > 0 && bytes.byteLength > bodyLimit) {
@@ -1172,7 +1180,7 @@ export class CelsianApp {
     if (this.errorHandler) {
       try {
         const result = await this.errorHandler(error, request, reply);
-        if (result instanceof Response) return result;
+        if (result instanceof Response) return this.mergeErrorHeaders(result, reply);
       } catch (handlerError) {
         console.error("[celsian]", handlerError);
         // Fall through to hooks / default
@@ -1183,7 +1191,7 @@ export class CelsianApp {
       try {
         const result = await handler(error, request, reply);
         if (result instanceof Response) {
-          return result;
+          return this.mergeErrorHeaders(result, reply);
         }
       } catch (hookError) {
         console.error("[celsian]", hookError);
@@ -1192,17 +1200,23 @@ export class CelsianApp {
     }
 
     if (error instanceof ValidationError) {
-      return new Response(JSON.stringify(error.toJSON()), {
-        status: 400,
-        headers: { "content-type": "application/json; charset=utf-8" },
-      });
+      return this.mergeErrorHeaders(
+        new Response(JSON.stringify(error.toJSON()), {
+          status: 400,
+          headers: this.errorResponseHeaders,
+        }),
+        reply,
+      );
     }
 
     if (error instanceof HttpError) {
-      return new Response(JSON.stringify(error.toJSON()), {
-        status: error.statusCode,
-        headers: { "content-type": "application/json; charset=utf-8" },
-      });
+      return this.mergeErrorHeaders(
+        new Response(JSON.stringify(error.toJSON()), {
+          status: error.statusCode,
+          headers: this.errorResponseHeaders,
+        }),
+        reply,
+      );
     }
 
     const status = (error as { statusCode?: number }).statusCode ?? 500;
@@ -1220,10 +1234,13 @@ export class CelsianApp {
       body.stack = error.stack;
     }
 
-    return new Response(JSON.stringify(body), {
-      status,
-      headers: { "content-type": "application/json; charset=utf-8" },
-    });
+    return this.mergeErrorHeaders(
+      new Response(JSON.stringify(body), {
+        status,
+        headers: this.errorResponseHeaders,
+      }),
+      reply,
+    );
   }
 }
 

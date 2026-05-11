@@ -24,6 +24,7 @@ export class RedisQueue implements QueueBackend {
   private pendingKey: string; // LIST — pending messages
   private inflightKey: string; // HASH — in-flight messages by id
   private delayedKey: string; // SORTED SET — delayed messages (score = availableAt)
+  private inflightDeadlinesKey: string; // SORTED SET — in-flight message ids (score = visibility deadline)
 
   constructor(options: RedisQueueOptions = {}) {
     if (options.client) {
@@ -42,6 +43,7 @@ export class RedisQueue implements QueueBackend {
     this.pendingKey = `${this.prefix}:pending`;
     this.inflightKey = `${this.prefix}:inflight`;
     this.delayedKey = `${this.prefix}:delayed`;
+    this.inflightDeadlinesKey = `${this.prefix}:inflight:deadlines`;
   }
 
   async connect(): Promise<void> {
@@ -66,7 +68,8 @@ export class RedisQueue implements QueueBackend {
   async pop(): Promise<QueueMessage | null> {
     await this.connect();
 
-    // First, move any delayed messages that are now available
+    // First, make expired in-flight messages visible again, then move delayed messages that are now available
+    await this.promoteExpiredInflight();
     await this.promoteDelayed();
 
     // Pop from pending list (non-blocking)
@@ -75,15 +78,21 @@ export class RedisQueue implements QueueBackend {
 
     const message: QueueMessage = JSON.parse(raw);
 
-    // Track in-flight with expiry
-    await this.redis.hset(this.inflightKey, message.id, raw);
+    // Track in-flight and its visibility deadline. If the worker crashes before ack/nack,
+    // a future pop() will re-queue the message once this deadline passes.
+    const visibilityDeadline = Date.now() + this.visibilityTimeout;
+    await this.redis
+      .pipeline()
+      .hset(this.inflightKey, message.id, raw)
+      .zadd(this.inflightDeadlinesKey, visibilityDeadline, message.id)
+      .exec();
 
     return message;
   }
 
   async ack(id: string): Promise<void> {
     await this.connect();
-    await this.redis.hdel(this.inflightKey, id);
+    await this.redis.pipeline().hdel(this.inflightKey, id).zrem(this.inflightDeadlinesKey, id).exec();
   }
 
   async nack(id: string, delay = 1000): Promise<void> {
@@ -96,7 +105,7 @@ export class RedisQueue implements QueueBackend {
     message.availableAt = Date.now() + delay;
 
     // Remove from in-flight
-    await this.redis.hdel(this.inflightKey, id);
+    await this.redis.pipeline().hdel(this.inflightKey, id).zrem(this.inflightDeadlinesKey, id).exec();
 
     // Re-queue with delay
     const serialized = JSON.stringify(message);
@@ -109,11 +118,39 @@ export class RedisQueue implements QueueBackend {
 
   async size(): Promise<number> {
     await this.connect();
+    await this.promoteExpiredInflight();
     const [pendingLen, delayedLen] = await Promise.all([
       this.redis.llen(this.pendingKey),
       this.redis.zcard(this.delayedKey),
     ]);
     return pendingLen + delayedLen;
+  }
+
+  /** Move expired in-flight messages back to the pending list */
+  private async promoteExpiredInflight(): Promise<void> {
+    const now = Date.now();
+    const expiredIds = await this.redis.zrangebyscore(this.inflightDeadlinesKey, 0, now);
+    if (expiredIds.length === 0) return;
+
+    for (const id of expiredIds) {
+      await this.redis.eval(
+        `
+        local raw = redis.call("HGET", KEYS[1], ARGV[1])
+        redis.call("ZREM", KEYS[2], ARGV[1])
+        if not raw then
+          return 0
+        end
+        redis.call("HDEL", KEYS[1], ARGV[1])
+        redis.call("LPUSH", KEYS[3], raw)
+        return 1
+        `,
+        3,
+        this.inflightKey,
+        this.inflightDeadlinesKey,
+        this.pendingKey,
+        id,
+      );
+    }
   }
 
   /** Move delayed messages whose availableAt has passed to the pending list */
@@ -142,6 +179,6 @@ export class RedisQueue implements QueueBackend {
   /** Flush all queue data (for testing) */
   async flush(): Promise<void> {
     await this.connect();
-    await this.redis.del(this.pendingKey, this.inflightKey, this.delayedKey);
+    await this.redis.del(this.pendingKey, this.inflightKey, this.inflightDeadlinesKey, this.delayedKey);
   }
 }

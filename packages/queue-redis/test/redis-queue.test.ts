@@ -141,6 +141,35 @@ describeWithRedis("RedisQueue", () => {
     expect(msg2?.id).toBe("msg-delayed");
   });
 
+  it("should make unacked messages visible again after visibility timeout", async () => {
+    queue = new RedisQueue({
+      url: REDIS_URL,
+      prefix: "celsian:test:queue",
+      visibilityTimeout: 25,
+    });
+    await queue.flush();
+
+    await queue.push({
+      id: "msg-visible-again",
+      taskName: "test-task",
+      input: {},
+      attempt: 0,
+      maxRetries: 3,
+      createdAt: Date.now(),
+      availableAt: 0,
+    });
+
+    const first = await queue.pop();
+    expect(first?.id).toBe("msg-visible-again");
+    expect(await queue.pop()).toBeNull();
+
+    await new Promise((r) => setTimeout(r, 40));
+
+    const second = await queue.pop();
+    expect(second?.id).toBe("msg-visible-again");
+    expect(second?.attempt).toBe(0);
+  });
+
   it("should count delayed messages in size", async () => {
     await queue.push({
       id: "msg-d1",

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
+import { HttpError } from "../src/errors.js";
 
 describe("CelsianApp", () => {
   it("should handle GET requests", async () => {
@@ -144,6 +145,61 @@ describe("CelsianApp", () => {
     expect(response.status).toBe(500);
     const body = await response.json();
     expect(body.error).toBe("Something went wrong");
+  });
+
+  it("should preserve default security headers on thrown error responses", async () => {
+    const app = createApp();
+    app.get("/error", () => {
+      throw new Error("boom");
+    });
+
+    const response = await app.handle(new Request("http://localhost/error"));
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("x-frame-options")).toBe("DENY");
+    expect(response.headers.get("content-security-policy")).toBe("default-src 'self'");
+  });
+
+  it("should preserve default security headers on HTTP error responses", async () => {
+    const app = createApp();
+    app.get("/forbidden", () => {
+      throw new HttpError(403, "nope");
+    });
+
+    const response = await app.handle(new Request("http://localhost/forbidden"));
+
+    expect(response.status).toBe(403);
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("x-frame-options")).toBe("DENY");
+    expect(response.headers.get("content-security-policy")).toBe("default-src 'self'");
+  });
+
+  it("should preserve default security headers on validation error responses", async () => {
+    const app = createApp();
+    const bodySchema = {
+      safeParse() {
+        return { success: false, error: { issues: [{ message: "invalid", path: ["name"] }] } };
+      },
+      parse(input: unknown) {
+        return input;
+      },
+    };
+
+    app.post("/users", { schema: { body: bodySchema } }, (_req, reply) => reply.json({ ok: true }));
+
+    const response = await app.handle(
+      new Request("http://localhost/users", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: 123 }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("x-frame-options")).toBe("DENY");
+    expect(response.headers.get("content-security-policy")).toBe("default-src 'self'");
   });
 
   it("should run onError hooks", async () => {

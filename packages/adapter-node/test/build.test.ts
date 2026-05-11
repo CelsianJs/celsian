@@ -36,5 +36,7 @@ describe("nodeAdapter buildEnd", () => {
     expect(generated).toContain("createServer");
     expect(generated).toContain("decodeURIComponent");
     expect(generated).toContain("badRequest");
+    expect(generated).toContain("getSetCookieHeaders");
+    expect(generated).toContain("createReadStream");
   });
 });

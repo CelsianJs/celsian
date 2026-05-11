@@ -1,6 +1,8 @@
 // @celsian/adapter-node — Standalone Node.js server adapter
 
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { once } from "node:events";
+import { createReadStream } from "node:fs";
+import { mkdir, stat, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { dirname, extname, join, resolve } from "node:path";
 import type { CelsianApp } from "@celsian/core";
@@ -43,8 +45,10 @@ const nodeAdapter: ThenAdapter = {
     // 3. Starts node:http server
 
     const entryCode = `
+import { once } from 'node:events';
 import { createServer } from 'node:http';
-import { readFile, stat } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { stat } from 'node:fs/promises';
 import { join, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -93,9 +97,8 @@ async function tryStaticFile(pathname, dirs) {
     try {
       const s = await stat(filePath);
       if (s.isFile()) {
-        const content = await readFile(filePath);
         const ext = extname(filePath);
-        return { content, mime: MIME_TYPES[ext] ?? 'application/octet-stream' };
+        return { filePath, mime: MIME_TYPES[ext] ?? 'application/octet-stream' };
       }
     } catch {}
   }
@@ -115,7 +118,7 @@ const server = createServer(async (req, res) => {
   if (staticResult) {
     res.setHeader('content-type', staticResult.mime);
     res.setHeader('cache-control', 'public, max-age=31536000, immutable');
-    res.end(staticResult.content);
+    await streamFileToResponse(staticResult.filePath, res);
     return;
   }
 
@@ -137,22 +140,50 @@ const server = createServer(async (req, res) => {
   // Handle with CelsianApp
   const response = await (typeof app.handle === 'function' ? app.handle(webRequest) : app.fetch(webRequest));
 
-  // Write response
+  await writeWebResponse(res, response);
+});
+
+function getSetCookieHeaders(headers) {
+  return headers.getSetCookie?.() ?? [];
+}
+
+async function writeWebResponse(res, response) {
   res.statusCode = response.status;
+
   for (const [key, value] of response.headers.entries()) {
+    if (key.toLowerCase() === 'set-cookie') continue;
     res.setHeader(key, value);
+  }
+
+  const cookies = getSetCookieHeaders(response.headers);
+  if (cookies.length > 0) {
+    res.setHeader('set-cookie', cookies);
   }
 
   if (response.body) {
     const reader = response.body.getReader();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      res.write(value);
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!res.write(value)) await once(res, 'drain');
+      }
+    } finally {
+      reader.releaseLock();
     }
   }
   res.end();
-});
+}
+
+async function streamFileToResponse(filePath, res) {
+  await new Promise((resolve, reject) => {
+    const stream = createReadStream(filePath);
+    stream.on('error', reject);
+    res.on('error', reject);
+    res.on('finish', resolve);
+    stream.pipe(res);
+  });
+}
 
 server.listen(PORT, HOST, () => {
   console.log(\`[celsian] Server running at http://\${HOST}:\${PORT}\`);
@@ -221,11 +252,10 @@ export function serve(app: CelsianApp, options: NodeAdapterOptions = {}): void {
         try {
           const s = await stat(filePath);
           if (s.isFile()) {
-            const content = await readFile(filePath);
             const ext = extname(filePath);
             res.setHeader("content-type", MIME_TYPES[ext] ?? "application/octet-stream");
             res.setHeader("cache-control", "public, max-age=31536000, immutable");
-            res.end(content);
+            await streamFileToResponse(filePath, res);
             return;
           }
         } catch {
@@ -279,7 +309,13 @@ export async function writeWebResponse(res: ServerResponse, response: Response):
   res.statusCode = response.status;
 
   for (const [key, value] of response.headers.entries()) {
+    if (key.toLowerCase() === "set-cookie") continue;
     res.setHeader(key, value);
+  }
+
+  const cookies = getSetCookieHeaders(response.headers);
+  if (cookies.length > 0) {
+    res.setHeader("set-cookie", cookies);
   }
 
   if (response.body) {
@@ -288,11 +324,25 @@ export async function writeWebResponse(res: ServerResponse, response: Response):
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        res.write(value);
+        if (!res.write(value)) await once(res, "drain");
       }
     } finally {
       reader.releaseLock();
     }
   }
   res.end();
+}
+
+function getSetCookieHeaders(headers: Headers): string[] {
+  return (headers as Headers & { getSetCookie?: () => string[] }).getSetCookie?.() ?? [];
+}
+
+async function streamFileToResponse(filePath: string, res: ServerResponse): Promise<void> {
+  await new Promise<void>((resolvePromise, reject) => {
+    const stream = createReadStream(filePath);
+    stream.on("error", reject);
+    res.on("error", reject);
+    res.on("finish", resolvePromise);
+    stream.pipe(res);
+  });
 }

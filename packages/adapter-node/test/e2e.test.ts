@@ -130,6 +130,26 @@ describe("E2E: Full Stack Integration", () => {
   // Allow `app` reference in tests (closure captures it from beforeAll)
   // Note: app is local to beforeAll but task/session tests work via HTTP.
 
+  // ─── Adapter Response Bridging ───
+
+  it("writeWebResponse preserves multiple Set-Cookie headers", async () => {
+    const headers = new Headers();
+    headers.append("set-cookie", "a=1; Path=/; HttpOnly");
+    headers.append("set-cookie", "b=2; Path=/; HttpOnly");
+    const response = new Response(null, { headers });
+    const res = {
+      statusCode: 0,
+      setHeader: vi.fn(),
+      write: vi.fn(() => true),
+      end: vi.fn(),
+    };
+
+    await writeWebResponse(res as never, response);
+
+    expect(res.setHeader).toHaveBeenCalledWith("set-cookie", ["a=1; Path=/; HttpOnly", "b=2; Path=/; HttpOnly"]);
+    expect(res.end).toHaveBeenCalled();
+  });
+
   // ─── Basic Routes ───
 
   it("GET /api/health returns 200", async () => {
@@ -230,13 +250,14 @@ describe("E2E: Full Stack Integration", () => {
     expect(createRes.status).toBe(200);
     const cookie = createRes.headers.get("set-cookie");
     expect(cookie).toContain("sid=");
+    if (!cookie) throw new Error("Expected session Set-Cookie header");
 
     const createData = await createRes.json();
     expect(createData.sessionId).toBeTruthy();
 
     // Load session with cookie
     const loadRes = await fetch(url("/api/session"), {
-      headers: { cookie: cookie! },
+      headers: { cookie },
     });
     expect(loadRes.status).toBe(200);
     const loadData = await loadRes.json();
