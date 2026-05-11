@@ -3,7 +3,7 @@
 ## Current State
 - **Branch**: `audit-hardening`
 - **Tests**: 953 passed / 8 skipped (79 Vitest files) plus packed CLI/generated-app smoke coverage in `pnpm verify:publish`.
-- **Release gates checked this pass**: `pnpm test`, `pnpm typecheck`, and `pnpm verify:publish` refreshed after the latest handoff cleanup; prior `pnpm build`, `pnpm lint`, and `pnpm audit:release` evidence remains recorded below.
+- **Release gates checked this pass**: `pnpm test`, `pnpm build`, `pnpm typecheck`, `pnpm lint:ci`, `pnpm verify:publish`, and `pnpm audit:release` all refreshed after the latest handoff cleanup.
 - **Audit policy**: release/CI audit now uses production dependency scope (`pnpm audit --prod --audit-level=moderate`) so private example dev tooling such as `examples/cloudflare-worker` Wrangler is not a release blocker.
 
 ## What Was Done
@@ -22,6 +22,9 @@ Verification:
 - `npx -y pnpm@9.15.0 test` passed: 79 files, 953 passed / 8 skipped.
 - `npx -y pnpm@9.15.0 typecheck` passed with `tsc -b --noEmit --pretty false`.
 - `npx -y pnpm@9.15.0 verify:publish` passed: private/public metadata assertions, 17 packed artifacts, clean consumer install/import, and generated app build smoke.
+- `npx -y pnpm@9.15.0 build` passed.
+- `npx -y pnpm@9.15.0 lint:ci` passed with 181 known warnings and no errors.
+- `npx -y pnpm@9.15.0 audit:release` passed with no known production vulnerabilities.
 
 ## What Remains
 
