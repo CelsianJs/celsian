@@ -6,7 +6,7 @@ Code-side hardening sprint work is wrapped for CelsianJS.
 
 Current head:
 
-- `main@68e5a0e`
+- `main@9d00f30`
 - Working tree clean at final audit.
 
 Released public registry state:
@@ -16,8 +16,8 @@ Released public registry state:
 
 Latest verified gates:
 
-- GitHub Test `25652679840` passed on `main@68e5a0e`.
-- GitHub Release `25652679829` passed on `main@68e5a0e`.
+- GitHub Test `25654463958` passed on `main@9d00f30`.
+- GitHub Release `25654463954` passed on `main@9d00f30`.
 - Registry consumer smoke verified `@celsian/core@0.3.16` applies global `security()` headers to matched routes, framework 404s, and framework 405s.
 
 Important fix landed during wrap:
