@@ -9,7 +9,7 @@
     "test:watch": "vitest",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -b --noEmit --pretty false",
     "changeset": "changeset",
     "release": "changeset publish --provenance",
     "bench": "pnpm --filter celsian-benchmarks exec tsx run.ts",

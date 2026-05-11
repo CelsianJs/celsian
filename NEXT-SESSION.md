@@ -3,7 +3,7 @@
 ## Current State
 - **Branch**: `audit-hardening`
 - **Tests**: 925 passing, 7 skipped (77 Vitest files) plus release smoke coverage in `test/smoke.test.ts`.
-- **Release gates checked this pass**: `pnpm test`, `pnpm build`, `pnpm exec tsc --noEmit --pretty false`, `pnpm lint`, `pnpm verify:publish`, and `pnpm audit:release` all complete successfully.
+- **Release gates checked this pass**: `pnpm test`, `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm verify:publish`, and `pnpm audit:release` all complete successfully.
 - **Audit policy**: release/CI audit now uses production dependency scope (`pnpm audit --prod --audit-level=moderate`) so private example dev tooling such as `examples/cloudflare-worker` Wrangler is not a release blocker.
 
 ## What Was Done
@@ -29,7 +29,7 @@
 cd celsian
 pnpm test
 pnpm build
-pnpm exec tsc --noEmit --pretty false
+pnpm typecheck
 pnpm lint
 pnpm verify:publish
 pnpm audit:release
