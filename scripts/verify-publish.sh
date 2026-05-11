@@ -39,7 +39,9 @@ check_required_package_file() {
   local pkg_name="$2"
   local required_path="$3"
 
-  if ! tar -tf "$tarball" | grep -Fxq "package/$required_path"; then
+  local file_list="$PACK_DIR/${pkg_name//\//-}.files.txt"
+  tar -tf "$tarball" > "$file_list"
+  if ! grep -Fxq "package/$required_path" "$file_list"; then
     echo "ERROR: $pkg_name packed tarball is missing $required_path"
     return 1
   fi
