@@ -1,6 +1,6 @@
 {
   "name": "@celsian/core",
-  "version": "0.3.3",
+  "version": "0.3.13",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -64,5 +64,23 @@
   },
   "engines": {
     "node": ">=20"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CelsianJs/celsian.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/CelsianJs/celsian#readme",
+  "bugs": {
+    "url": "https://github.com/CelsianJs/celsian/issues"
+  },
+  "description": "CelsianJS core HTTP framework runtime",
+  "keywords": [
+    "celsian",
+    "http",
+    "framework",
+    "typescript",
+    "server"
+  ],
+  "sideEffects": false
 }

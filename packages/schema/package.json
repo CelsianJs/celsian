@@ -1,6 +1,6 @@
 {
   "name": "@celsian/schema",
-  "version": "0.3.0",
+  "version": "0.3.13",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -39,5 +39,23 @@
   },
   "engines": {
     "node": ">=20"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CelsianJs/celsian.git",
+    "directory": "packages/schema"
+  },
+  "homepage": "https://github.com/CelsianJs/celsian#readme",
+  "bugs": {
+    "url": "https://github.com/CelsianJs/celsian/issues"
+  },
+  "description": "Schema adapter utilities for CelsianJS validation",
+  "keywords": [
+    "celsian",
+    "schema",
+    "validation",
+    "typebox",
+    "zod"
+  ],
+  "sideEffects": false
 }

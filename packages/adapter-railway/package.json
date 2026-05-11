@@ -1,6 +1,6 @@
 {
   "name": "@celsian/adapter-railway",
-  "version": "0.3.1",
+  "version": "0.3.13",
   "description": "CelsianJS adapter for Railway — generates Procfile, Dockerfile, and health check config",
   "type": "module",
   "license": "MIT",
@@ -28,5 +28,21 @@
   },
   "engines": {
     "node": ">=20"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CelsianJs/celsian.git",
+    "directory": "packages/adapter-railway"
+  },
+  "homepage": "https://github.com/CelsianJs/celsian#readme",
+  "bugs": {
+    "url": "https://github.com/CelsianJs/celsian/issues"
+  },
+  "keywords": [
+    "celsian",
+    "railway",
+    "adapter",
+    "deployment"
+  ],
+  "sideEffects": false
 }

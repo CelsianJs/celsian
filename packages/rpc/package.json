@@ -1,6 +1,6 @@
 {
   "name": "@celsian/rpc",
-  "version": "0.3.0",
+  "version": "0.3.13",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -30,5 +30,22 @@
   },
   "engines": {
     "node": ">=20"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CelsianJs/celsian.git",
+    "directory": "packages/rpc"
+  },
+  "homepage": "https://github.com/CelsianJs/celsian#readme",
+  "bugs": {
+    "url": "https://github.com/CelsianJs/celsian/issues"
+  },
+  "description": "Type-safe RPC utilities for CelsianJS",
+  "keywords": [
+    "celsian",
+    "rpc",
+    "typescript",
+    "api"
+  ],
+  "sideEffects": false
 }
