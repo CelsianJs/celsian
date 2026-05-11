@@ -180,9 +180,38 @@ smoke_generated_app() {
   local health_check="${2:-0}"
   (
     cd "$app_dir"
-    # Install exactly the scaffolded app manifest; packed Celsian artifacts are only seeded in npm's cache.
-    # This catches templates that import undeclared @celsian/* packages.
-    npm install --prefer-offline --cache "$NPM_CACHE_DIR" --ignore-scripts --no-audit --no-fund >/dev/null
+    # Install exactly the scaffolded app manifest after mapping declared Celsian package ranges
+    # to the packed artifacts under test. This catches templates that import undeclared
+    # @celsian/* packages while still allowing unpublished metadata-only versions to smoke locally.
+    TAR_MAP="$PACK_DIR/tarball-map.tsv" node --input-type=module <<'NODE'
+import { readFileSync, writeFileSync } from 'node:fs';
+
+const manifestPath = 'package.json';
+const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+const tarballs = new Map(
+  readFileSync(process.env.TAR_MAP, 'utf8')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => line.split('\t')),
+);
+manifest.overrides = { ...(manifest.overrides ?? {}) };
+for (const [name, tarball] of tarballs) {
+  manifest.overrides[name] = `file:${tarball}`;
+}
+for (const deps of [manifest.dependencies, manifest.devDependencies, manifest.peerDependencies, manifest.optionalDependencies]) {
+  if (!deps) continue;
+  for (const [name, range] of Object.entries(deps)) {
+    const tarball = tarballs.get(name);
+    if (tarball && typeof range === 'string' && !range.startsWith('workspace:')) {
+      deps[name] = `file:${tarball}`;
+    }
+  }
+}
+writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}
+`);
+NODE
+    npm install --cache "$NPM_CACHE_DIR" --ignore-scripts --no-audit --no-fund >/dev/null
     npm run build >/dev/null
     if [ "$health_check" = "1" ]; then
       node "$ROOT_DIR/scripts/smoke-start-health.mjs"

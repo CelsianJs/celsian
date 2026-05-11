@@ -92,6 +92,33 @@ describe("full template", () => {
   });
 });
 
+describe("template dependency ranges", () => {
+  it("basic template tracks the current celsian release line", () => {
+    const pkg = JSON.parse(basicTemplate["package.json"]);
+    expect(pkg.dependencies.celsian).toBe("^0.3.12");
+  });
+
+  it("rest-api template tracks the current celsian release line", () => {
+    const pkg = JSON.parse(restApiTemplate["package.json"]);
+    expect(pkg.dependencies.celsian).toBe("^0.3.12");
+  });
+
+  it("rpc-api template tracks the current celsian and rpc release lines", () => {
+    const pkg = JSON.parse(rpcApiTemplate["package.json"]);
+    expect(pkg.dependencies.celsian).toBe("^0.3.12");
+    expect(pkg.dependencies["@celsian/rpc"]).toBe("^0.3.11");
+  });
+
+  it("full template tracks the current public package release lines", () => {
+    const pkg = JSON.parse(fullTemplate["package.json"]);
+    expect(pkg.dependencies.celsian).toBe("^0.3.12");
+    expect(pkg.dependencies["@celsian/core"]).toBe("^0.3.11");
+    expect(pkg.dependencies["@celsian/jwt"]).toBe("^0.3.11");
+    expect(pkg.dependencies["@celsian/rpc"]).toBe("^0.3.11");
+    expect(pkg.dependencies["@celsian/rate-limit"]).toBe("^0.3.11");
+  });
+});
+
 describe("template name substitution", () => {
   it("basic template entry references createApp", () => {
     expect(basicTemplate["src/index.ts"]).toContain("createApp");

@@ -1,6 +1,6 @@
 {
   "name": "@celsian/cache",
-  "version": "0.3.4",
+  "version": "0.3.11",
   "type": "module",
   "license": "MIT",
   "main": "dist/index.js",
@@ -29,11 +29,11 @@
   "description": "Caching utilities for CelsianJS",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/celsian/celsian.git"
+    "url": "git+https://github.com/CelsianJs/celsian.git"
   },
-  "homepage": "https://github.com/celsian/celsian#readme",
+  "homepage": "https://github.com/CelsianJs/celsian#readme",
   "bugs": {
-    "url": "https://github.com/celsian/celsian/issues"
+    "url": "https://github.com/CelsianJs/celsian/issues"
   },
   "keywords": [
     "celsian",

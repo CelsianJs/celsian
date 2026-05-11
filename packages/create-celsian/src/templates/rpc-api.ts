@@ -10,8 +10,8 @@ export const rpcApiTemplate = {
         start: "node dist/index.js",
       },
       dependencies: {
-        celsian: "^0.3.9",
-        "@celsian/rpc": "^0.3.8",
+        celsian: "^0.3.12",
+        "@celsian/rpc": "^0.3.11",
         "@sinclair/typebox": "^0.34.0",
       },
       devDependencies: {

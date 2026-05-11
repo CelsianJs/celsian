@@ -32,6 +32,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm assert:release-private
+      - run: pnpm assert:public-metadata
       - run: pnpm build
       - run: pnpm test
       - run: pnpm typecheck
@@ -50,6 +51,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm assert:release-private
+      - run: pnpm assert:public-metadata
       - run: pnpm build
 
       - name: Verify publish artifacts

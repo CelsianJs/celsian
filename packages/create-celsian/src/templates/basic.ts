@@ -10,7 +10,7 @@ export const basicTemplate = {
         start: "node dist/index.js",
       },
       dependencies: {
-        celsian: "^0.3.9",
+        celsian: "^0.3.12",
       },
       devDependencies: {
         typescript: "^5.7.0",

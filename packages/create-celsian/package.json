@@ -1,6 +1,6 @@
 {
   "name": "create-celsian",
-  "version": "0.3.11",
+  "version": "0.3.12",
   "type": "module",
   "bin": {
     "create-celsian": "dist/index.js"
@@ -21,11 +21,11 @@
   "description": "Scaffold new CelsianJS applications",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/celsian/celsian.git"
+    "url": "git+https://github.com/CelsianJs/celsian.git"
   },
-  "homepage": "https://github.com/celsian/celsian#readme",
+  "homepage": "https://github.com/CelsianJs/celsian#readme",
   "bugs": {
-    "url": "https://github.com/celsian/celsian/issues"
+    "url": "https://github.com/CelsianJs/celsian/issues"
   },
   "keywords": [
     "celsian",
