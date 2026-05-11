@@ -33,7 +33,7 @@ jobs:
       - run: pnpm test
       - run: pnpm audit:release
 
-      - name: Verify no workspace:* in published packages
+      - name: Verify packed package payloads
         run: bash scripts/verify-publish.sh
 
       - name: Publish packages

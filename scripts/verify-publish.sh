@@ -34,7 +34,18 @@ check_manifest() {
   fi
 }
 
-echo "Checking packed npm artifacts for unresolved workspace: references..."
+check_required_package_file() {
+  local tarball="$1"
+  local pkg_name="$2"
+  local required_path="$3"
+
+  if ! tar -tf "$tarball" | grep -Fxq "package/$required_path"; then
+    echo "ERROR: $pkg_name packed tarball is missing $required_path"
+    return 1
+  fi
+}
+
+echo "Checking packed npm artifacts for README/LICENSE payloads and unresolved workspace: references..."
 
 found=0
 checked=0
@@ -68,6 +79,14 @@ while IFS= read -r manifest; do
   packed_manifest="$PACK_DIR/${pkg_name//\//-}.package.json"
   tar -xOf "$tarball" package/package.json > "$packed_manifest"
 
+  if ! check_required_package_file "$tarball" "$pkg_name" "README.md"; then
+    found=1
+  fi
+
+  if ! check_required_package_file "$tarball" "$pkg_name" "LICENSE"; then
+    found=1
+  fi
+
   if ! check_manifest "$packed_manifest" "$pkg_name packed package.json"; then
     found=1
   fi
@@ -86,7 +105,7 @@ done < <(find "$ROOT_DIR/packages" -mindepth 2 -maxdepth 2 -name 'package.json' 
 
 if [ "$found" -eq 1 ]; then
   echo ""
-  echo "FAIL: packed npm artifacts contain unresolved workspace: references."
+  echo "FAIL: packed npm artifacts are missing required README/LICENSE payloads or contain unresolved workspace: references."
   exit 1
 fi
 
@@ -146,4 +165,4 @@ if [ "$found" -eq 1 ]; then
   exit 1
 fi
 
-echo "OK: Checked $checked packed package artifact(s); no unresolved workspace: references found; clean consumer install/import smoke passed."
+echo "OK: Checked $checked packed package artifact(s); README/LICENSE payloads present; no unresolved workspace: references found; clean consumer install/import smoke passed."
