@@ -6,8 +6,8 @@ Code-side hardening sprint work is wrapped for CelsianJS.
 
 Current head:
 
-- `main@9d00f30`
-- Working tree clean at final audit.
+- Use `git rev-parse --short HEAD` on `main`; this handoff file is intentionally committed after release code changes, so avoid copying a stale self-referential hash.
+- Working tree was clean at final audit.
 
 Released public registry state:
 
@@ -16,8 +16,8 @@ Released public registry state:
 
 Latest verified gates:
 
-- GitHub Test `25654463958` passed on `main@9d00f30`.
-- GitHub Release `25654463954` passed on `main@9d00f30`.
+- GitHub Test passed on the handoff-doc head after this file was restored; see workspace audit for the latest run id.
+- GitHub Release passed on the handoff-doc head after this file was restored; see workspace audit for the latest run id.
 - Registry consumer smoke verified `@celsian/core@0.3.16` applies global `security()` headers to matched routes, framework 404s, and framework 405s.
 
 Important fix landed during wrap:
