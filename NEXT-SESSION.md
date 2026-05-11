@@ -22,7 +22,7 @@
 - Benchmark suite expansion / stabilization.
 - OpenAPI spec tests that verify generated specs match actual route behavior.
 - Stress/load test for the radix-tree router under high concurrency.
-- Decide long-term policy for the private Cloudflare Worker example: keep Wrangler 3 on Node 20 and out of release audit, or move that example to Wrangler 4 with a documented Node 22+ requirement for the example only.
+- Keep the private Cloudflare Worker example audit policy documented if Wrangler/Node requirements change again; current Wrangler 4 example tooling is not reporting audit advisories locally.
 
 ## How to Resume
 ```bash
@@ -36,9 +36,8 @@ pnpm audit:release
 ```
 
 ## Release Gate Notes (2026-05-10)
-- `pnpm audit --audit-level=moderate` still reports advisories through private example dev tooling (`examples/cloudflare-worker > wrangler@3.114.17` via `undici@5.29.0` and `esbuild@0.17.19`).
-- This is intentionally not force-overridden: Wrangler 4 requires Node 22+, while the repo still advertises Node `>=20`.
-- Use `pnpm audit:release` / CI production audit for publish blocking until the example's Node/Wrangler policy is changed explicitly.
+- Current full and production audits pass locally with pnpm 9.15.0: `pnpm audit --audit-level=moderate` and `pnpm audit --prod --audit-level=moderate` both report no known vulnerabilities.
+- Release/CI publish blocking still uses `pnpm audit:release` / production dependency scope so private example dev tooling cannot force risky runtime or Node-engine changes without an explicit policy decision.
 
 ## 2026-05-10 — Adapter Release Gate Follow-up
 
