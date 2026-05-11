@@ -374,9 +374,22 @@ async function serveFile(
       }
 
       if (ranges.length === 1) {
-        // Single range — stream with byte-range seek
+        // Single range — stream with byte-range seek. `parseRangeHeader()` only
+        // returns non-empty ranges here, but keep a typed fail-closed response so
+        // the project-reference build cannot regress to a nullable sendFile path.
         const firstRange = ranges[0];
-        if (!firstRange) return null;
+        if (!firstRange) {
+          return new Response(
+            JSON.stringify({ error: "Range Not Satisfiable", statusCode: 416, code: "RANGE_NOT_SATISFIABLE" }),
+            {
+              status: 416,
+              headers: buildHeaders({
+                "content-type": "application/json; charset=utf-8",
+                "content-range": `bytes */${totalSize}`,
+              }),
+            },
+          );
+        }
         const [start, end] = firstRange;
         const stream = createReadStream(resolvedPath, { start, end });
         const webStream = Readable.toWeb(stream) as ReadableStream;
