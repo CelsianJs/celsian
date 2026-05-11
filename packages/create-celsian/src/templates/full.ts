@@ -231,6 +231,9 @@ export function securityPlugins(): PluginFunction[] {
     rateLimit({
       max: 100,
       window: 60_000,
+      // Local scaffold default: use a stable single-process key without trusting proxy headers.
+      // In production, replace this with a user/session/IP key appropriate for your deployment.
+      keyGenerator: () => 'local-scaffold',
     }),
   ];
 }
@@ -264,7 +267,7 @@ export default function healthRoutes(): PluginFunction {
 // Full REST: GET (list), POST (create), GET/:id, PUT/:id, DELETE/:id
 
 import { Type } from '@sinclair/typebox';
-import type { PluginFunction } from '@celsian/core';
+import type { CelsianReply, CelsianRequest, PluginFunction } from '@celsian/core';
 import type { User } from '../types.js';
 import { db } from '../plugins/database.js';
 import { requireAuth } from '../plugins/auth.js';
@@ -291,7 +294,7 @@ export default function userRoutes(): PluginFunction {
     app.post('/users', {
       schema: { body: CreateUserSchema },
     }, (req, reply) => {
-      const { name, email } = req.parsedBody;
+      const { name, email } = req.parsedBody as { name: string; email: string };
       const user: User = {
         id: db.generateId(),
         name,
@@ -316,7 +319,7 @@ export default function userRoutes(): PluginFunction {
     }, (req, reply) => {
       const user = db.users.get(req.params.id);
       if (!user) return reply.status(404).json({ error: 'User not found' });
-      const updates = req.parsedBody;
+      const updates = req.parsedBody as { name?: string; email?: string };
       if (updates.name !== undefined) user.name = updates.name;
       if (updates.email !== undefined) user.email = updates.email;
       db.users.set(user.id, user);

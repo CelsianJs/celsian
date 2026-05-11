@@ -27,11 +27,12 @@ export async function createCommand(name: string, template: Template = "basic"):
         },
         dependencies: {
           celsian: "^0.1.0",
+          ...(template === "rpc-api" ? { "@celsian/rpc": "^0.1.0" } : {}),
+          ...(template !== "basic" ? { "@sinclair/typebox": "^0.34.0" } : {}),
         },
         devDependencies: {
           typescript: "^5.7.0",
           tsx: "^4.0.0",
-          ...(template !== "basic" ? { "@sinclair/typebox": "^0.34.0" } : {}),
         },
       },
       null,
@@ -84,7 +85,7 @@ app.get('/hello/:name', (req, reply) => {
   return reply.json({ message: \`Hello, \${req.params.name}!\` });
 });
 
-serve(app, { port: 3000 });
+serve(app);
 `;
 
     case "rest-api":
@@ -124,7 +125,7 @@ app.get('/users/:id', (req, reply) => {
   return reply.json(user);
 });
 
-serve(app, { port: 3000 });
+serve(app);
 `;
 
     case "rpc-api":
@@ -138,14 +139,14 @@ const app = createApp();
 const appRouter = router({
   greeting: {
     hello: procedure
-      .input(Type.Object({ name: Type.String() }))
+      .input<{ name: string }>(Type.Object({ name: Type.String() }))
       .query(({ input }) => {
         return { message: \`Hello, \${input.name}!\` };
       }),
   },
   math: {
     add: procedure
-      .input(Type.Object({ a: Type.Number(), b: Type.Number() }))
+      .input<{ a: number; b: number }>(Type.Object({ a: Type.Number(), b: Type.Number() }))
       .query(({ input }) => {
         return { result: input.a + input.b };
       }),
@@ -163,10 +164,12 @@ app.route({
   },
 });
 
-serve(app, { port: 3000 });
+serve(app);
 
 // Export type for client
 export type AppRouter = typeof appRouter;
 `;
+    default:
+      throw new Error(`Unknown template: ${template}`);
   }
 }

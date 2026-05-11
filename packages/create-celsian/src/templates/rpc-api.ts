@@ -17,6 +17,7 @@ export const rpcApiTemplate = {
       devDependencies: {
         typescript: "^5.7.0",
         tsx: "^4.0.0",
+        "@types/node": "^22.0.0",
       },
     },
     null,
@@ -65,14 +66,14 @@ await app.register(security({
 const appRouter = router({
   greeting: {
     hello: procedure
-      .input(Type.Object({ name: Type.String() }))
+      .input<{ name: string }>(Type.Object({ name: Type.String() }))
       .query(({ input }) => {
-        return { message: \\\`Hello, \\\${input.name}!\\\` };
+        return { message: 'Hello, ' + input.name + '!' };
       }),
   },
   math: {
     add: procedure
-      .input(Type.Object({ a: Type.Number(), b: Type.Number() }))
+      .input<{ a: number; b: number }>(Type.Object({ a: Type.Number(), b: Type.Number() }))
       .query(({ input }) => {
         return { result: input.a + input.b };
       }),
@@ -89,7 +90,7 @@ app.route({
   },
 });
 
-serve(app, { port: 3000 });
+serve(app);
 
 export type AppRouter = typeof appRouter;
 `,

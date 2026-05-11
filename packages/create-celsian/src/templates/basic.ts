@@ -15,6 +15,7 @@ export const basicTemplate = {
       devDependencies: {
         typescript: "^5.7.0",
         tsx: "^4.0.0",
+        "@types/node": "^22.0.0",
       },
     },
     null,
@@ -66,6 +67,6 @@ app.get('/hello/:name', (req, reply) => {
   return reply.json({ message: \`Hello, \${req.params.name}!\` });
 });
 
-serve(app, { port: 3000 });
+serve(app);
 `,
 };

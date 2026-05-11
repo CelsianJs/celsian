@@ -246,14 +246,10 @@ else
   (cd "$CONSUMER_DIR" && "$CELSIAN_BIN" create "$app_name" >/dev/null)
   smoke_generated_app "$CONSUMER_DIR/$app_name" 1
 
-  for template in full basic rest-api rpc-api; do
+  for template in basic rest-api rpc-api; do
     app_name="celsian-cli-$template-smoke"
     (cd "$CONSUMER_DIR" && "$CELSIAN_BIN" create "$app_name" --template "$template" >/dev/null)
-    if [ "$template" = "full" ]; then
-      smoke_generated_app "$CONSUMER_DIR/$app_name" 1
-    else
-      smoke_generated_app "$CONSUMER_DIR/$app_name"
-    fi
+    smoke_generated_app "$CONSUMER_DIR/$app_name"
   done
 fi
 

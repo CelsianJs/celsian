@@ -33,7 +33,7 @@ export type MiddlewareFunction = (opts: { ctx: RPCContext; next: () => Promise<u
 
 /** Nested object of procedures and sub-routers. */
 export interface RouterDefinition {
-  [key: string]: ProcedureDefinition | RouterDefinition;
+  [key: string]: ProcedureDefinition<any, any> | RouterDefinition;
 }
 
 /** JSON-serializable manifest listing all procedures with their types and schemas. */
