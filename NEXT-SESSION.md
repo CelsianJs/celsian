@@ -145,3 +145,10 @@ Gold-standard re-review found the release workflow ran publish-artifact smoke, b
 Verification:
 - `npx -y pnpm@9.15.0 verify:publish` passed: 17 packed package artifacts, clean consumer install/import smoke
 - `git diff --check` passed
+
+## 2026-05-10 — WhatStack runbook smoke refresh
+
+Ran the Celsian core smoke from `../SMOKE-TEST-RUNBOOK.md` against the built local package:
+
+- `node -e "...createApp(); serve(app, { port: 9999 })..."` returned `200` for `/health` and `/hello/kirby`.
+- The missing-route smoke returned `404` with security headers including `x-content-type-options: nosniff` and `x-frame-options: DENY`.
