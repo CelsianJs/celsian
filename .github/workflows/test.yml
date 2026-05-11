@@ -63,6 +63,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Verify release surface
+        run: pnpm assert:release-private
+
       - name: Lint (fail on errors only)
         run: npx biome check . --diagnostic-level=error
 

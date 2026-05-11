@@ -32,8 +32,8 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Verify no workspace:* in published packages
-        run: bash scripts/verify-publish.sh
+      - name: Verify publish surface and packed packages
+        run: pnpm verify:publish
 
   release:
     needs: verify
