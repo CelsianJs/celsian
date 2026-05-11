@@ -10,11 +10,12 @@ export const basicTemplate = {
         start: "node dist/index.js",
       },
       dependencies: {
-        celsian: "^0.3.6",
+        celsian: "^0.3.9",
       },
       devDependencies: {
         typescript: "^5.7.0",
         tsx: "^4.0.0",
+        "@types/node": "^22.0.0",
       },
     },
     null,
@@ -26,6 +27,8 @@ export const basicTemplate = {
         target: "ES2022",
         module: "ESNext",
         moduleResolution: "bundler",
+        lib: ["ES2022"],
+        types: ["node"],
         strict: true,
         esModuleInterop: true,
         skipLibCheck: true,

@@ -10,12 +10,13 @@ export const restApiTemplate = {
         start: "node dist/index.js",
       },
       dependencies: {
-        celsian: "^0.3.6",
+        celsian: "^0.3.9",
         "@sinclair/typebox": "^0.34.0",
       },
       devDependencies: {
         typescript: "^5.7.0",
         tsx: "^4.0.0",
+        "@types/node": "^22.0.0",
       },
     },
     null,
@@ -27,6 +28,8 @@ export const restApiTemplate = {
         target: "ES2022",
         module: "ESNext",
         moduleResolution: "bundler",
+        lib: ["ES2022"],
+        types: ["node"],
         strict: true,
         esModuleInterop: true,
         skipLibCheck: true,
@@ -75,7 +78,7 @@ app.get('/users', (req, reply) => {
 app.post('/users', {
   schema: { body: CreateUserSchema },
 }, (req, reply) => {
-  const { name, email } = req.parsedBody;
+  const { name, email } = req.parsedBody as { name: string; email: string };
   const user = { id: nextId++, name, email };
   users.push(user);
   return reply.status(201).json(user);

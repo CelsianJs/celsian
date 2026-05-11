@@ -165,4 +165,45 @@ if [ "$found" -eq 1 ]; then
   exit 1
 fi
 
-echo "OK: Checked $checked packed package artifact(s); README/LICENSE payloads present; no unresolved workspace: references found; clean consumer install/import smoke passed."
+echo "Smoke-building generated projects from packed CLI artifacts..."
+CREATE_CELSIAN_BIN="$CONSUMER_DIR/node_modules/.bin/create-celsian"
+CELSIAN_BIN="$CONSUMER_DIR/node_modules/.bin/celsian"
+
+smoke_generated_app() {
+  local app_dir="$1"
+  (
+    cd "$app_dir"
+    npm install --ignore-scripts --no-audit --no-fund "${tarballs[@]}" >/dev/null
+    npm run build >/dev/null
+  )
+}
+
+if [ ! -x "$CREATE_CELSIAN_BIN" ]; then
+  echo "ERROR: create-celsian binary was not installed"
+  found=1
+else
+  for template in basic rest-api rpc-api; do
+    app_name="create-celsian-$template-smoke"
+    (cd "$CONSUMER_DIR" && "$CREATE_CELSIAN_BIN" "$app_name" --template "$template" >/dev/null)
+    smoke_generated_app "$CONSUMER_DIR/$app_name"
+  done
+fi
+
+if [ ! -x "$CELSIAN_BIN" ]; then
+  echo "ERROR: celsian binary was not installed"
+  found=1
+else
+  for template in basic rest-api rpc-api; do
+    app_name="celsian-cli-$template-smoke"
+    (cd "$CONSUMER_DIR" && "$CELSIAN_BIN" create "$app_name" --template "$template" >/dev/null)
+    smoke_generated_app "$CONSUMER_DIR/$app_name"
+  done
+fi
+
+if [ "$found" -eq 1 ]; then
+  echo ""
+  echo "FAIL: packed CLI scaffold smoke verification failed."
+  exit 1
+fi
+
+echo "OK: Checked $checked packed package artifact(s); README/LICENSE payloads present; no unresolved workspace: references found; clean consumer install/import and generated app build smoke passed."

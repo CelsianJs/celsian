@@ -12,11 +12,11 @@ export const fullTemplate: Record<string, string> = {
         lint: "npx tsc --noEmit",
       },
       dependencies: {
-        celsian: "^0.3.6",
-        "@celsian/core": "^0.3.6",
-        "@celsian/jwt": "^0.3.6",
-        "@celsian/rpc": "^0.3.6",
-        "@celsian/rate-limit": "^0.3.6",
+        celsian: "^0.3.9",
+        "@celsian/core": "^0.3.9",
+        "@celsian/jwt": "^0.3.9",
+        "@celsian/rpc": "^0.3.8",
+        "@celsian/rate-limit": "^0.3.9",
         "@sinclair/typebox": "^0.34.0",
       },
       devDependencies: {

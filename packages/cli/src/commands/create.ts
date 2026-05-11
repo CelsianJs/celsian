@@ -26,11 +26,13 @@ export async function createCommand(name: string, template: Template = "basic"):
           start: "node dist/index.js",
         },
         dependencies: {
-          celsian: "^0.1.0",
+          celsian: "^0.3.9",
+          ...(template === "rpc-api" ? { "@celsian/rpc": "^0.3.8" } : {}),
         },
         devDependencies: {
           typescript: "^5.7.0",
           tsx: "^4.0.0",
+          "@types/node": "^22.0.0",
           ...(template !== "basic" ? { "@sinclair/typebox": "^0.34.0" } : {}),
         },
       },
@@ -47,6 +49,8 @@ export async function createCommand(name: string, template: Template = "basic"):
           target: "ES2022",
           module: "ESNext",
           moduleResolution: "bundler",
+          lib: ["ES2022"],
+          types: ["node"],
           strict: true,
           esModuleInterop: true,
           skipLibCheck: true,
@@ -140,14 +144,16 @@ const appRouter = router({
     hello: procedure
       .input(Type.Object({ name: Type.String() }))
       .query(({ input }) => {
-        return { message: \`Hello, \${input.name}!\` };
+        const data = input as { name: string };
+        return { message: \`Hello, \${data.name}!\` };
       }),
   },
   math: {
     add: procedure
       .input(Type.Object({ a: Type.Number(), b: Type.Number() }))
       .query(({ input }) => {
-        return { result: input.a + input.b };
+        const data = input as { a: number; b: number };
+        return { result: data.a + data.b };
       }),
   },
 });
