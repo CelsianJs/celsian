@@ -26,8 +26,8 @@ export async function createCommand(name: string, template: Template = "basic"):
           start: "node dist/index.js",
         },
         dependencies: {
-          celsian: "^0.1.0",
-          ...(template === "rpc-api" ? { "@celsian/rpc": "^0.1.0" } : {}),
+          celsian: "latest",
+          ...(template === "rpc-api" ? { "@celsian/rpc": "latest" } : {}),
           ...(template !== "basic" ? { "@sinclair/typebox": "^0.34.0" } : {}),
         },
         devDependencies: {

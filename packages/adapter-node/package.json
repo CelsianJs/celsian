@@ -1,6 +1,6 @@
 {
   "name": "@celsian/adapter-node",
-  "version": "0.3.14",
+  "version": "0.3.15",
   "type": "module",
   "license": "MIT",
   "main": "dist/index.js",

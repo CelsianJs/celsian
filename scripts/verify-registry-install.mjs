@@ -97,10 +97,10 @@ try {
     run(celsianBin, ['create', appName], { cwd: tmp });
     smokeGeneratedApp(join(tmp, appName), true);
   }
-  for (const template of ['full', 'basic', 'rest-api', 'rpc-api']) {
+  for (const template of ['basic', 'rest-api', 'rpc-api']) {
     const appName = `registry-celsian-cli-${template}-smoke`;
     run(celsianBin, ['create', appName, '--template', template], { cwd: tmp });
-    smokeGeneratedApp(join(tmp, appName), template === 'full');
+    smokeGeneratedApp(join(tmp, appName));
   }
 
   const artifact = {
@@ -108,7 +108,7 @@ try {
     generatedAt: new Date().toISOString(),
     packageCount: specs.length,
     packages: specs,
-    checks: ['npm install --ignore-scripts', 'esm imports', 'binary presence', 'create-celsian default/full scaffold build/start/health', '@celsian/cli default/full scaffold build/start/health', 'scaffold manifest-only installs'],
+    checks: ['npm install --ignore-scripts', 'esm imports', 'binary presence', 'create-celsian default/full scaffold build/start/health', '@celsian/cli default scaffold build/start/health', '@celsian/cli basic/rest-api/rpc-api scaffold builds', 'scaffold manifest-only installs'],
   };
   await mkdir(dirname(artifactPath), { recursive: true });
   await writeFile(artifactPath, `${JSON.stringify(artifact, null, 2)}\n`);

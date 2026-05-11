@@ -1,6 +1,6 @@
 {
   "name": "@celsian/adapter-railway",
-  "version": "0.3.14",
+  "version": "0.3.15",
   "description": "CelsianJS adapter for Railway — generates Procfile, Dockerfile, and health check config",
   "type": "module",
   "license": "MIT",
