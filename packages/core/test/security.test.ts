@@ -20,6 +20,27 @@ describe("Security Headers Plugin", () => {
     expect(response.headers.get("x-permitted-cross-domain-policies")).toBe("none");
   });
 
+  it("should add default security headers to not found responses", async () => {
+    const app = createApp();
+    await app.register(security(), { encapsulate: false });
+
+    const response = await app.inject({ url: "/missing" });
+    expect(response.status).toBe(404);
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("x-frame-options")).toBe("DENY");
+  });
+
+  it("should add default security headers to method not allowed responses", async () => {
+    const app = createApp();
+    await app.register(security(), { encapsulate: false });
+    app.get("/test", (_req, reply) => reply.json({ ok: true }));
+
+    const response = await app.inject({ method: "POST", url: "/test" });
+    expect(response.status).toBe(405);
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("x-frame-options")).toBe("DENY");
+  });
+
   it("should allow disabling individual headers", async () => {
     const app = createApp();
     await app.register(

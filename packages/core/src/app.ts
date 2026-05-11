@@ -547,39 +547,35 @@ export class CelsianApp {
     }
 
     if (!match) {
+      const missContext = await this.createMissContext(request, rawUrl, fullUrl);
+      const earlyResponse = await runHooks(this.rootContext.hooks.onRequest, missContext.request, missContext.reply);
+      if (earlyResponse) return earlyResponse;
+      const missHeaders = this.mergeReplyHeaders(CelsianApp.JSON_CONTENT_TYPE, missContext.reply);
+
       // Distinguish 404 (path not found) from 405 (wrong method)
       if (this.router.hasPath(pathname)) {
         return new Response(CelsianApp.METHOD_NOT_ALLOWED_BODY, {
           status: 405,
-          headers: CelsianApp.JSON_CONTENT_TYPE,
+          headers: missHeaders,
         });
       }
       if (this.notFoundHandler) {
-        if (!fullUrl) fullUrl = new URL(rawUrl, "http://localhost");
-        const celsianRequest = buildRequest(request, fullUrl, {});
-        const reply = createReply();
-        // Apply reply decorations
-        if (this.rootContext.replyDecorations.size > 0) {
-          for (const [key, value] of this.rootContext.replyDecorations) {
-            (reply as Record<string, unknown>)[key] = typeof value === "function" ? value() : value;
-          }
-        }
         try {
-          const result = await this.notFoundHandler(celsianRequest, reply);
+          const result = await this.notFoundHandler(missContext.request, missContext.reply);
           if (result instanceof Response) return result;
-          if (reply.sent) return new Response(null, { status: reply.statusCode });
+          if (missContext.reply.sent) return new Response(null, { status: missContext.reply.statusCode });
           return new Response(null, { status: 404 });
         } catch (error) {
           console.error("[celsian]", error);
           return new Response(CelsianApp.NOT_FOUND_BODY, {
             status: 404,
-            headers: CelsianApp.JSON_CONTENT_TYPE,
+            headers: missHeaders,
           });
         }
       }
       return new Response(CelsianApp.NOT_FOUND_BODY, {
         status: 404,
-        headers: CelsianApp.JSON_CONTENT_TYPE,
+        headers: missHeaders,
       });
     }
 
@@ -815,6 +811,30 @@ export class CelsianApp {
     }
 
     return response;
+  }
+
+  private async createMissContext(
+    request: Request,
+    rawUrl: string,
+    fullUrl: URL | null,
+  ): Promise<{ request: CelsianRequest; reply: CelsianReply }> {
+    if (!fullUrl) fullUrl = new URL(rawUrl, "http://localhost");
+    const celsianRequest = buildRequest(request, fullUrl, {});
+    const reply = createReply();
+    if (this.rootContext.replyDecorations.size > 0) {
+      for (const [key, value] of this.rootContext.replyDecorations) {
+        (reply as Record<string, unknown>)[key] = typeof value === "function" ? value() : value;
+      }
+    }
+    return { request: celsianRequest, reply };
+  }
+
+  private mergeReplyHeaders(base: Record<string, string>, reply: CelsianReply): Headers {
+    const headers = new Headers(base);
+    for (const [key, value] of Object.entries(reply.headers)) {
+      headers.set(key, value);
+    }
+    return headers;
   }
 
   private validateRequest(request: CelsianRequest, schema: NonNullable<InternalRoute["schema"]>): void {

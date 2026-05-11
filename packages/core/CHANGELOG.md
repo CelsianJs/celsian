@@ -1,5 +1,11 @@
 # @celsian/core
 
+## 0.3.16
+
+### Patch Changes
+
+- Apply registered security headers to framework-generated 404 and 405 responses so global security middleware covers unmatched routes as documented.
+
 ## 0.3.3
 
 ### Patch Changes
