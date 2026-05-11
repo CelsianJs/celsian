@@ -226,6 +226,14 @@ describe("--version flag", () => {
     // Should look like "X.Y.Z"
     expect(version).toMatch(/^\d+\.\d+\.\d+/);
   });
+
+  it("version matches the published CLI package manifest", () => {
+    const packageJson = JSON.parse(readFileSync(join(import.meta.dirname, "..", "package.json"), "utf8")) as {
+      version: string;
+    };
+
+    expect(getVersion()).toBe(packageJson.version);
+  });
 });
 
 describe("--help flag", () => {
