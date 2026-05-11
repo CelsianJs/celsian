@@ -16,7 +16,7 @@
 ## What Remains
 
 ### Should Fix (from PM reviews)
-- Response schema pre-compilation: schemas get re-compiled on every request. Consider caching compiled validators at route registration time.
+- None currently local/reproducible. The previous response/request schema pre-compilation item is implemented: response serializers and request validators are compiled at route registration and covered in `packages/core/test/serializer.test.ts`.
 
 ### Nice to Have
 - Benchmark suite expansion / stabilization.
