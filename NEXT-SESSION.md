@@ -11,14 +11,14 @@ Current head:
 
 Released public registry state:
 
-- Changed public packages are published at `0.3.16`: `@celsian/adapter-cloudflare`, `@celsian/adapter-fly`, `@celsian/adapter-lambda`, `@celsian/adapter-node`, `@celsian/adapter-railway`, `@celsian/adapter-vercel`, `celsian`, `@celsian/cli`, `@celsian/compress`, `@celsian/core`, `@celsian/jwt`, `@celsian/queue-redis`, and `@celsian/rate-limit`.
+- Changed public packages are published at `0.3.16`; latest CLI/all-in-one correction is published at `0.3.18`: `@celsian/adapter-cloudflare`, `@celsian/adapter-fly`, `@celsian/adapter-lambda`, `@celsian/adapter-node`, `@celsian/adapter-railway`, `@celsian/adapter-vercel`, `celsian`, `@celsian/cli`, `@celsian/compress`, `@celsian/core`, `@celsian/jwt`, `@celsian/queue-redis`, and `@celsian/rate-limit`.
 - Intentionally unchanged public packages remain at `0.3.15`: `@celsian/cache`, `create-celsian`, `@celsian/rpc`, and `@celsian/schema`.
 
 Latest verified gates:
 
 - GitHub Test passed on the handoff-doc head after this file was restored; see workspace audit for the latest run id.
 - GitHub Release passed on the handoff-doc head after this file was restored; see workspace audit for the latest run id.
-- GitHub Release artifact: https://github.com/CelsianJs/celsian/releases/tag/celsian%400.3.16
+- GitHub Release artifact: https://github.com/CelsianJs/celsian/releases/tag/celsian%400.3.18
 - Registry consumer smoke verified `@celsian/core@0.3.16` applies global `security()` headers to matched routes, framework 404s, and framework 405s.
 
 Important fix landed during wrap:
@@ -37,3 +37,9 @@ npx -y pnpm@9.15.0 test
 npx -y pnpm@9.15.0 verify:publish
 npx -y pnpm@9.15.0 verify:registry
 ```
+
+Post-wrap correction:
+
+- Registry smoke found `@celsian/cli@0.3.16 --help` printed stale `v0.1.0`. Fixed on `main` by reading version from `packages/cli/package.json`.
+- `celsian@0.3.17` and `@celsian/cli@0.3.17` were deprecated because a manual npm publish leaked unresolved `workspace:*` dependency ranges.
+- Corrected `celsian@0.3.18` and `@celsian/cli@0.3.18` are published with resolved dependency metadata; `npx -y @celsian/cli@0.3.18 --help` prints `v0.3.18`.
