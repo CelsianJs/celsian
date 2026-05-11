@@ -1,5 +1,12 @@
 # @celsian/adapter-lambda
 
+## 0.3.6
+
+### Patch Changes
+
+- Updated dependencies [95bf6c2]
+  - @celsian/core@0.3.9
+
 ## 0.3.5
 
 ### Patch Changes

@@ -1,5 +1,11 @@
 # @celsian/core
 
+## 0.3.9
+
+### Patch Changes
+
+- 95bf6c2: Preserve security headers on core error responses, preserve multiple Set-Cookie headers in the Node adapter, stream static assets, and restore expired Redis in-flight messages after their visibility timeout.
+
 ## 0.3.8
 
 ### Patch Changes
