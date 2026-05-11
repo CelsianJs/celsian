@@ -58,10 +58,26 @@ try {
     }
   }
 
-  const createCelsianBin = realpathSync(join(tmp, 'node_modules/create-celsian/dist/index.js'));
-  const scaffold = run(process.execPath, [createCelsianBin, 'registry-smoke-app', '--template', 'basic', '--no-install'], { cwd: tmp });
-  if (!scaffold.stdout.includes('registry-smoke-app')) {
-    throw new Error(`create-celsian registry scaffold smoke did not report generated app; stdout=${JSON.stringify(scaffold.stdout)} stderr=${JSON.stringify(scaffold.stderr)}`);
+  function smokeGeneratedApp(appDir) {
+    run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', ...specs], { cwd: appDir });
+    run('npm', ['run', 'build'], { cwd: appDir });
+  }
+
+  const createCelsianBin = realpathSync(join(tmp, 'node_modules/.bin/create-celsian'));
+  for (const template of ['basic', 'rest-api', 'rpc-api']) {
+    const appName = `registry-create-celsian-${template}-smoke`;
+    const scaffold = run(createCelsianBin, [appName, '--template', template], { cwd: tmp });
+    if (!scaffold.stdout.includes(appName)) {
+      throw new Error(`create-celsian registry scaffold smoke did not report generated app; stdout=${JSON.stringify(scaffold.stdout)} stderr=${JSON.stringify(scaffold.stderr)}`);
+    }
+    smokeGeneratedApp(join(tmp, appName));
+  }
+
+  const celsianBin = realpathSync(join(tmp, 'node_modules/.bin/celsian'));
+  for (const template of ['basic', 'rest-api', 'rpc-api']) {
+    const appName = `registry-celsian-cli-${template}-smoke`;
+    run(celsianBin, ['create', appName, '--template', template], { cwd: tmp });
+    smokeGeneratedApp(join(tmp, appName));
   }
 
   const artifact = {
@@ -69,7 +85,7 @@ try {
     generatedAt: new Date().toISOString(),
     packageCount: specs.length,
     packages: specs,
-    checks: ['npm install --ignore-scripts', 'esm imports', 'binary presence', 'create-celsian scaffold'],
+    checks: ['npm install --ignore-scripts', 'esm imports', 'binary presence', 'create-celsian scaffold/build', '@celsian/cli scaffold/build'],
   };
   await mkdir(dirname(artifactPath), { recursive: true });
   await writeFile(artifactPath, `${JSON.stringify(artifact, null, 2)}\n`);
