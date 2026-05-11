@@ -1,5 +1,11 @@
 # @celsian/cache
 
+## 0.3.4
+
+### Patch Changes
+
+- 7da0298: Fix package README and license artifacts for npm tarballs.
+
 ## 0.3.3
 
 ### Patch Changes

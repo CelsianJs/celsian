@@ -1,5 +1,13 @@
 # @celsian/adapter-cloudflare
 
+## 0.3.5
+
+### Patch Changes
+
+- 7da0298: Fix package README and license artifacts for npm tarballs.
+- Updated dependencies [7da0298]
+  - @celsian/core@0.3.8
+
 ## 0.3.4
 
 ### Patch Changes

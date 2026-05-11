@@ -1,6 +1,6 @@
 {
   "name": "create-celsian",
-  "version": "0.3.6",
+  "version": "0.3.8",
   "type": "module",
   "bin": {
     "create-celsian": "dist/index.js"

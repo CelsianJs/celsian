@@ -1,5 +1,16 @@
 # celsian
 
+## 0.3.8
+
+### Patch Changes
+
+- 7da0298: Fix package README and license artifacts for npm tarballs.
+- Updated dependencies [7da0298]
+  - @celsian/cli@0.3.8
+  - @celsian/core@0.3.8
+  - @celsian/rpc@0.3.8
+  - @celsian/schema@0.3.8
+
 ## 0.3.7
 
 ### Patch Changes

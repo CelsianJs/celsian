@@ -1,6 +1,6 @@
 {
   "name": "@celsian/schema",
-  "version": "0.3.6",
+  "version": "0.3.8",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
