@@ -5,6 +5,7 @@ dist/
 *.log
 .env
 .env.*
+!.env.example
 coverage/
 
 # Generated verification artifacts

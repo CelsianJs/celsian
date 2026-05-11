@@ -152,3 +152,14 @@ Ran the Celsian core smoke from `../SMOKE-TEST-RUNBOOK.md` against the built loc
 
 - `node -e "...createApp(); serve(app, { port: 9999 })..."` returned `200` for `/health` and `/hello/kirby`.
 - The missing-route smoke returned `404` with security headers including `x-content-type-options: nosniff` and `x-frame-options: DENY`.
+
+## 2026-05-10 — Env example tracking follow-up
+
+Gold-standard recheck found the safe root `.env.example` was present locally but ignored by `.gitignore` because `.env.*` had no exception. Addressed locally:
+
+- Added `!.env.example` so adapter credential placeholders are committed without weakening real `.env*` secret ignores.
+- Added the placeholder-only `.env.example` file to the repo.
+
+Verification:
+- `git diff --check` passed.
+- `.env.example` contains empty placeholder values only.
