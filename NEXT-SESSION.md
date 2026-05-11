@@ -18,6 +18,7 @@ Latest verified gates:
 
 - GitHub Test passed on the handoff-doc head after this file was restored; see workspace audit for the latest run id.
 - GitHub Release passed on the handoff-doc head after this file was restored; see workspace audit for the latest run id.
+- GitHub Release artifact: https://github.com/CelsianJs/celsian/releases/tag/celsian%400.3.16
 - Registry consumer smoke verified `@celsian/core@0.3.16` applies global `security()` headers to matched routes, framework 404s, and framework 405s.
 
 Important fix landed during wrap:
