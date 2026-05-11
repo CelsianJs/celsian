@@ -1,5 +1,13 @@
 # celsian
 
+## 0.3.18
+
+### Patch Changes
+
+- Republish the all-in-one package with resolved dependencies after `0.3.17` was deprecated for unresolved `workspace:*` metadata.
+- Updated dependencies
+  - @celsian/cli@0.3.18
+
 ## 0.3.17
 
 ### Patch Changes

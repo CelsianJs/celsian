@@ -1,5 +1,11 @@
 # @celsian/cli
 
+## 0.3.18
+
+### Patch Changes
+
+- Republish the CLI version-display fix with resolved package dependencies after `0.3.17` was deprecated for unresolved `workspace:*` metadata.
+
 ## 0.3.17
 
 ### Patch Changes
