@@ -1,5 +1,12 @@
 # celsian
 
+## 0.3.10
+
+### Patch Changes
+
+- Updated dependencies [919d8ce]
+  - @celsian/cli@0.3.10
+
 ## 0.3.9
 
 ### Patch Changes

@@ -1,5 +1,11 @@
 # @celsian/cli
 
+## 0.3.10
+
+### Patch Changes
+
+- 919d8ce: Fix generated project TypeScript builds, refresh scaffold dependency ranges, and extend publish verification to build generated apps from packed CLI artifacts.
+
 ## 0.3.9
 
 ### Patch Changes
