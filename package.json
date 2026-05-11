@@ -1,6 +1,6 @@
 {
   "name": "celsian-monorepo",
-  "version": "0.3.2",
+  "version": "0.3.13",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,8 +11,16 @@
     "lint:fix": "biome check --write .",
     "typecheck": "tsc --noEmit",
     "changeset": "changeset",
-    "release": "changeset publish",
-    "bench": "pnpm --filter celsian-benchmarks exec tsx run.ts"
+    "release": "changeset publish --provenance",
+    "bench": "pnpm --filter celsian-benchmarks exec tsx run.ts",
+    "test:bench": "CELSIAN_INCLUDE_BENCH=1 vitest run packages/cache/test/bench.test.ts",
+    "verify:publish": "pnpm assert:release-private && pnpm assert:public-metadata && scripts/verify-publish.sh",
+    "audit:release": "pnpm audit --prod --audit-level=moderate",
+    "setup:pnpm": "corepack enable && corepack prepare pnpm@9.15.0 --activate",
+    "lint:ci": "biome ci .",
+    "verify:registry": "node scripts/verify-registry-install.mjs",
+    "assert:release-private": "node scripts/assert-release-private.mjs",
+    "assert:public-metadata": "node scripts/assert-public-metadata.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.9",

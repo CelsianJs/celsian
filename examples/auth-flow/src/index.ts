@@ -3,7 +3,7 @@
 
 import { randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
-import { cors, createApp, HttpError, security, serve } from "@celsian/core";
+import { cors, createApp, HttpError, serve } from "@celsian/core";
 import { createJWTGuard, type JWTNamespace, jwt } from "@celsian/jwt";
 import { rateLimit } from "@celsian/rate-limit";
 import { z } from "zod";
@@ -11,7 +11,12 @@ import { z } from "zod";
 const scryptAsync = promisify(scrypt);
 
 // ─── Config ───
-const JWT_SECRET = process.env.JWT_SECRET ?? "dev-secret-change-in-production";
+const DEFAULT_JWT_SECRET = "dev-secret-change-in-production";
+const JWT_SECRET = process.env.JWT_SECRET ?? DEFAULT_JWT_SECRET;
+
+if (process.env.NODE_ENV === "production" && JWT_SECRET === DEFAULT_JWT_SECRET) {
+  throw new Error("Set JWT_SECRET to a strong, unique secret before running auth-flow in production");
+}
 const ACCESS_TOKEN_EXPIRY = "15m";
 const _REFRESH_TOKEN_EXPIRY = "7d";
 
@@ -45,14 +50,18 @@ function generateId(): string {
 }
 
 // ─── App Setup ───
+const CORS_ORIGIN = process.env.CORS_ORIGIN ?? "http://localhost:3000";
+
 export function createAuthApp() {
   const app = createApp({ logger: true });
 
-  // Register plugins
-  app.register(cors(), { encapsulate: false });
-  app.register(security(), { encapsulate: false });
+  // Register plugins (security headers are enabled by default)
+  app.register(cors({ origin: CORS_ORIGIN }), { encapsulate: false });
   app.register(jwt({ secret: JWT_SECRET }), { encapsulate: false });
-  app.register(rateLimit({ max: 100, window: 60_000, trustProxy: true }), { encapsulate: false });
+  app.register(
+    rateLimit({ max: 100, window: 60_000, keyGenerator: (req) => req.headers.get("x-forwarded-for") ?? "local" }),
+    { encapsulate: false },
+  );
 
   app.health();
 
@@ -213,7 +222,18 @@ export function createAuthApp() {
   return app;
 }
 
-// Start server if run directly
-const app = createAuthApp();
-await app.ready();
-serve(app, { port: parseInt(process.env.PORT ?? "3000", 10) });
+// Start server only when executed directly, not when imported by tests/examples.
+const isDirectRun = (() => {
+  if (!process.argv[1]) return false;
+  try {
+    return import.meta.url === new URL(process.argv[1], `file://${process.cwd()}/`).href;
+  } catch {
+    return false;
+  }
+})();
+
+if (isDirectRun) {
+  const app = createAuthApp();
+  await app.ready();
+  await serve(app, { port: parseInt(process.env.PORT ?? "3000", 10) });
+}

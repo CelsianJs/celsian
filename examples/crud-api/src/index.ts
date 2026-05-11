@@ -1,7 +1,7 @@
 // CelsianJS CRUD API Example
 // Full CRUD for a "todos" resource with validation, pagination, sorting, and filtering
 
-import { cors, createApp, HttpError, security, serve } from "@celsian/core";
+import { cors, createApp, HttpError, serve } from "@celsian/core";
 
 // ─── Types ───
 
@@ -87,11 +87,13 @@ function compareTodos(a: Todo, b: Todo, field: SortField, order: SortOrder): num
 
 // ─── App ───
 
+const CORS_ORIGIN = process.env.CORS_ORIGIN ?? "http://localhost:3000";
+
 export function createCrudApp() {
   const app = createApp({ logger: true });
 
-  app.register(cors(), { encapsulate: false });
-  app.register(security(), { encapsulate: false });
+  // Security headers are enabled by default via createApp()
+  app.register(cors({ origin: CORS_ORIGIN }), { encapsulate: false });
   app.health();
 
   // ─── LIST (GET /todos) ───

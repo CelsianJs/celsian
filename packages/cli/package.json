@@ -1,6 +1,6 @@
 {
   "name": "@celsian/cli",
-  "version": "0.3.3",
+  "version": "0.3.13",
   "type": "module",
   "bin": {
     "celsian": "dist/index.js"
@@ -23,5 +23,23 @@
   },
   "engines": {
     "node": ">=20"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CelsianJs/celsian.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/CelsianJs/celsian#readme",
+  "bugs": {
+    "url": "https://github.com/CelsianJs/celsian/issues"
+  },
+  "description": "Command-line tools for CelsianJS projects",
+  "keywords": [
+    "celsian",
+    "cli",
+    "scaffold",
+    "routes",
+    "typescript"
+  ],
+  "sideEffects": false
 }

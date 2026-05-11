@@ -1,6 +1,6 @@
 {
   "name": "create-celsian",
-  "version": "0.3.0",
+  "version": "0.3.13",
   "type": "module",
   "bin": {
     "create-celsian": "dist/index.js"
@@ -16,5 +16,23 @@
   "license": "MIT",
   "engines": {
     "node": ">=20"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CelsianJs/celsian.git",
+    "directory": "packages/create-celsian"
+  },
+  "homepage": "https://github.com/CelsianJs/celsian#readme",
+  "bugs": {
+    "url": "https://github.com/CelsianJs/celsian/issues"
+  },
+  "description": "Scaffold new CelsianJS applications",
+  "keywords": [
+    "celsian",
+    "create",
+    "scaffold",
+    "cli",
+    "typescript"
+  ],
+  "sideEffects": false
 }

@@ -1,6 +1,6 @@
 {
   "name": "@celsian/jwt",
-  "version": "0.3.3",
+  "version": "0.3.13",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -27,5 +27,23 @@
   },
   "engines": {
     "node": ">=20"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CelsianJs/celsian.git",
+    "directory": "packages/jwt"
+  },
+  "homepage": "https://github.com/CelsianJs/celsian#readme",
+  "bugs": {
+    "url": "https://github.com/CelsianJs/celsian/issues"
+  },
+  "description": "JWT authentication utilities for CelsianJS",
+  "keywords": [
+    "celsian",
+    "jwt",
+    "auth",
+    "security",
+    "middleware"
+  ],
+  "sideEffects": false
 }
