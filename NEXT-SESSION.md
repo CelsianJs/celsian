@@ -2,8 +2,8 @@
 
 ## Current State
 - **Branch**: `audit-hardening`
-- **Tests**: 925 passing, 7 skipped (77 Vitest files) plus release smoke coverage in `test/smoke.test.ts`.
-- **Release gates checked this pass**: `pnpm test`, `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm verify:publish`, and `pnpm audit:release` all complete successfully.
+- **Tests**: 953 passed / 8 skipped (79 Vitest files) plus packed CLI/generated-app smoke coverage in `pnpm verify:publish`.
+- **Release gates checked this pass**: `pnpm test`, `pnpm typecheck`, and `pnpm verify:publish` refreshed after the latest handoff cleanup; prior `pnpm build`, `pnpm lint`, and `pnpm audit:release` evidence remains recorded below.
 - **Audit policy**: release/CI audit now uses production dependency scope (`pnpm audit --prod --audit-level=moderate`) so private example dev tooling such as `examples/cloudflare-worker` Wrangler is not a release blocker.
 
 ## What Was Done
@@ -12,6 +12,16 @@
 - Kept prior hardening work in place: CORS `Vary: Origin`, real HTTP smoke coverage, compression documentation cleanup, serializer JSDoc, range request support, and Brotli compression support.
 - Fixed Biome lint errors by formatting affected files and organizing exports. `pnpm lint` still reports warnings (mostly existing `any` / non-null assertions), but exits successfully.
 - Added `audit:release` and aligned CI security audit with production dependencies instead of forcing risky Wrangler internals or raising the repo Node engine above `>=20`.
+
+
+## 2026-05-10 — Current test/publish gate refresh
+
+Refreshed the local Celsian evidence after handoff cleanup to remove stale top-level test counts.
+
+Verification:
+- `npx -y pnpm@9.15.0 test` passed: 79 files, 953 passed / 8 skipped.
+- `npx -y pnpm@9.15.0 typecheck` passed with `tsc -b --noEmit --pretty false`.
+- `npx -y pnpm@9.15.0 verify:publish` passed: private/public metadata assertions, 17 packed artifacts, clean consumer install/import, and generated app build smoke.
 
 ## What Remains
 
