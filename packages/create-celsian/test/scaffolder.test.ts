@@ -1,6 +1,9 @@
 // create-celsian — Scaffolder template tests
 
-import { describe, expect, it } from "vitest";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { scaffold } from "../src/index.js";
 import { basicTemplate } from "../src/templates/basic.js";
 import { fullTemplate } from "../src/templates/full.js";
 import { restApiTemplate } from "../src/templates/rest-api.js";
@@ -97,5 +100,66 @@ describe("template name substitution", () => {
 
   it("full template README uses the name placeholder", () => {
     expect(fullTemplate["README.md"]).toContain("{{name}}");
+  });
+});
+
+const TMP_DIR = join(import.meta.dirname, ".tmp-scaffolder-test");
+
+describe("create-celsian scaffold safety", () => {
+  beforeEach(() => {
+    rmSync(TMP_DIR, { recursive: true, force: true });
+    mkdirSync(TMP_DIR, { recursive: true });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    rmSync(TMP_DIR, { recursive: true, force: true });
+  });
+
+  it("refuses to overwrite an existing non-empty target directory", () => {
+    const originalCwd = process.cwd();
+    const target = join(TMP_DIR, "existing-app");
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "package.json"), '{"name":"keep-me"}\n');
+    process.chdir(TMP_DIR);
+    try {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      vi.spyOn(process, "exit").mockImplementation(((code?: string | number | null) => {
+        throw new Error(`exit:${code}`);
+      }) as never);
+
+      expect(() => scaffold("existing-app", "basic", "npm")).toThrow("exit:1");
+      expect(readFileSync(join(target, "package.json"), "utf8")).toBe('{"name":"keep-me"}\n');
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+
+  it("rejects traversal outside the working directory", () => {
+    const originalCwd = process.cwd();
+    process.chdir(TMP_DIR);
+    try {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      vi.spyOn(process, "exit").mockImplementation(((code?: string | number | null) => {
+        throw new Error(`exit:${code}`);
+      }) as never);
+
+      expect(() => scaffold("../escape", "basic", "npm")).toThrow("exit:1");
+      expect(existsSync(join(TMP_DIR, "..", "escape"))).toBe(false);
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+
+  it("sanitizes the generated package name without changing the target directory", () => {
+    const originalCwd = process.cwd();
+    process.chdir(TMP_DIR);
+    try {
+      scaffold("My App!", "basic", "npm");
+      const pkg = JSON.parse(readFileSync(join(TMP_DIR, "My App!", "package.json"), "utf8"));
+      expect(pkg.name).toBe("my-app");
+    } finally {
+      process.chdir(originalCwd);
+    }
   });
 });

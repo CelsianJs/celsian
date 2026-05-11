@@ -15,7 +15,8 @@
   },
   "dependencies": {
     "@celsian/core": "workspace:*",
-    "@celsian/schema": "workspace:*"
+    "@celsian/schema": "workspace:*",
+    "create-celsian": "workspace:*"
   },
   "license": "MIT",
   "publishConfig": {

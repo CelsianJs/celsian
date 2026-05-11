@@ -1,24 +1,62 @@
 {
   "files": [],
   "references": [
-    { "path": "packages/schema" },
-    { "path": "packages/core" },
-    { "path": "packages/rpc" },
-    { "path": "packages/cli" },
-    { "path": "packages/create-celsian" },
-    { "path": "packages/celsian" },
-    { "path": "packages/jwt" },
-    { "path": "packages/rate-limit" },
-    { "path": "packages/compress" },
-    { "path": "packages/adapter-vercel" },
-    { "path": "packages/adapter-lambda" },
-    { "path": "packages/adapter-cloudflare" },
-    { "path": "packages/cache" },
-    { "path": "packages/queue-redis" },
-    { "path": "packages/adapter-node" },
-    { "path": "packages/adapter-fly" },
-    { "path": "packages/adapter-railway" },
-    { "path": "packages/edge-router" },
-    { "path": "packages/platform" }
+    {
+      "path": "packages/schema"
+    },
+    {
+      "path": "packages/core"
+    },
+    {
+      "path": "packages/rpc"
+    },
+    {
+      "path": "packages/create-celsian"
+    },
+    {
+      "path": "packages/cli"
+    },
+    {
+      "path": "packages/celsian"
+    },
+    {
+      "path": "packages/jwt"
+    },
+    {
+      "path": "packages/rate-limit"
+    },
+    {
+      "path": "packages/compress"
+    },
+    {
+      "path": "packages/adapter-vercel"
+    },
+    {
+      "path": "packages/adapter-lambda"
+    },
+    {
+      "path": "packages/adapter-cloudflare"
+    },
+    {
+      "path": "packages/cache"
+    },
+    {
+      "path": "packages/queue-redis"
+    },
+    {
+      "path": "packages/adapter-node"
+    },
+    {
+      "path": "packages/adapter-fly"
+    },
+    {
+      "path": "packages/adapter-railway"
+    },
+    {
+      "path": "packages/edge-router"
+    },
+    {
+      "path": "packages/platform"
+    }
   ]
 }

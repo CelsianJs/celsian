@@ -31,10 +31,10 @@ async function main(): Promise<void> {
     case "create": {
       const name = args[1];
       if (!name) {
-        logger.error("Usage: celsian create <name> [--template basic|rest-api|rpc-api]");
+        logger.error("Usage: celsian create <name> [--template full|basic|rest-api|rpc-api]");
         process.exit(1);
       }
-      const template = (getFlag(args, "--template", "-t") ?? "basic") as Template;
+      const template = (getFlag(args, "--template", "-t") ?? "full") as Template;
       await createCommand(name, template);
       break;
     }

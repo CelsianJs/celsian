@@ -12,7 +12,7 @@ export const fullTemplate: Record<string, string> = {
         lint: "npx tsc --noEmit",
       },
       dependencies: {
-        celsian: "^0.3.9",
+        celsian: "^0.3.10",
         "@celsian/core": "^0.3.9",
         "@celsian/jwt": "^0.3.9",
         "@celsian/rpc": "^0.3.8",
@@ -265,8 +265,8 @@ export default function healthRoutes(): PluginFunction {
 // Full REST: GET (list), POST (create), GET/:id, PUT/:id, DELETE/:id
 
 import { Type } from '@sinclair/typebox';
-import type { PluginFunction } from '@celsian/core';
-import type { User } from '../types.js';
+import type { CelsianReply, CelsianRequest, PluginFunction } from '@celsian/core';
+import type { UpdateUserInput, User, CreateUserInput } from '../types.js';
 import { db } from '../plugins/database.js';
 import { requireAuth } from '../plugins/auth.js';
 
@@ -292,7 +292,7 @@ export default function userRoutes(): PluginFunction {
     app.post('/users', {
       schema: { body: CreateUserSchema },
     }, (req, reply) => {
-      const { name, email } = req.parsedBody;
+      const { name, email } = req.parsedBody as CreateUserInput;
       const user: User = {
         id: db.generateId(),
         name,
@@ -317,7 +317,7 @@ export default function userRoutes(): PluginFunction {
     }, (req, reply) => {
       const user = db.users.get(req.params.id);
       if (!user) return reply.status(404).json({ error: 'User not found' });
-      const updates = req.parsedBody;
+      const updates = req.parsedBody as UpdateUserInput;
       if (updates.name !== undefined) user.name = updates.name;
       if (updates.email !== undefined) user.email = updates.email;
       db.users.set(user.id, user);
@@ -332,7 +332,7 @@ export default function userRoutes(): PluginFunction {
       handler(req: CelsianRequest, reply: CelsianReply) {
         const existed = db.users.delete(req.params.id);
         if (!existed) return reply.status(404).json({ error: 'User not found' });
-        return reply.status(204).json({ deleted: true });
+        return reply.status(204).send(null);
       },
     });
   };
@@ -351,21 +351,24 @@ import type { PluginFunction } from '@celsian/core';
 const appRouter = router({
   greeting: {
     hello: procedure
-      .input<{ name: string }>(Type.Object({ name: Type.String() }))
+      .input(Type.Object({ name: Type.String() }))
       .query(({ input }) => {
-        return { message: \`Hello, \${input.name}!\` };
+        const data = input as { name: string };
+        return { message: \`Hello, \${data.name}!\` };
       }),
   },
   math: {
     add: procedure
-      .input<{ a: number; b: number }>(Type.Object({ a: Type.Number(), b: Type.Number() }))
+      .input(Type.Object({ a: Type.Number(), b: Type.Number() }))
       .query(({ input }) => {
-        return { result: input.a + input.b };
+        const data = input as { a: number; b: number };
+        return { result: data.a + data.b };
       }),
     multiply: procedure
-      .input<{ a: number; b: number }>(Type.Object({ a: Type.Number(), b: Type.Number() }))
+      .input(Type.Object({ a: Type.Number(), b: Type.Number() }))
       .mutation(({ input }) => {
-        return { result: input.a * input.b };
+        const data = input as { a: number; b: number };
+        return { result: data.a * data.b };
       }),
   },
   system: {
@@ -528,18 +531,19 @@ import healthRoutes from '../src/routes/health.js';
 import userRoutes from '../src/routes/users.js';
 import rpcRoutes from '../src/routes/rpc.js';
 
-function createTestApp() {
+async function createTestApp() {
   const app = createApp();
   // Register just what we need — skip auth/security for tests
-  app.register(healthRoutes());
-  app.register(userRoutes());
-  app.register(rpcRoutes());
+  await app.register(healthRoutes());
+  await app.register(userRoutes());
+  await app.register(rpcRoutes());
+  await app.ready();
   return app;
 }
 
 describe('Health', () => {
   it('GET /health returns status ok', async () => {
-    const app = createTestApp();
+    const app = await createTestApp();
     const res = await app.inject({ url: '/health' });
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -551,7 +555,7 @@ describe('Health', () => {
 
 describe('Users CRUD', () => {
   it('GET /users returns the seeded user', async () => {
-    const app = createTestApp();
+    const app = await createTestApp();
     const res = await app.inject({ url: '/users' });
     expect(res.status).toBe(200);
     const users = await res.json();
@@ -561,7 +565,7 @@ describe('Users CRUD', () => {
   });
 
   it('POST /users creates a new user', async () => {
-    const app = createTestApp();
+    const app = await createTestApp();
     const res = await app.inject({
       method: 'POST',
       url: '/users',
@@ -576,7 +580,7 @@ describe('Users CRUD', () => {
   });
 
   it('GET /users/:id returns a specific user', async () => {
-    const app = createTestApp();
+    const app = await createTestApp();
 
     // Create a user first
     const createRes = await app.inject({
@@ -594,13 +598,13 @@ describe('Users CRUD', () => {
   });
 
   it('GET /users/:id returns 404 for unknown user', async () => {
-    const app = createTestApp();
+    const app = await createTestApp();
     const res = await app.inject({ url: '/users/99999' });
     expect(res.status).toBe(404);
   });
 
   it('DELETE /users/:id without auth returns 401', async () => {
-    const app = createTestApp();
+    const app = await createTestApp();
     const res = await app.inject({ method: 'DELETE', url: '/users/1' });
     // Without the JWT guard registered in test mode, the route handler runs directly.
     // In the full app with auth, this would return 401.
@@ -611,7 +615,7 @@ describe('Users CRUD', () => {
 
 describe('RPC', () => {
   it('GET /_rpc/system.ping returns pong', async () => {
-    const app = createTestApp();
+    const app = await createTestApp();
     const res = await app.inject({ url: '/_rpc/system.ping' });
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -619,7 +623,7 @@ describe('RPC', () => {
   });
 
   it('GET /_rpc/greeting.hello returns greeting', async () => {
-    const app = createTestApp();
+    const app = await createTestApp();
     const res = await app.inject({
       url: '/_rpc/greeting.hello?input=' + encodeURIComponent(JSON.stringify({ name: 'World' })),
     });
@@ -629,7 +633,7 @@ describe('RPC', () => {
   });
 
   it('POST /_rpc/math.multiply performs mutation', async () => {
-    const app = createTestApp();
+    const app = await createTestApp();
     const res = await app.inject({
       method: 'POST',
       url: '/_rpc/math.multiply',

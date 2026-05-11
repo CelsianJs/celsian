@@ -76,6 +76,7 @@ while IFS= read -r manifest; do
 
   tarball="$(find "$PACK_DIR" -maxdepth 1 -name '*.tgz' -print0 | xargs -0 ls -t | head -n 1)"
   tarballs+=("$tarball")
+  printf '%s\t%s\n' "$pkg_name" "$tarball" >> "$PACK_DIR/tarball-map.tsv"
   packed_manifest="$PACK_DIR/${pkg_name//\//-}.package.json"
   tar -xOf "$tarball" package/package.json > "$packed_manifest"
 
@@ -168,13 +169,24 @@ fi
 echo "Smoke-building generated projects from packed CLI artifacts..."
 CREATE_CELSIAN_BIN="$CONSUMER_DIR/node_modules/.bin/create-celsian"
 CELSIAN_BIN="$CONSUMER_DIR/node_modules/.bin/celsian"
+NPM_CACHE_DIR="$PACK_DIR/npm-cache"
+mkdir -p "$NPM_CACHE_DIR"
+for tarball in "${tarballs[@]}"; do
+  npm cache add --cache "$NPM_CACHE_DIR" "$tarball" >/dev/null
+done
 
 smoke_generated_app() {
   local app_dir="$1"
+  local health_check="${2:-0}"
   (
     cd "$app_dir"
-    npm install --ignore-scripts --no-audit --no-fund "${tarballs[@]}" >/dev/null
+    # Install exactly the scaffolded app manifest; packed Celsian artifacts are only seeded in npm's cache.
+    # This catches templates that import undeclared @celsian/* packages.
+    npm install --prefer-offline --cache "$NPM_CACHE_DIR" --ignore-scripts --no-audit --no-fund >/dev/null
     npm run build >/dev/null
+    if [ "$health_check" = "1" ]; then
+      node "$ROOT_DIR/scripts/smoke-start-health.mjs"
+    fi
   )
 }
 
@@ -182,10 +194,18 @@ if [ ! -x "$CREATE_CELSIAN_BIN" ]; then
   echo "ERROR: create-celsian binary was not installed"
   found=1
 else
-  for template in basic rest-api rpc-api; do
+  app_name="create-celsian-default-smoke"
+  (cd "$CONSUMER_DIR" && "$CREATE_CELSIAN_BIN" "$app_name" >/dev/null)
+  smoke_generated_app "$CONSUMER_DIR/$app_name" 1
+
+  for template in full basic rest-api rpc-api; do
     app_name="create-celsian-$template-smoke"
     (cd "$CONSUMER_DIR" && "$CREATE_CELSIAN_BIN" "$app_name" --template "$template" >/dev/null)
-    smoke_generated_app "$CONSUMER_DIR/$app_name"
+    if [ "$template" = "full" ]; then
+      smoke_generated_app "$CONSUMER_DIR/$app_name" 1
+    else
+      smoke_generated_app "$CONSUMER_DIR/$app_name"
+    fi
   done
 fi
 
@@ -193,10 +213,18 @@ if [ ! -x "$CELSIAN_BIN" ]; then
   echo "ERROR: celsian binary was not installed"
   found=1
 else
-  for template in basic rest-api rpc-api; do
+  app_name="celsian-cli-default-smoke"
+  (cd "$CONSUMER_DIR" && "$CELSIAN_BIN" create "$app_name" >/dev/null)
+  smoke_generated_app "$CONSUMER_DIR/$app_name" 1
+
+  for template in full basic rest-api rpc-api; do
     app_name="celsian-cli-$template-smoke"
     (cd "$CONSUMER_DIR" && "$CELSIAN_BIN" create "$app_name" --template "$template" >/dev/null)
-    smoke_generated_app "$CONSUMER_DIR/$app_name"
+    if [ "$template" = "full" ]; then
+      smoke_generated_app "$CONSUMER_DIR/$app_name" 1
+    else
+      smoke_generated_app "$CONSUMER_DIR/$app_name"
+    fi
   done
 fi
 

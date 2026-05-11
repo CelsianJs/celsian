@@ -1,9 +1,10 @@
 // @celsian/cli — CLI command tests
 
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BuildOptions } from "../src/commands/build.js";
+import { createCommand } from "../src/commands/create.js";
 import { generateRoute, generateRpc } from "../src/commands/generate.js";
 
 const TMP_DIR = join(import.meta.dirname, ".tmp-cli-test");
@@ -124,5 +125,76 @@ describe("BuildOptions interface", () => {
     expect(defaults.target).toBe("es2022");
     expect(defaults.platform).toBe("node");
     expect(defaults.minify).toBe(false);
+  });
+});
+
+describe("createCommand scaffold safety", () => {
+  beforeEach(() => {
+    rmSync(TMP_DIR, { recursive: true, force: true });
+    mkdirSync(TMP_DIR, { recursive: true });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    rmSync(TMP_DIR, { recursive: true, force: true });
+  });
+
+  it("defaults to the full template", async () => {
+    const originalCwd = process.cwd();
+    process.chdir(TMP_DIR);
+    try {
+      await createCommand("default-app");
+      expect(existsSync(join(TMP_DIR, "default-app", "src", "plugins", "auth.ts"))).toBe(true);
+      expect(existsSync(join(TMP_DIR, "default-app", "Dockerfile"))).toBe(true);
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+
+  it("refuses to overwrite an existing non-empty target directory", async () => {
+    const originalCwd = process.cwd();
+    const target = join(TMP_DIR, "existing-app");
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "package.json"), '{"name":"keep-me"}\n');
+    process.chdir(TMP_DIR);
+    try {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      vi.spyOn(process, "exit").mockImplementation(((code?: string | number | null) => {
+        throw new Error(`exit:${code}`);
+      }) as never);
+
+      await expect(createCommand("existing-app", "basic")).rejects.toThrow("exit:1");
+      expect(readFileSync(join(target, "package.json"), "utf8")).toBe('{"name":"keep-me"}\n');
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+
+  it("rejects traversal outside the working directory", async () => {
+    const originalCwd = process.cwd();
+    process.chdir(TMP_DIR);
+    try {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      vi.spyOn(process, "exit").mockImplementation(((code?: string | number | null) => {
+        throw new Error(`exit:${code}`);
+      }) as never);
+
+      await expect(createCommand("../escape", "basic")).rejects.toThrow("exit:1");
+      expect(existsSync(join(TMP_DIR, "..", "escape"))).toBe(false);
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+
+  it("sanitizes the generated package name without changing the target directory", async () => {
+    const originalCwd = process.cwd();
+    process.chdir(TMP_DIR);
+    try {
+      await createCommand("My App!", "basic");
+      const pkg = JSON.parse(readFileSync(join(TMP_DIR, "My App!", "package.json"), "utf8"));
+      expect(pkg.name).toBe("my-app");
+    } finally {
+      process.chdir(originalCwd);
+    }
   });
 });

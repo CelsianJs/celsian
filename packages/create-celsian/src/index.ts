@@ -3,9 +3,10 @@
 // create-celsian — Project scaffolder
 // Zero external dependencies. Interactive prompts via raw stdin.
 
-import { mkdirSync, writeFileSync } from "node:fs";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { existsSync, mkdirSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { createInterface } from "node:readline";
+import { fileURLToPath } from "node:url";
 import { basicTemplate } from "./templates/basic.js";
 import { fullTemplate } from "./templates/full.js";
 import { restApiTemplate } from "./templates/rest-api.js";
@@ -13,34 +14,21 @@ import { rpcApiTemplate } from "./templates/rpc-api.js";
 
 // ─── Template Registry ───
 
-const templates: Record<string, Record<string, string>> = {
+export type Template = "full" | "basic" | "rest-api" | "rpc-api";
+
+const templates: Record<Template, Record<string, string>> = {
   full: fullTemplate,
   basic: basicTemplate,
   "rest-api": restApiTemplate,
   "rpc-api": rpcApiTemplate,
 };
 
-const templateDescriptions: Record<string, string> = {
+const templateDescriptions: Record<Template, string> = {
   full: "Full-stack API with auth, CRUD, RPC, tasks, cron, OpenAPI, Docker",
   basic: "Minimal API server",
   "rest-api": "REST API with TypeBox schemas",
   "rpc-api": "RPC-first with typed client",
 };
-
-// ─── CLI Argument Parsing ───
-
-const args = process.argv.slice(2);
-
-// Handle --help
-if (args.includes("--help") || args.includes("-h")) {
-  printUsage();
-  process.exit(0);
-}
-
-// Extract flags
-const templateFlag = args.indexOf("--template");
-const templateArg = templateFlag !== -1 ? args[templateFlag + 1] : undefined;
-const nameArg = args.find((a) => !a.startsWith("--") && (templateFlag === -1 || args.indexOf(a) !== templateFlag + 1));
 
 // ─── Interactive Mode ───
 
@@ -87,31 +75,15 @@ async function interactiveMode(): Promise<{ name: string; template: string; pm: 
 
 // ─── Scaffold ───
 
-function scaffold(name: string, template: string, pm: string): void {
-  const files = templates[template];
+export function scaffold(name: string, template: string, pm: string): void {
+  const files = templates[template as Template];
   if (!files) {
     console.error(`\n  Unknown template: ${template}`);
     console.error(`  Available: ${Object.keys(templates).join(", ")}\n`);
     process.exit(1);
   }
 
-  // Sanitize: reject names containing path traversal
-  if (name.includes("..")) {
-    console.error("\n  Invalid project name: must not contain '..'.\n");
-    process.exit(1);
-  }
-
-  const cwd = process.cwd();
-  const dir = isAbsolute(name) ? name : join(cwd, name);
-  const resolved = resolve(dir);
-
-  // Ensure the resolved path is a child of cwd
-  if (!resolved.startsWith(cwd + "/") && resolved !== cwd) {
-    console.error("\n  Invalid project name: resolved path must be inside the current directory.\n");
-    process.exit(1);
-  }
-
-  const projectName = basename(dir);
+  const { dir, projectName } = validateTarget(name);
 
   console.log(`\n  Creating Celsian project: ${projectName}`);
   console.log(`  Template: ${template}`);
@@ -142,9 +114,70 @@ function scaffold(name: string, template: string, pm: string): void {
   console.log("");
 }
 
+function validateTarget(name: string): { dir: string; projectName: string } {
+  const trimmedName = name.trim();
+  if (!trimmedName) {
+    console.error("\n  Invalid project name: name is required.\n");
+    process.exit(1);
+  }
+
+  if (trimmedName.split(/[\\/]+/).includes("..")) {
+    console.error("\n  Invalid project name: must not contain '..'.\n");
+    process.exit(1);
+  }
+
+  const cwd = resolve(process.cwd());
+  const dir = resolve(isAbsolute(trimmedName) ? trimmedName : join(cwd, trimmedName));
+  const rel = relative(cwd, dir);
+  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) {
+    console.error("\n  Invalid project name: resolved path must be inside the current directory.\n");
+    process.exit(1);
+  }
+
+  if (existsSync(dir)) {
+    const entries = readdirSync(dir);
+    if (entries.length > 0) {
+      console.error("\n  Refusing to create project: target directory already exists and is not empty.\n");
+      process.exit(1);
+    }
+  }
+
+  const projectName = sanitizePackageName(basename(dir));
+  if (!projectName) {
+    console.error("\n  Invalid project name: cannot derive a valid package name.\n");
+    process.exit(1);
+  }
+
+  return { dir, projectName };
+}
+
+function sanitizePackageName(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/^[._-]+/, "")
+    .replace(/[._\s]+/g, "-")
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/-+/g, "-")
+    .replace(/-+$/g, "");
+}
+
 // ─── Main ───
 
 async function main(): Promise<void> {
+  const args = process.argv.slice(2);
+
+  if (args.includes("--help") || args.includes("-h")) {
+    printUsage();
+    process.exit(0);
+  }
+
+  const templateFlag = args.indexOf("--template");
+  const templateArg = templateFlag !== -1 ? args[templateFlag + 1] : undefined;
+  const nameArg = args.find(
+    (a) => !a.startsWith("--") && (templateFlag === -1 || args.indexOf(a) !== templateFlag + 1),
+  );
+
   // If both name and template are provided via CLI args, skip interactive mode
   if (nameArg) {
     const template = templateArg ?? "full";
@@ -178,7 +211,9 @@ function printUsage(): void {
   console.log("");
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (process.argv[1] && realpathSync(resolve(process.argv[1])) === fileURLToPath(import.meta.url)) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

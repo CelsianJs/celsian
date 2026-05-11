@@ -6,5 +6,15 @@
     "composite": true
   },
   "include": ["src"],
-  "references": [{ "path": "../core" }, { "path": "../schema" }]
+  "references": [
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../schema"
+    },
+    {
+      "path": "../create-celsian"
+    }
+  ]
 }
