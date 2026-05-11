@@ -2,15 +2,44 @@
 import { spawn } from 'node:child_process';
 
 const port = String(32000 + Math.floor(Math.random() * 10000));
+const canSignalGroup = process.platform !== 'win32';
 const child = spawn('npm', ['start'], {
   cwd: process.cwd(),
   env: { ...process.env, PORT: port, HOST: '127.0.0.1' },
   stdio: ['ignore', 'pipe', 'pipe'],
+  detached: canSignalGroup,
 });
 
 let output = '';
 child.stdout.on('data', (chunk) => { output += chunk; });
 child.stderr.on('data', (chunk) => { output += chunk; });
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForExit(timeoutMs) {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+
+  await Promise.race([
+    new Promise((resolve) => child.once('exit', resolve)),
+    sleep(timeoutMs),
+  ]);
+}
+
+function signalChild(signal) {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+
+  try {
+    if (canSignalGroup && child.pid) {
+      process.kill(-child.pid, signal);
+    } else {
+      child.kill(signal);
+    }
+  } catch (error) {
+    if (error?.code !== 'ESRCH') throw error;
+  }
+}
 
 const deadline = Date.now() + 15_000;
 let lastError;
@@ -31,12 +60,14 @@ try {
     } catch (error) {
       lastError = error;
     }
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    await sleep(250);
   }
   if (!passed) {
     throw new Error(`health check timed out or failed: ${lastError?.message ?? 'unknown'}\n${output}`);
   }
 } finally {
-  child.kill('SIGTERM');
-  setTimeout(() => child.kill('SIGKILL'), 2000).unref();
+  signalChild('SIGTERM');
+  await waitForExit(2_000);
+  signalChild('SIGKILL');
+  await waitForExit(1_000);
 }
