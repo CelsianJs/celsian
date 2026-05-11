@@ -117,7 +117,7 @@ function toOpenAPIPath(url: string): string {
 function deriveTag(url: string): string {
   const segments = url.split("/").filter(Boolean);
   if (segments.length === 0) return "default";
-  const first = segments[0]!;
+  const [first = ""] = segments;
   // Skip param/wildcard segments
   if (first.startsWith(":") || first.startsWith("*") || first.startsWith("{")) {
     return "default";

@@ -159,8 +159,9 @@ export class RPCHandler {
 
     const next = async (): Promise<unknown> => {
       if (index < middlewares.length) {
-        const mw = middlewares[index++]!;
-        return mw({ ctx, next });
+        const mw = middlewares[index];
+        index += 1;
+        if (mw) return mw({ ctx, next });
       }
       return proc.handler({ input, ctx });
     };

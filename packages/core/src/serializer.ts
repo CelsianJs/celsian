@@ -147,7 +147,7 @@ function extractZodProperties(shape: Record<string, unknown>): PropertyInfo[] {
  */
 function buildObjectSerializer(properties: PropertyInfo[]): FastSerializer {
   // For each property, generate the key prefix string once (e.g. `"name":`)
-  const keyPrefixes = properties.map((p) => JSON.stringify(p.key) + ":");
+  const keyPrefixes = properties.map((p) => `${JSON.stringify(p.key)}:`);
 
   // Pre-build nested serializers for object-typed properties
   const nestedSerializers = properties.map((p) =>
@@ -163,7 +163,10 @@ function buildObjectSerializer(properties: PropertyInfo[]): FastSerializer {
     let first = true;
 
     for (let i = 0; i < properties.length; i++) {
-      const prop = properties[i]!;
+      const prop = properties[i];
+      const keyPrefix = keyPrefixes[i];
+      if (!prop || keyPrefix === undefined) continue;
+
       const value = obj[prop.key];
 
       // Skip undefined values (matches JSON.stringify behavior)
@@ -172,7 +175,7 @@ function buildObjectSerializer(properties: PropertyInfo[]): FastSerializer {
       if (!first) result += ",";
       first = false;
 
-      result += keyPrefixes[i];
+      result += keyPrefix;
 
       // Fast-path known types
       if (value === null) {
@@ -184,11 +187,14 @@ function buildObjectSerializer(properties: PropertyInfo[]): FastSerializer {
         result += Number.isFinite(value) ? value.toString() : "null";
       } else if (prop.type === "boolean" && typeof value === "boolean") {
         result += value ? "true" : "false";
-      } else if (nestedSerializers[i] && typeof value === "object" && !Array.isArray(value)) {
-        result += nestedSerializers[i]!(value);
       } else {
-        // Fallback for arrays, mismatched types, or complex values
-        result += JSON.stringify(value);
+        const nestedSerializer = nestedSerializers[i];
+        if (nestedSerializer && typeof value === "object" && !Array.isArray(value)) {
+          result += nestedSerializer(value);
+        } else {
+          // Fallback for arrays, mismatched types, or complex values
+          result += JSON.stringify(value);
+        }
       }
     }
 
@@ -205,7 +211,7 @@ function buildObjectSerializer(properties: PropertyInfo[]): FastSerializer {
 function serializeString(value: string): string {
   // Fast path: if no special chars, just wrap in quotes
   if (!needsEscape(value)) {
-    return '"' + value + '"';
+    return `"${value}"`;
   }
   // Fallback to JSON.stringify for strings with special chars
   return JSON.stringify(value);

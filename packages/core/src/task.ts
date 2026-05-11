@@ -162,7 +162,11 @@ export function createEnqueue(queue: QueueBackend, registry: TaskRegistry) {
     if (!registry.has(taskName)) {
       throw new CelsianError(`Unknown task: "${taskName}". Register it with taskRegistry.register() before enqueuing.`);
     }
-    const definition = registry.get(taskName)!;
+    const definition = registry.get(taskName);
+    if (!definition) {
+      throw new CelsianError(`Unknown task: "${taskName}". Register it with taskRegistry.register() before enqueuing.`);
+    }
+
     const id = generateQueueId();
     const message: QueueMessage = {
       id,

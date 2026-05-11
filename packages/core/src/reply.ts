@@ -316,7 +316,7 @@ async function serveFile(
       if (ifModifiedSince && !options.request.headers.get("if-none-match")) {
         const ifModifiedDate = new Date(ifModifiedSince);
         // Compare at second precision (HTTP dates are second-granularity)
-        if (!isNaN(ifModifiedDate.getTime()) && fileStat.mtime.getTime() <= ifModifiedDate.getTime() + 999) {
+        if (!Number.isNaN(ifModifiedDate.getTime()) && fileStat.mtime.getTime() <= ifModifiedDate.getTime() + 999) {
           return new Response(null, {
             status: 304,
             headers: buildHeaders({ etag, "last-modified": lastModified, ...replyHeaders }),
@@ -375,7 +375,9 @@ async function serveFile(
 
       if (ranges.length === 1) {
         // Single range — stream with byte-range seek
-        const [start, end] = ranges[0]!;
+        const firstRange = ranges[0];
+        if (!firstRange) return null;
+        const [start, end] = firstRange;
         const stream = createReadStream(resolvedPath, { start, end });
         const webStream = Readable.toWeb(stream) as ReadableStream;
         return new Response(webStream, {
@@ -391,7 +393,7 @@ async function serveFile(
       // Multi-range — must buffer parts for multipart response
       const { readFile } = await import("node:fs/promises");
       const data = await readFile(resolvedPath);
-      const boundary = "celsian_range_" + Date.now().toString(36);
+      const boundary = `celsian_range_${Date.now().toString(36)}`;
       const parts: Uint8Array[] = [];
       const encoder = new TextEncoder();
 
@@ -480,13 +482,13 @@ function parseRangeHeader(rangeHeader: string, totalSize: number): [number, numb
     if (part.startsWith("-")) {
       // Suffix range: `-500` means last 500 bytes
       const suffix = parseInt(part.slice(1), 10);
-      if (isNaN(suffix) || suffix <= 0) return null;
+      if (Number.isNaN(suffix) || suffix <= 0) return null;
       const start = Math.max(0, totalSize - suffix);
       ranges.push([start, totalSize - 1]);
     } else {
-      const [startStr, endStr] = part.split("-");
-      const start = parseInt(startStr!, 10);
-      if (isNaN(start)) return null;
+      const [startStr = "", endStr] = part.split("-");
+      const start = parseInt(startStr, 10);
+      if (Number.isNaN(start)) return null;
 
       let end: number;
       if (!endStr || endStr === "") {
@@ -494,7 +496,7 @@ function parseRangeHeader(rangeHeader: string, totalSize: number): [number, numb
         end = totalSize - 1;
       } else {
         end = parseInt(endStr, 10);
-        if (isNaN(end)) return null;
+        if (Number.isNaN(end)) return null;
       }
 
       // Clamp end to file size

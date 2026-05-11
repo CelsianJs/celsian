@@ -146,7 +146,7 @@ export class ValidationError extends CelsianError {
  * Assert that a plugin value passed to `app.register()` is a function.
  * Throws a descriptive CelsianError if it is not.
  */
-export function assertPlugin(value: unknown): asserts value is Function {
+export function assertPlugin(value: unknown): asserts value is (...args: unknown[]) => unknown {
   if (typeof value === "function") return;
 
   const received =
@@ -171,7 +171,7 @@ export function assertPlugin(value: unknown): asserts value is Function {
  */
 export function assertDecorationUnique(name: string, existingValue: unknown, newValue: unknown): void {
   const fmt = (v: unknown): string => {
-    if (typeof v === "function") return `[Function: ${(v as Function).name || "anonymous"}]`;
+    if (typeof v === "function") return `[Function: ${(v as { name?: string }).name || "anonymous"}]`;
     if (typeof v === "object" && v !== null) return JSON.stringify(v).slice(0, 80);
     return String(v);
   };

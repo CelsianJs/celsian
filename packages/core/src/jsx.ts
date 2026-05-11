@@ -27,7 +27,7 @@ const ESCAPE_MAP: Record<string, string> = {
 };
 
 function escapeHtml(str: string): string {
-  return str.replace(/[&<>"']/g, (c) => ESCAPE_MAP[c]!);
+  return str.replace(/[&<>"']/g, (c) => ESCAPE_MAP[c] ?? c);
 }
 
 // Void (self-closing) HTML elements

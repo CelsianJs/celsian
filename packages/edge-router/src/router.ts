@@ -26,8 +26,10 @@ class RouteCache<K, V> {
   set(key: K, value: V): void {
     if (!this.map.has(key)) {
       if (this.keys.length >= MAX_CACHE_SIZE) {
-        const oldest = this.keys.shift()!;
-        this.map.delete(oldest);
+        const oldest = this.keys.shift();
+        if (oldest !== undefined) {
+          this.map.delete(oldest);
+        }
       }
       this.keys.push(key);
     }

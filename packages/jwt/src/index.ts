@@ -35,15 +35,14 @@ export interface JWTNamespace {
  * ```
  */
 export function jwt(options: JWTOptions): PluginFunction {
-  const algorithms = options.algorithms ?? ["HS256"];
+  const algorithms = options.algorithms?.length ? options.algorithms : ["HS256"];
+  const algorithm = algorithms[0] ?? "HS256";
   const secretKey = new TextEncoder().encode(options.secret);
 
   return function jwtPlugin(app) {
     const jwtInstance: JWTNamespace = {
       async sign(payload: JWTPayload, signOptions?: { expiresIn?: string | number }): Promise<string> {
-        let builder = new jose.SignJWT(payload as jose.JWTPayload)
-          .setProtectedHeader({ alg: algorithms[0]! })
-          .setIssuedAt();
+        let builder = new jose.SignJWT(payload as jose.JWTPayload).setProtectedHeader({ alg: algorithm }).setIssuedAt();
 
         if (signOptions?.expiresIn) {
           if (typeof signOptions.expiresIn === "number") {
@@ -86,7 +85,7 @@ export function createJWTGuard(options: JWTOptions): HookHandler {
     );
   }
 
-  const algorithms = options.algorithms ?? ["HS256"];
+  const algorithms = options.algorithms?.length ? options.algorithms : ["HS256"];
   const secretKey = new TextEncoder().encode(options.secret);
 
   const guard: HookHandler<void | Response> = async (request: CelsianRequest, reply: CelsianReply) => {

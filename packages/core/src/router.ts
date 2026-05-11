@@ -163,7 +163,8 @@ export class Router {
       return node.routes.has(method) ? node : null;
     }
 
-    const seg = segments[index]!;
+    const seg = segments[index];
+    if (seg === undefined) return null;
 
     // 1. Static match (highest priority)
     const staticChild = node.children.get(seg);
@@ -206,7 +207,9 @@ export class Router {
     if (index >= segments.length) {
       return node.routes.size > 0;
     }
-    const seg = segments[index]!;
+    const seg = segments[index];
+    if (seg === undefined) return false;
+
     const staticChild = node.children.get(seg);
     if (staticChild && this._hasPath(staticChild, segments, index + 1)) return true;
     if (node.paramChild && this._hasPath(node.paramChild, segments, index + 1)) return true;

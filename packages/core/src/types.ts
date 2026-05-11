@@ -19,7 +19,7 @@ export type ExtractRouteParams<T extends string> = T extends `${string}:${infer 
     ? { [K in Param]: string }
     : T extends `${string}*`
       ? { "*": string }
-      : {};
+      : Record<never, never>;
 
 // ─── Hook Types ───
 

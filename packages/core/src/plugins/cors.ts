@@ -90,7 +90,7 @@ export function cors(options: CORSOptions): PluginFunction {
 
         // When origin is not wildcard, caches must key on the Origin header
         if (allowOrigin !== "*") {
-          headers["vary"] = "origin";
+          headers.vary = "origin";
         }
 
         return new Response(null, { status: 204, headers });
@@ -109,7 +109,7 @@ export function cors(options: CORSOptions): PluginFunction {
 
       // When origin is not wildcard, caches must key on the Origin header
       if (allowOrigin !== "*") {
-        const existing = reply.headers["vary"];
+        const existing = reply.headers.vary;
         if (existing) {
           // Append Origin if not already present (case-insensitive check)
           if (!/\borigin\b/i.test(existing)) {

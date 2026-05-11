@@ -181,7 +181,7 @@ export class CelsianApp {
     if (typeof handlerOrOpts === "function") {
       this.pluginContext.get(url, handlerOrOpts);
     } else {
-      this._routeWithSchema("GET", url, handlerOrOpts, handler!);
+      this._routeWithSchema("GET", url, handlerOrOpts, this._requireSchemaHandler(handler));
     }
   }
 
@@ -199,7 +199,7 @@ export class CelsianApp {
     if (typeof handlerOrOpts === "function") {
       this.pluginContext.post(url, handlerOrOpts);
     } else {
-      this._routeWithSchema("POST", url, handlerOrOpts, handler!);
+      this._routeWithSchema("POST", url, handlerOrOpts, this._requireSchemaHandler(handler));
     }
   }
 
@@ -217,7 +217,7 @@ export class CelsianApp {
     if (typeof handlerOrOpts === "function") {
       this.pluginContext.put(url, handlerOrOpts);
     } else {
-      this._routeWithSchema("PUT", url, handlerOrOpts, handler!);
+      this._routeWithSchema("PUT", url, handlerOrOpts, this._requireSchemaHandler(handler));
     }
   }
 
@@ -235,7 +235,7 @@ export class CelsianApp {
     if (typeof handlerOrOpts === "function") {
       this.pluginContext.patch(url, handlerOrOpts);
     } else {
-      this._routeWithSchema("PATCH", url, handlerOrOpts, handler!);
+      this._routeWithSchema("PATCH", url, handlerOrOpts, this._requireSchemaHandler(handler));
     }
   }
 
@@ -253,7 +253,7 @@ export class CelsianApp {
     if (typeof handlerOrOpts === "function") {
       this.pluginContext.delete(url, handlerOrOpts);
     } else {
-      this._routeWithSchema("DELETE", url, handlerOrOpts, handler!);
+      this._routeWithSchema("DELETE", url, handlerOrOpts, this._requireSchemaHandler(handler));
     }
   }
 
@@ -276,9 +276,16 @@ export class CelsianApp {
       }
     } else {
       for (const method of methods) {
-        this._routeWithSchema(method, url, handlerOrOpts, handler!);
+        this._routeWithSchema(method, url, handlerOrOpts, this._requireSchemaHandler(handler));
       }
     }
+  }
+
+  private _requireSchemaHandler(handler: TypedSchemaHandler | undefined): TypedSchemaHandler {
+    if (!handler) {
+      throw new TypeError("Route schema options require a handler");
+    }
+    return handler;
   }
 
   /** Internal: register a route with schema options from the typed overload */

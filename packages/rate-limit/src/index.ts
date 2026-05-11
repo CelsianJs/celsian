@@ -64,8 +64,6 @@ export class MemoryRateLimitStore implements RateLimitStore {
   }
 }
 
-const warnedNoKey = false;
-
 function createDefaultKeyGenerator(trustProxy: boolean): (req: CelsianRequest) => string {
   if (!trustProxy) {
     throw new Error(

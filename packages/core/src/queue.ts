@@ -47,8 +47,10 @@ export class MemoryQueue implements QueueBackend {
     if (idx === -1) return null;
 
     const [message] = this.messages.splice(idx, 1);
-    this.inFlight.set(message?.id, message!);
-    return message!;
+    if (!message) return null;
+
+    this.inFlight.set(message.id, message);
+    return message;
   }
 
   async ack(id: string): Promise<void> {

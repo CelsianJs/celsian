@@ -25,12 +25,14 @@ export function parseCronExpression(expr: string): ParsedCron {
     throw new CelsianError(`Invalid cron expression: "${expr}" (expected 5 fields)`);
   }
 
+  const [minutes, hours, daysOfMonth, months, daysOfWeek] = parts as [string, string, string, string, string];
+
   return {
-    minutes: parseField(parts[0]!, 0, 59),
-    hours: parseField(parts[1]!, 0, 23),
-    daysOfMonth: parseField(parts[2]!, 1, 31),
-    months: parseField(parts[3]!, 1, 12),
-    daysOfWeek: parseField(parts[4]!, 0, 6),
+    minutes: parseField(minutes, 0, 59),
+    hours: parseField(hours, 0, 23),
+    daysOfMonth: parseField(daysOfMonth, 1, 31),
+    months: parseField(months, 1, 12),
+    daysOfWeek: parseField(daysOfWeek, 0, 6),
   };
 }
 
@@ -41,14 +43,14 @@ function parseField(field: string, min: number, max: number): Set<number> {
     if (part === "*") {
       for (let i = min; i <= max; i++) values.add(i);
     } else if (part.includes("/")) {
-      const [range, stepStr] = part.split("/");
-      const step = parseInt(stepStr!, 10);
-      const start = range === "*" ? min : parseInt(range!, 10);
+      const [range = "*", stepStr = ""] = part.split("/");
+      const step = parseInt(stepStr, 10);
+      const start = range === "*" ? min : parseInt(range, 10);
       for (let i = start; i <= max; i += step) values.add(i);
     } else if (part.includes("-")) {
-      const [startStr, endStr] = part.split("-");
-      const start = parseInt(startStr!, 10);
-      const end = parseInt(endStr!, 10);
+      const [startStr = "", endStr = ""] = part.split("-");
+      const start = parseInt(startStr, 10);
+      const end = parseInt(endStr, 10);
       for (let i = start; i <= end; i++) values.add(i);
     } else {
       values.add(parseInt(part, 10));
