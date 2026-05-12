@@ -23,7 +23,7 @@
     "assert:public-metadata": "node scripts/assert-public-metadata.mjs"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.9",
+    "@biomejs/biome": "^2.4.15",
     "@changesets/cli": "^2.30.0",
     "@sinclair/typebox": "^0.34.0",
     "@types/autocannon": "^7.12.7",
