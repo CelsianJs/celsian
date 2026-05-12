@@ -31,9 +31,16 @@ async function main(): Promise<void> {
 
     case "create": {
       const name = args[1];
-      if (!name) {
-        logger.error("Usage: celsian create <name> [--template basic|rest-api|rpc-api]");
-        process.exit(1);
+      if (!name || name.startsWith("-")) {
+        console.log("");
+        console.log("  Usage: celsian create <name> [--template basic|rest-api|rpc-api]");
+        console.log("");
+        console.log("  Templates:");
+        console.log("    basic       Minimal API server (default)");
+        console.log("    rest-api    REST API with TypeBox schemas");
+        console.log("    rpc-api    RPC-first with typed client");
+        console.log("");
+        process.exit(name === "--help" || name === "-h" ? 0 : 1);
       }
       const template = (getFlag(args, "--template", "-t") ?? "basic") as Template;
       await createCommand(name, template);

@@ -1,5 +1,9 @@
 # CelsianJS
 
+[![npm version](https://img.shields.io/npm/v/celsian)](https://www.npmjs.com/package/celsian)
+[![license](https://img.shields.io/npm/l/celsian)](https://github.com/CelsianJs/celsian/blob/main/LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/CelsianJs/celsian/test.yml?branch=main&label=tests)](https://github.com/CelsianJs/celsian/actions)
+
 TypeScript backend framework built on Web Standard APIs. Runs everywhere -- Node.js, Bun, Deno, Cloudflare Workers, AWS Lambda, Vercel.
 
 - **Multi-runtime** -- Write once, deploy to any JavaScript runtime. Built on `Request`/`Response`, not `req`/`res`.
