@@ -13,6 +13,6 @@
     "@celsian/compress": "workspace:*",
     "@celsian/rpc": "workspace:*",
     "@celsian/schema": "workspace:*",
-    "@sinclair/typebox": "^0.34.0"
+    "@sinclair/typebox": "^0.34.49"
   }
 }

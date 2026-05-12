@@ -8,6 +8,6 @@
   "dependencies": {
     "celsian": "workspace:*",
     "@celsian/rpc": "workspace:*",
-    "@sinclair/typebox": "^0.34.0"
+    "@sinclair/typebox": "^0.34.49"
   }
 }
