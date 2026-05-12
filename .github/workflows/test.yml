@@ -11,7 +11,7 @@ env:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-latest
     strategy:
       matrix:
         node-version: [20, 22]
@@ -50,7 +50,7 @@ jobs:
       - run: pnpm typecheck
 
   lint:
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -70,7 +70,7 @@ jobs:
         run: npx biome check . --diagnostic-level=error
 
   security-audit:
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -91,7 +91,7 @@ jobs:
 
   # Bun smoke test — verifies the framework runs on Bun
   test-bun:
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -120,7 +120,7 @@ jobs:
   ci-passed:
     if: always()
     needs: [test, lint]
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-latest
     steps:
       - name: Check all jobs passed
         run: |
