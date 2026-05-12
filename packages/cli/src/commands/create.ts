@@ -27,7 +27,7 @@ export async function createCommand(name: string, template: Template = "basic"):
         },
         dependencies: {
           celsian: "^0.3.18",
-          ...(template === "rpc-api" ? { "@celsian/rpc": "^0.3.15" } : {}),
+          ...(template === "rpc-api" ? { "@celsian/rpc": "^0.3.18" } : {}),
           ...(template !== "basic" ? { "@sinclair/typebox": "^0.34.0" } : {}),
         },
         devDependencies: {

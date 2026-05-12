@@ -11,7 +11,7 @@ export const rpcApiTemplate = {
       },
       dependencies: {
         celsian: "^0.3.18",
-        "@celsian/rpc": "^0.3.15",
+        "@celsian/rpc": "^0.3.18",
         "@sinclair/typebox": "^0.34.0",
       },
       devDependencies: {

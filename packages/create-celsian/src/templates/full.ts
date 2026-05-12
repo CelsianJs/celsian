@@ -13,10 +13,10 @@ export const fullTemplate: Record<string, string> = {
       },
       dependencies: {
         celsian: "^0.3.18",
-        "@celsian/core": "^0.3.16",
-        "@celsian/jwt": "^0.3.16",
-        "@celsian/rpc": "^0.3.15",
-        "@celsian/rate-limit": "^0.3.16",
+        "@celsian/core": "^0.3.18",
+        "@celsian/jwt": "^0.3.18",
+        "@celsian/rpc": "^0.3.18",
+        "@celsian/rate-limit": "^0.3.18",
         "@sinclair/typebox": "^0.34.0",
       },
       devDependencies: {
