@@ -7,7 +7,9 @@ const requiredPrivateNames = new Set([
   '@celsian/edge-router',
 ]);
 const allowedPublicNames = new Set([
+  '@celsian/adapter-bun',
   '@celsian/adapter-cloudflare',
+  '@celsian/adapter-deno',
   '@celsian/adapter-fly',
   '@celsian/adapter-lambda',
   '@celsian/adapter-node',
@@ -22,6 +24,7 @@ const allowedPublicNames = new Set([
   '@celsian/rate-limit',
   '@celsian/rpc',
   '@celsian/schema',
+  '@celsian/ws-redis',
   'celsian',
   'create-celsian',
 ]);
