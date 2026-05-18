@@ -1,5 +1,13 @@
 # celsian
 
+## 0.4.0
+
+### Patch Changes
+
+- Updated dependencies [dec80a7]
+  - @celsian/core@0.4.0
+  - @celsian/cli@0.4.0
+
 ## 0.3.18
 
 ### Patch Changes

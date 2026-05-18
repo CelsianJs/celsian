@@ -1,5 +1,12 @@
 # @celsian/queue-redis
 
+## 0.3.19
+
+### Patch Changes
+
+- Updated dependencies [dec80a7]
+  - @celsian/core@0.4.0
+
 ## 0.3.16
 
 ### Patch Changes
