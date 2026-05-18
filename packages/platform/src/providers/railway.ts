@@ -41,9 +41,7 @@ export async function deployRailway(opts: RailwayDeployOptions = {}): Promise<{ 
   try {
     execSync("railway version", { cwd, stdio: "pipe" });
   } catch {
-    throw new PlatformError(
-      "Railway CLI not found. Install it with: npm install -g @railway/cli",
-    );
+    throw new PlatformError("Railway CLI not found. Install it with: npm install -g @railway/cli");
   }
 
   // Generate railway.json if not present
@@ -70,8 +68,6 @@ export async function deployRailway(opts: RailwayDeployOptions = {}): Promise<{ 
     console.log(`[celsian:deploy] Deployed to ${url}`);
     return { url };
   } catch (error) {
-    throw new PlatformError(
-      `Railway deployment failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    throw new PlatformError(`Railway deployment failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }

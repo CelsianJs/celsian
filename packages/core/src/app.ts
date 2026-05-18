@@ -865,11 +865,7 @@ export class CelsianApp {
     return headers;
   }
 
-  private async applyRootOnSend(
-    response: Response,
-    request: CelsianRequest,
-    reply: CelsianReply,
-  ): Promise<Response> {
+  private async applyRootOnSend(response: Response, request: CelsianRequest, reply: CelsianReply): Promise<Response> {
     if (this.rootContext.hooks.onSend.length === 0) return response;
     try {
       await runOnSendHooks(this.rootContext.hooks.onSend, request, reply);

@@ -1,8 +1,8 @@
 // @celsian/cli — Deploy command: generates config files and deploys to platform CLIs
 
+import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { execSync } from "node:child_process";
 import { logger } from "../utils/logger.js";
 
 export type DeployTarget = "vercel" | "lambda" | "cloudflare" | "fly" | "railway" | "docker";

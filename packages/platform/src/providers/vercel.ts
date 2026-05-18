@@ -32,9 +32,7 @@ export async function deployVercel(opts: VercelDeployOptions = {}): Promise<{ ur
   try {
     execSync("npx vercel --version", { cwd, stdio: "pipe" });
   } catch {
-    throw new PlatformError(
-      "Vercel CLI not found. Install it with: npm install -g vercel",
-    );
+    throw new PlatformError("Vercel CLI not found. Install it with: npm install -g vercel");
   }
 
   // Generate vercel.json if not present
@@ -59,8 +57,6 @@ export async function deployVercel(opts: VercelDeployOptions = {}): Promise<{ ur
     console.log(`[celsian:deploy] Deployed to ${url}`);
     return { url };
   } catch (error) {
-    throw new PlatformError(
-      `Vercel deployment failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    throw new PlatformError(`Vercel deployment failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }

@@ -11,9 +11,7 @@ export async function handleError(
   error: Error,
   request: CelsianRequest,
   reply: CelsianReply,
-  customHandler:
-    | ((error: Error, request: CelsianRequest, reply: CelsianReply) => Response | Promise<Response>)
-    | null,
+  customHandler: ((error: Error, request: CelsianRequest, reply: CelsianReply) => Response | Promise<Response>) | null,
   onErrorHooks: OnErrorHandler[],
 ): Promise<Response> {
   if (customHandler) {

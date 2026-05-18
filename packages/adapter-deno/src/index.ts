@@ -53,10 +53,10 @@ export function createDenoHandler(app: CelsianApp): DenoFetchHandler {
       return await app.handle(request);
     } catch (error) {
       console.error("[celsian] Unhandled error in Deno handler:", error);
-      return new Response(
-        JSON.stringify({ error: "Internal Server Error", statusCode: 500 }),
-        { status: 500, headers: { "content-type": "application/json; charset=utf-8" } },
-      );
+      return new Response(JSON.stringify({ error: "Internal Server Error", statusCode: 500 }), {
+        status: 500,
+        headers: { "content-type": "application/json; charset=utf-8" },
+      });
     }
   };
 }
@@ -78,18 +78,17 @@ export function createDenoHandler(app: CelsianApp): DenoFetchHandler {
  * ```
  */
 export function serveDeno(app: CelsianApp, options: DenoAdapterOptions = {}): void {
-  const port = options.port ?? parseInt(
-    (typeof process !== "undefined" ? process.env.PORT : undefined) ?? "3000",
-    10,
-  );
+  const port = options.port ?? parseInt((typeof process !== "undefined" ? process.env.PORT : undefined) ?? "3000", 10);
   const hostname = options.hostname ?? "0.0.0.0";
 
   const handler = createDenoHandler(app);
 
   // Call Deno.serve — we use globalThis to avoid needing Deno types at compile time
-  const Deno = (globalThis as Record<string, unknown>).Deno as {
-    serve: (opts: DenoServeOptions, handler: DenoFetchHandler) => void;
-  } | undefined;
+  const Deno = (globalThis as Record<string, unknown>).Deno as
+    | {
+        serve: (opts: DenoServeOptions, handler: DenoFetchHandler) => void;
+      }
+    | undefined;
 
   if (!Deno?.serve) {
     throw new Error("Deno.serve is not available. This adapter requires the Deno runtime.");
@@ -100,9 +99,11 @@ export function serveDeno(app: CelsianApp, options: DenoAdapterOptions = {}): vo
       port,
       hostname,
       signal: options.signal,
-      onListen: options.onListen ?? ((info) => {
-        console.log(`[celsian] Server running at http://${info.hostname}:${info.port}`);
-      }),
+      onListen:
+        options.onListen ??
+        ((info) => {
+          console.log(`[celsian] Server running at http://${info.hostname}:${info.port}`);
+        }),
     },
     handler,
   );

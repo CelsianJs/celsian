@@ -77,10 +77,7 @@ function createDefaultKeyGenerator(trustProxy: boolean): (req: CelsianRequest) =
         const clientIp = xff.split(",")[0]?.trim();
         if (clientIp) return clientIp;
       }
-      return (
-        req.headers.get("x-real-ip") ??
-        `anonymous-${Date.now().toString(36)}`
-      );
+      return req.headers.get("x-real-ip") ?? `anonymous-${Date.now().toString(36)}`;
     };
   }
   throw new CelsianError(

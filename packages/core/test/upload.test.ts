@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
-import { upload, type UploadedFile } from "../src/plugins/upload.js";
+import { type UploadedFile, upload } from "../src/plugins/upload.js";
 
 /**
  * Helper: build a multipart/form-data Request from files and fields.
  */
 function multipartRequest(
   url: string,
-  parts: { files?: { field: string; name: string; type: string; content: string | Uint8Array }[]; fields?: Record<string, string> },
+  parts: {
+    files?: { field: string; name: string; type: string; content: string | Uint8Array }[];
+    fields?: Record<string, string>;
+  },
 ): Request {
   const formData = new FormData();
 
@@ -92,7 +95,14 @@ describe("Upload Plugin", () => {
     });
 
     const request = multipartRequest("/upload", {
-      files: [{ field: "big", name: "large.bin", type: "application/octet-stream", content: "this content is definitely more than 10 bytes" }],
+      files: [
+        {
+          field: "big",
+          name: "large.bin",
+          type: "application/octet-stream",
+          content: "this content is definitely more than 10 bytes",
+        },
+      ],
     });
 
     const response = await app.handle(request);

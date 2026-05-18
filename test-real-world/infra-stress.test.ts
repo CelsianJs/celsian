@@ -1,24 +1,24 @@
 // Stress test pass 2: task workers, cron, WebSocket, health, plugin DX, edge cases
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  createApp,
   CronScheduler,
-  parseCronExpression,
-  shouldRun,
-  MemoryQueue,
-  TaskRegistry,
-  TaskWorker,
+  cors,
+  createApp,
   createEnqueue,
-  WSRegistry,
-  createWSConnection,
-  HttpError,
+  createLogger,
   createSSEHub,
   createSSEStream,
-  cors,
+  createWSConnection,
+  HttpError,
+  MemoryQueue,
+  parseCronExpression,
   security,
-  createLogger,
+  shouldRun,
+  TaskRegistry,
+  TaskWorker,
+  WSRegistry,
 } from "../packages/core/src/index.js";
-import type { CelsianRequest, CelsianReply, CelsianAppOptions } from "../packages/core/src/types.js";
+import type { CelsianAppOptions, CelsianReply, CelsianRequest } from "../packages/core/src/types.js";
 
 // ─── 1. Task System ───
 describe("Task System (real-world)", () => {
@@ -86,7 +86,7 @@ describe("Task System (real-world)", () => {
 
   it("task timeout should abort long-running tasks", async () => {
     const app = createApp();
-    let timedOut = false;
+    const timedOut = false;
 
     app.task({
       name: "slow-task",
@@ -208,7 +208,7 @@ describe("Cron System", () => {
     expect(workHours.hours.has(17)).toBe(true);
     expect(workHours.hours.has(8)).toBe(false);
     expect(workHours.daysOfWeek.has(0)).toBe(false); // Sunday
-    expect(workHours.daysOfWeek.has(1)).toBe(true);  // Monday
+    expect(workHours.daysOfWeek.has(1)).toBe(true); // Monday
   });
 
   it("parseCronExpression should handle comma-separated values", () => {
@@ -571,7 +571,7 @@ describe("SSE Advanced", () => {
 
     hub.closeAll();
     expect(hub.size).toBe(0);
-    ctrls.forEach((c) => c.abort());
+    for (const c of ctrls) c.abort();
   });
 });
 
@@ -669,9 +669,7 @@ describe("Auto-serialization in plugins", () => {
 // ─── 10. Content Negotiation ───
 describe("Content Negotiation", () => {
   it("accepts() helpers should work on requests", async () => {
-    const { accepts, acceptsEncoding, acceptsLanguage } = await import(
-      "../packages/core/src/negotiate.js"
-    );
+    const { accepts, acceptsEncoding, acceptsLanguage } = await import("../packages/core/src/negotiate.js");
 
     const req = new Request("http://localhost/test", {
       headers: {
@@ -817,10 +815,7 @@ describe("Reply chaining", () => {
   it("status + header + json chain should work", async () => {
     const app = createApp();
     app.post("/created", (req, reply) => {
-      return reply
-        .status(201)
-        .header("x-resource-id", "abc-123")
-        .json({ id: "abc-123" });
+      return reply.status(201).header("x-resource-id", "abc-123").json({ id: "abc-123" });
     });
     await app.ready();
 

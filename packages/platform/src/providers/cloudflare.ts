@@ -38,17 +38,13 @@ export async function deployCfWorker(opts: CfDeployOptions = {}): Promise<{ url:
   try {
     execSync("npx wrangler --version", { cwd, stdio: "pipe" });
   } catch {
-    throw new PlatformError(
-      "wrangler CLI not found. Install it with: npm install -D wrangler",
-    );
+    throw new PlatformError("wrangler CLI not found. Install it with: npm install -D wrangler");
   }
 
   // Generate wrangler.toml if not present
   const wranglerPath = resolve(cwd, "wrangler.toml");
   if (!existsSync(wranglerPath)) {
-    const toml = opts.workerName
-      ? WRANGLER_TOML.replace("my-celsian-api", opts.workerName)
-      : WRANGLER_TOML;
+    const toml = opts.workerName ? WRANGLER_TOML.replace("my-celsian-api", opts.workerName) : WRANGLER_TOML;
     writeFileSync(wranglerPath, toml, "utf-8");
     console.log("[celsian:deploy] Generated wrangler.toml");
   }
@@ -71,8 +67,6 @@ export async function deployCfWorker(opts: CfDeployOptions = {}): Promise<{ url:
     console.log(`[celsian:deploy] Deployed to ${url}`);
     return { url };
   } catch (error) {
-    throw new PlatformError(
-      `Cloudflare deployment failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    throw new PlatformError(`Cloudflare deployment failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }

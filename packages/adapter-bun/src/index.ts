@@ -59,8 +59,9 @@ export function createBunHandler(app: CelsianApp): BunFetchHandler {
       const handler = app.wsRegistry.getHandler(url.pathname);
       if (handler && request.headers.get("upgrade")?.toLowerCase() === "websocket") {
         // Bun's server.upgrade() handles the WebSocket upgrade natively
-        const upgraded = (server as { upgrade: (req: Request, opts?: unknown) => boolean })
-          .upgrade(request, { data: { pathname: url.pathname } });
+        const upgraded = (server as { upgrade: (req: Request, opts?: unknown) => boolean }).upgrade(request, {
+          data: { pathname: url.pathname },
+        });
         if (upgraded) {
           // Bun returns undefined after upgrade; return a 101 placeholder
           return new Response(null, { status: 101 });
@@ -72,10 +73,10 @@ export function createBunHandler(app: CelsianApp): BunFetchHandler {
       return await app.handle(request);
     } catch (error) {
       console.error("[celsian] Unhandled error in Bun handler:", error);
-      return new Response(
-        JSON.stringify({ error: "Internal Server Error", statusCode: 500 }),
-        { status: 500, headers: { "content-type": "application/json; charset=utf-8" } },
-      );
+      return new Response(JSON.stringify({ error: "Internal Server Error", statusCode: 500 }), {
+        status: 500,
+        headers: { "content-type": "application/json; charset=utf-8" },
+      });
     }
   };
 }

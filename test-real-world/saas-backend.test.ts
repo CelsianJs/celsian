@@ -1,10 +1,10 @@
 // Real-world test: SaaS backend with JWT auth, RPC, schema validation, caching
-import { describe, it, expect, beforeEach } from "vitest";
-import { createApp, HttpError, cors } from "../packages/core/src/index.js";
-import type { CelsianRequest, CelsianReply } from "../packages/core/src/types.js";
-import { jwt, createJWTGuard } from "../packages/jwt/src/index.js";
-import { procedure, router, RPCHandler } from "../packages/rpc/src/index.js";
+import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { cors, createApp, HttpError } from "../packages/core/src/index.js";
+import type { CelsianReply, CelsianRequest } from "../packages/core/src/types.js";
+import { createJWTGuard, jwt } from "../packages/jwt/src/index.js";
+import { procedure, RPCHandler, router } from "../packages/rpc/src/index.js";
 
 const TEST_SECRET = "test-secret-key-that-is-long-enough-for-hs256";
 
@@ -82,11 +82,15 @@ describe("Zod Schema Validation", () => {
       age: z.number().int().min(0).optional(),
     });
 
-    app.post("/users", {
-      schema: { body: CreateUserSchema },
-    }, (req, reply) => {
-      return reply.status(201).json({ created: req.parsedBody });
-    });
+    app.post(
+      "/users",
+      {
+        schema: { body: CreateUserSchema },
+      },
+      (req, reply) => {
+        return reply.status(201).json({ created: req.parsedBody });
+      },
+    );
     await app.ready();
 
     // Valid request
@@ -154,12 +158,10 @@ describe("RPC System", () => {
 
     const appRouter = router({
       greeting: {
-        hello: procedure
-          .input(z.object({ name: z.string() }))
-          .query(({ input }) => ({
-            message: `Hello, ${input.name}!`,
-            timestamp: Date.now(),
-          })),
+        hello: procedure.input(z.object({ name: z.string() })).query(({ input }) => ({
+          message: `Hello, ${input.name}!`,
+          timestamp: Date.now(),
+        })),
       },
       math: {
         add: procedure
@@ -274,11 +276,15 @@ describe("Plugin Composition", () => {
       return reply.json({ public: true });
     });
 
-    app.get("/private", {
-      onRequest: guard,
-    } as any, async (req, reply) => {
-      return reply.json({ private: true, user: (req as any).user?.sub });
-    });
+    app.get(
+      "/private",
+      {
+        onRequest: guard,
+      } as any,
+      async (req, reply) => {
+        return reply.json({ private: true, user: (req as any).user?.sub });
+      },
+    );
 
     await app.ready();
 
@@ -495,6 +501,9 @@ describe("Custom content-type parser", () => {
     });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.rows).toEqual([["a", "b", "c"], ["1", "2", "3"]]);
+    expect(body.rows).toEqual([
+      ["a", "b", "c"],
+      ["1", "2", "3"],
+    ]);
   });
 });

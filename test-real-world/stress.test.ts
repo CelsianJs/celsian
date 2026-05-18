@@ -1,13 +1,7 @@
 // Stress test: use CelsianJS like a real developer and find DX issues
-import { describe, it, expect, beforeEach } from "vitest";
-import {
-  createApp,
-  createSSEHub,
-  createSSEStream,
-  cors,
-  HttpError,
-} from "../packages/core/src/index.js";
-import type { CelsianRequest, CelsianReply } from "../packages/core/src/types.js";
+import { beforeEach, describe, expect, it } from "vitest";
+import { cors, createApp, createSSEHub, createSSEStream, HttpError } from "../packages/core/src/index.js";
+import type { CelsianReply, CelsianRequest } from "../packages/core/src/types.js";
 
 // ─── 1. Plain object return from handler (DX trap?) ───
 describe("Handler return semantics", () => {
@@ -430,9 +424,7 @@ describe("Reply helpers", () => {
   it("cookies should be settable and clearable", async () => {
     const app = createApp();
     app.get("/set-cookie", (req, reply) => {
-      return reply
-        .cookie("session", "abc123", { httpOnly: true, path: "/" })
-        .json({ set: true });
+      return reply.cookie("session", "abc123", { httpOnly: true, path: "/" }).json({ set: true });
     });
     app.get("/clear-cookie", (req, reply) => {
       return reply.clearCookie("session").json({ cleared: true });

@@ -1,18 +1,18 @@
 // Stress-test pass 6: Production readiness — adapter parity, streaming + errors,
 // CORS preflight edge cases, cookie security, hook failures, complex lifecycle
 
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { createApp } from "../packages/core/src/app.js";
-import { HttpError, ValidationError } from "../packages/core/src/errors.js";
-import { security } from "../packages/core/src/plugins/security.js";
-import { cors } from "../packages/core/src/plugins/cors.js";
-import { compress } from "../packages/compress/src/index.js";
-import { rateLimit } from "../packages/rate-limit/src/index.js";
-import { MemoryKVStore, createResponseCache, createSessionManager } from "../packages/cache/src/index.js";
-import { createLambdaHandler, type APIGatewayProxyEventV2 } from "../packages/adapter-lambda/src/index.js";
-import { createVercelEdgeHandler, createVercelCronHandler } from "../packages/adapter-vercel/src/index.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createCloudflareHandler } from "../packages/adapter-cloudflare/src/index.js";
+import { type APIGatewayProxyEventV2, createLambdaHandler } from "../packages/adapter-lambda/src/index.js";
+import { createVercelCronHandler, createVercelEdgeHandler } from "../packages/adapter-vercel/src/index.js";
+import { createResponseCache, createSessionManager, MemoryKVStore } from "../packages/cache/src/index.js";
+import { compress } from "../packages/compress/src/index.js";
+import { createApp } from "../packages/core/src/app.js";
 import { parseCookies, serializeCookie } from "../packages/core/src/cookie.js";
+import { HttpError, ValidationError } from "../packages/core/src/errors.js";
+import { cors } from "../packages/core/src/plugins/cors.js";
+import { security } from "../packages/core/src/plugins/security.js";
+import { rateLimit } from "../packages/rate-limit/src/index.js";
 
 // ─── Adapter Parity ─────────────────────────────────────────────
 
@@ -24,7 +24,9 @@ describe("Adapter parity", () => {
     app.get("/text", (_req, reply) => reply.send("plain text"));
     app.post("/echo", (req) => ({ body: req.parsedBody }));
     app.get("/params/:id", (req) => ({ id: req.params.id }));
-    app.get("/error", () => { throw new HttpError(422, "Validation failed"); });
+    app.get("/error", () => {
+      throw new HttpError(422, "Validation failed");
+    });
     return app;
   }
 
@@ -41,11 +43,13 @@ describe("Adapter parity", () => {
     it("should handle POST with body", async () => {
       const app = await buildTestApp();
       const handler = createVercelEdgeHandler(app);
-      const res = await handler(new Request("http://localhost/echo", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ key: "val" }),
-      }));
+      const res = await handler(
+        new Request("http://localhost/echo", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ key: "val" }),
+        }),
+      );
       expect(res.status).toBe(200);
       expect((await res.json()).body).toEqual({ key: "val" });
     });
@@ -78,9 +82,11 @@ describe("Adapter parity", () => {
       const app = createApp();
       app.get("/cron/cleanup", () => ({ cleaned: true }));
       const handler = createVercelCronHandler(app, "my-secret");
-      const res = await handler(new Request("http://localhost/cron/cleanup", {
-        headers: { authorization: "Bearer wrong-secret" },
-      }));
+      const res = await handler(
+        new Request("http://localhost/cron/cleanup", {
+          headers: { authorization: "Bearer wrong-secret" },
+        }),
+      );
       expect(res.status).toBe(401);
     });
 
@@ -88,9 +94,11 @@ describe("Adapter parity", () => {
       const app = createApp();
       app.get("/cron/cleanup", () => ({ cleaned: true }));
       const handler = createVercelCronHandler(app, "my-secret");
-      const res = await handler(new Request("http://localhost/cron/cleanup", {
-        headers: { authorization: "Bearer my-secret" },
-      }));
+      const res = await handler(
+        new Request("http://localhost/cron/cleanup", {
+          headers: { authorization: "Bearer my-secret" },
+        }),
+      );
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ cleaned: true });
     });
@@ -102,11 +110,7 @@ describe("Adapter parity", () => {
       const worker = createCloudflareHandler(app);
       const mockCtx = { waitUntil: () => {}, passThroughOnException: () => {} };
 
-      const res = await worker.fetch(
-        new Request("http://localhost/json"),
-        {},
-        mockCtx,
-      );
+      const res = await worker.fetch(new Request("http://localhost/json"), {}, mockCtx);
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ status: "ok" });
     });
@@ -119,11 +123,7 @@ describe("Adapter parity", () => {
       const worker = createCloudflareHandler(app);
       const mockCtx = { waitUntil: () => {}, passThroughOnException: () => {} };
 
-      const res = await worker.fetch(
-        new Request("http://localhost/env"),
-        { DB: "fake-binding" },
-        mockCtx,
-      );
+      const res = await worker.fetch(new Request("http://localhost/env"), { DB: "fake-binding" }, mockCtx);
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ hasEnv: true, hasCtx: true });
     });
@@ -133,11 +133,7 @@ describe("Adapter parity", () => {
       const worker = createCloudflareHandler(app);
       const mockCtx = { waitUntil: () => {}, passThroughOnException: () => {} };
 
-      const res = await worker.fetch(
-        new Request("http://localhost/error"),
-        {},
-        mockCtx,
-      );
+      const res = await worker.fetch(new Request("http://localhost/error"), {}, mockCtx);
       expect(res.status).toBe(422);
     });
   });
@@ -162,7 +158,9 @@ describe("Adapter parity", () => {
         isBase64Encoded: false,
         requestContext: {
           http: { method: "GET", path: "/params/42", protocol: "HTTP/1.1", sourceIp: "1.2.3.4", userAgent: "test" },
-          requestId: "r1", time: new Date().toISOString(), timeEpoch: Date.now(),
+          requestId: "r1",
+          time: new Date().toISOString(),
+          timeEpoch: Date.now(),
         },
       });
       const lambdaBody = JSON.parse(lambdaRes.body!);
@@ -219,10 +217,7 @@ describe("CORS edge cases", () => {
 
   it("should support array of allowed origins", async () => {
     const app = createApp();
-    await app.register(
-      cors({ origin: ["https://a.com", "https://b.com"], credentials: true }),
-      { encapsulate: false },
-    );
+    await app.register(cors({ origin: ["https://a.com", "https://b.com"], credentials: true }), { encapsulate: false });
     app.get("/api", () => ({}));
 
     const resA = await app.inject({
@@ -246,10 +241,7 @@ describe("CORS edge cases", () => {
 
   it("should support function origin validator", async () => {
     const app = createApp();
-    await app.register(
-      cors({ origin: (o) => o.endsWith(".mycompany.com") }),
-      { encapsulate: false },
-    );
+    await app.register(cors({ origin: (o) => o.endsWith(".mycompany.com") }), { encapsulate: false });
     app.get("/api", () => ({}));
 
     const good = await app.inject({
@@ -283,10 +275,9 @@ describe("CORS edge cases", () => {
 
   it("exposedHeaders should appear on actual requests", async () => {
     const app = createApp();
-    await app.register(
-      cors({ origin: "*", exposedHeaders: ["x-request-id", "x-total-count"] }),
-      { encapsulate: false },
-    );
+    await app.register(cors({ origin: "*", exposedHeaders: ["x-request-id", "x-total-count"] }), {
+      encapsulate: false,
+    });
     app.get("/api", () => ({}));
 
     const res = await app.inject({
@@ -447,7 +438,11 @@ describe("Hook failure resilience", () => {
     app.get(
       "/guarded",
       {
-        preHandler: [() => { throw new HttpError(401, "Token expired"); }],
+        preHandler: [
+          () => {
+            throw new HttpError(401, "Token expired");
+          },
+        ],
       },
       () => ({ secret: "data" }),
     );
@@ -536,33 +531,36 @@ describe("Production SaaS pattern", () => {
     app.get("/health", () => ({ status: "healthy", version: "1.0.0" }));
 
     // Authenticated section
-    app.register(async (authenticated) => {
-      authenticated.addHook("onRequest", (req, reply) => {
-        const apiKey = req.headers.get("x-api-key");
-        if (!apiKey || apiKey === "invalid") {
-          return reply.status(401).json({ error: "Invalid API key" });
-        }
-      });
+    app.register(
+      async (authenticated) => {
+        authenticated.addHook("onRequest", (req, reply) => {
+          const apiKey = req.headers.get("x-api-key");
+          if (!apiKey || apiKey === "invalid") {
+            return reply.status(401).json({ error: "Invalid API key" });
+          }
+        });
 
-      authenticated.get("/me", (req) => ({
-        apiKey: req.headers.get("x-api-key"),
-        authenticated: true,
-      }));
+        authenticated.get("/me", (req) => ({
+          apiKey: req.headers.get("x-api-key"),
+          authenticated: true,
+        }));
 
-      authenticated.post("/items", (req, reply) => {
-        const body = req.parsedBody as { name?: string } | null;
-        if (!body?.name) {
-          throw new ValidationError([{ message: "name is required", path: ["name"] }]);
-        }
-        reply.status(201);
-        return { id: Date.now(), name: body.name };
-      });
+        authenticated.post("/items", (req, reply) => {
+          const body = req.parsedBody as { name?: string } | null;
+          if (!body?.name) {
+            throw new ValidationError([{ message: "name is required", path: ["name"] }]);
+          }
+          reply.status(201);
+          return { id: Date.now(), name: body.name };
+        });
 
-      authenticated.delete("/items/:id", (req) => ({
-        deleted: true,
-        id: req.params.id,
-      }));
-    }, { prefix: "/resources", encapsulate: true });
+        authenticated.delete("/items/:id", (req) => ({
+          deleted: true,
+          id: req.params.id,
+        }));
+      },
+      { prefix: "/resources", encapsulate: true },
+    );
 
     return app;
   }
@@ -713,7 +711,9 @@ describe("App lifecycle", () => {
   it("app.ready() should be idempotent", async () => {
     const app = createApp();
     let pluginCalls = 0;
-    await app.register(() => { pluginCalls++; });
+    await app.register(() => {
+      pluginCalls++;
+    });
 
     await app.ready();
     await app.ready();
@@ -781,9 +781,7 @@ describe("Zero low-level internals in userland", () => {
     // Routes — return values auto-serialize, no manual Response construction needed
     app.get("/products", (req) => {
       const category = req.query.category;
-      return category
-        ? products.filter((p) => p.name.toLowerCase().includes(category))
-        : products;
+      return category ? products.filter((p) => p.name.toLowerCase().includes(category)) : products;
     });
 
     app.get("/products/:id", (req, reply) => {
@@ -810,7 +808,7 @@ describe("Zero low-level internals in userland", () => {
     expect(listRes.status).toBe(200);
     expect(listRes.headers.get("content-security-policy")).toBe("default-src 'self'");
     expect(listRes.headers.get("access-control-allow-origin")).toBe("https://shop.example.com");
-    expect((await listRes.json())).toHaveLength(2);
+    expect(await listRes.json()).toHaveLength(2);
 
     const getRes = await app.inject({ url: "/shop/products/p1" });
     expect((await getRes.json()).name).toBe("Shirt");

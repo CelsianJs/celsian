@@ -37,7 +37,7 @@ export type { OpenAPIOptions } from "./plugins/openapi.js";
 export { openapi } from "./plugins/openapi.js";
 export type { SecurityOptions } from "./plugins/security.js";
 export { security } from "./plugins/security.js";
-export type { UploadOptions, UploadedFile } from "./plugins/upload.js";
+export type { UploadedFile, UploadOptions } from "./plugins/upload.js";
 export { upload } from "./plugins/upload.js";
 export type { QueueBackend, QueueMessage } from "./queue.js";
 export { generateQueueId, MemoryQueue } from "./queue.js";

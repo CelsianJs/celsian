@@ -1,13 +1,13 @@
 // Stress-test pass 3: adapters, plugins (compress, rate-limit, cache), CLI utils, DX ergonomics
 
-import { describe, expect, it, beforeEach, vi, afterEach } from "vitest";
-import { createApp } from "../packages/core/src/app.js";
-import { security } from "../packages/core/src/plugins/security.js";
-import { cors } from "../packages/core/src/plugins/cors.js";
-import { MemoryKVStore, createResponseCache } from "../packages/cache/src/index.js";
-import { rateLimit, MemoryRateLimitStore } from "../packages/rate-limit/src/index.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { type APIGatewayProxyEventV2, createLambdaHandler } from "../packages/adapter-lambda/src/index.js";
+import { createResponseCache, MemoryKVStore } from "../packages/cache/src/index.js";
 import { compress } from "../packages/compress/src/index.js";
-import { createLambdaHandler, type APIGatewayProxyEventV2 } from "../packages/adapter-lambda/src/index.js";
+import { createApp } from "../packages/core/src/app.js";
+import { cors } from "../packages/core/src/plugins/cors.js";
+import { security } from "../packages/core/src/plugins/security.js";
+import { MemoryRateLimitStore, rateLimit } from "../packages/rate-limit/src/index.js";
 
 // ─── Lambda Adapter ────────────────────────────────────────────
 
@@ -94,9 +94,7 @@ describe("Lambda Adapter", () => {
     app.get("/search", (req) => ({ q: req.query.q, page: req.query.page }));
     const handler = createLambdaHandler(app);
 
-    const result = await handler(
-      makeLambdaEvent({ rawPath: "/search", rawQueryString: "q=celsian&page=2" }),
-    );
+    const result = await handler(makeLambdaEvent({ rawPath: "/search", rawQueryString: "q=celsian&page=2" }));
     expect(result.statusCode).toBe(200);
     const body = JSON.parse(result.body!);
     expect(body.q).toBe("celsian");
@@ -250,14 +248,10 @@ describe("Response Cache", () => {
     const cache = createResponseCache({ store, varyHeaders: ["accept-language"] });
     const cachedHandler = cache.wrap(app.handle.bind(app));
 
-    const res1 = await cachedHandler(
-      new Request("http://localhost/content", { headers: { "accept-language": "en" } }),
-    );
+    const res1 = await cachedHandler(new Request("http://localhost/content", { headers: { "accept-language": "en" } }));
     expect(await res1.json()).toEqual({ lang: "en" });
 
-    const res2 = await cachedHandler(
-      new Request("http://localhost/content", { headers: { "accept-language": "fr" } }),
-    );
+    const res2 = await cachedHandler(new Request("http://localhost/content", { headers: { "accept-language": "fr" } }));
     expect(await res2.json()).toEqual({ lang: "fr" });
     expect(res2.headers.get("x-cache")).toBe("MISS");
   });
@@ -378,10 +372,7 @@ describe("MemoryKVStore", () => {
 describe("Rate Limiter", () => {
   it("should allow requests within limit", async () => {
     const app = createApp();
-    await app.register(
-      rateLimit({ max: 5, window: 60000, keyGenerator: () => "test-client" }),
-      { encapsulate: false },
-    );
+    await app.register(rateLimit({ max: 5, window: 60000, keyGenerator: () => "test-client" }), { encapsulate: false });
     app.get("/api", () => ({ ok: true }));
 
     for (let i = 0; i < 5; i++) {
@@ -394,10 +385,7 @@ describe("Rate Limiter", () => {
 
   it("should return 429 when limit exceeded", async () => {
     const app = createApp();
-    await app.register(
-      rateLimit({ max: 2, window: 60000, keyGenerator: () => "test-client" }),
-      { encapsulate: false },
-    );
+    await app.register(rateLimit({ max: 2, window: 60000, keyGenerator: () => "test-client" }), { encapsulate: false });
     app.get("/api", () => ({ ok: true }));
 
     await app.inject({ url: "/api" });
@@ -412,10 +400,7 @@ describe("Rate Limiter", () => {
   it("should isolate keys per client", async () => {
     let clientId = "client-a";
     const app = createApp();
-    await app.register(
-      rateLimit({ max: 1, window: 60000, keyGenerator: () => clientId }),
-      { encapsulate: false },
-    );
+    await app.register(rateLimit({ max: 1, window: 60000, keyGenerator: () => clientId }), { encapsulate: false });
     app.get("/api", () => ({ ok: true }));
 
     const res1 = await app.inject({ url: "/api" });
@@ -436,10 +421,7 @@ describe("Rate Limiter", () => {
 
   it("should use X-Forwarded-For with trustProxy", async () => {
     const app = createApp();
-    await app.register(
-      rateLimit({ max: 1, window: 60000, trustProxy: true }),
-      { encapsulate: false },
-    );
+    await app.register(rateLimit({ max: 1, window: 60000, trustProxy: true }), { encapsulate: false });
     app.get("/api", () => ({ ok: true }));
 
     const res1 = await app.inject({
@@ -603,10 +585,7 @@ describe("Plugin registration ergonomics", () => {
     const store = new MemoryRateLimitStore();
 
     await app.register(security(), { encapsulate: false });
-    await app.register(
-      rateLimit({ max: 100, window: 60000, keyGenerator: () => "test" }),
-      { encapsulate: false },
-    );
+    await app.register(rateLimit({ max: 100, window: 60000, keyGenerator: () => "test" }), { encapsulate: false });
     app.get("/api", () => ({ ok: true }));
 
     const res = await app.inject({ url: "/api" });
@@ -619,10 +598,7 @@ describe("Plugin registration ergonomics", () => {
   it("rate-limit + security should both apply headers", async () => {
     const app = createApp();
     await app.register(security({ hsts: false }), { encapsulate: false });
-    await app.register(
-      rateLimit({ max: 10, window: 60000, keyGenerator: () => "k" }),
-      { encapsulate: false },
-    );
+    await app.register(rateLimit({ max: 10, window: 60000, keyGenerator: () => "k" }), { encapsulate: false });
     app.get("/test", () => "ok");
 
     const res = await app.inject({ url: "/test" });
@@ -728,9 +704,15 @@ describe("Hook ordering and interaction", () => {
     const app = createApp();
     const order: string[] = [];
 
-    app.addHook("onRequest", () => { order.push("first"); });
-    app.addHook("onRequest", () => { order.push("second"); });
-    app.addHook("onRequest", () => { order.push("third"); });
+    app.addHook("onRequest", () => {
+      order.push("first");
+    });
+    app.addHook("onRequest", () => {
+      order.push("second");
+    });
+    app.addHook("onRequest", () => {
+      order.push("third");
+    });
     app.get("/test", () => ({ ok: true }));
 
     await app.inject({ url: "/test" });
@@ -750,11 +732,9 @@ describe("Hook ordering and interaction", () => {
 
   it("preHandler can short-circuit with a Response", async () => {
     const app = createApp();
-    app.get(
-      "/guarded",
-      { preHandler: [(_req, reply) => reply.status(403).json({ error: "forbidden" })] },
-      () => ({ shouldnt: "reach" }),
-    );
+    app.get("/guarded", { preHandler: [(_req, reply) => reply.status(403).json({ error: "forbidden" })] }, () => ({
+      shouldnt: "reach",
+    }));
 
     const res = await app.inject({ url: "/guarded" });
     expect(res.status).toBe(403);

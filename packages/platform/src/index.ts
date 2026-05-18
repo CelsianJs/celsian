@@ -9,6 +9,6 @@ export { PlatformError } from "./errors.js";
 export { deployCfWorker } from "./providers/cloudflare.js";
 export { deployFly } from "./providers/fly.js";
 export { deployLambda } from "./providers/lambda.js";
-export { deployVercel } from "./providers/vercel.js";
 export { deployRailway } from "./providers/railway.js";
+export { deployVercel } from "./providers/vercel.js";
 export { REQ_REPLY_SHIM } from "./shim.js";

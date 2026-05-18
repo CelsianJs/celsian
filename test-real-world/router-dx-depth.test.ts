@@ -1,17 +1,17 @@
 // Stress-test pass 4: router edge cases, error handling, WebSocket registry,
 // adapter-node utilities, hook lifecycle depth, DX ergonomics, plugin composition
 
-import { describe, expect, it, vi, afterEach } from "vitest";
-import { createApp } from "../packages/core/src/app.js";
-import { Router } from "../packages/core/src/router.js";
-import { HttpError, ValidationError, CelsianError, wrapNonError } from "../packages/core/src/errors.js";
-import { WSRegistry, createWSConnection } from "../packages/core/src/websocket.js";
-import { createSSEHub, createSSEStream } from "../packages/core/src/sse.js";
-import { security } from "../packages/core/src/plugins/security.js";
-import { cors } from "../packages/core/src/plugins/cors.js";
-import { nodeToWebRequest } from "../packages/adapter-node/src/index.js";
-import { createLambdaHandler } from "../packages/adapter-lambda/src/index.js";
 import type { IncomingMessage } from "node:http";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createLambdaHandler } from "../packages/adapter-lambda/src/index.js";
+import { nodeToWebRequest } from "../packages/adapter-node/src/index.js";
+import { createApp } from "../packages/core/src/app.js";
+import { CelsianError, HttpError, ValidationError, wrapNonError } from "../packages/core/src/errors.js";
+import { cors } from "../packages/core/src/plugins/cors.js";
+import { security } from "../packages/core/src/plugins/security.js";
+import { Router } from "../packages/core/src/router.js";
+import { createSSEHub, createSSEStream } from "../packages/core/src/sse.js";
+import { createWSConnection, WSRegistry } from "../packages/core/src/websocket.js";
 
 // ─── Router Edge Cases ──────────────────────────────────────────
 
@@ -355,7 +355,9 @@ describe("WSRegistry", () => {
     registry.register("/chat", {});
 
     const ws1 = createWSConnection({
-      send: () => { throw new Error("connection closed"); },
+      send: () => {
+        throw new Error("connection closed");
+      },
       close: () => {},
     });
     const messages2: string[] = [];
@@ -495,13 +497,25 @@ describe("Full hook lifecycle", () => {
     const order: string[] = [];
     const app = createApp();
 
-    app.addHook("onRequest", () => { order.push("onRequest"); });
-    app.addHook("onSend", () => { order.push("onSend"); });
-    app.addHook("onResponse", () => { order.push("onResponse"); });
+    app.addHook("onRequest", () => {
+      order.push("onRequest");
+    });
+    app.addHook("onSend", () => {
+      order.push("onSend");
+    });
+    app.addHook("onResponse", () => {
+      order.push("onResponse");
+    });
 
     app.get(
       "/test",
-      { preHandler: [() => { order.push("preHandler"); }] },
+      {
+        preHandler: [
+          () => {
+            order.push("preHandler");
+          },
+        ],
+      },
       () => {
         order.push("handler");
         return { ok: true };
@@ -535,9 +549,15 @@ describe("Full hook lifecycle", () => {
     const app = createApp();
     const executed: string[] = [];
 
-    app.addHook("onSend", () => { executed.push("a"); });
-    app.addHook("onSend", () => { executed.push("b"); });
-    app.addHook("onSend", () => { executed.push("c"); });
+    app.addHook("onSend", () => {
+      executed.push("a");
+    });
+    app.addHook("onSend", () => {
+      executed.push("b");
+    });
+    app.addHook("onSend", () => {
+      executed.push("c");
+    });
     app.get("/test", () => ({ ok: true }));
 
     await app.inject({ url: "/test" });
@@ -564,12 +584,15 @@ describe("Plugin composition patterns", () => {
   it("nested plugin registration should scope hooks", async () => {
     const app = createApp();
 
-    await app.register(async (admin) => {
-      admin.addHook("onRequest", (_req, reply) => {
-        reply.header("x-scope", "admin");
-      });
-      admin.get("/dashboard", () => ({ admin: true }));
-    }, { encapsulate: true, prefix: "/admin" });
+    await app.register(
+      async (admin) => {
+        admin.addHook("onRequest", (_req, reply) => {
+          reply.header("x-scope", "admin");
+        });
+        admin.get("/dashboard", () => ({ admin: true }));
+      },
+      { encapsulate: true, prefix: "/admin" },
+    );
 
     app.get("/public", () => ({ public: true }));
 
@@ -626,10 +649,13 @@ describe("Plugin composition patterns", () => {
   it("plugin with prefix should namespace all routes", async () => {
     const app = createApp();
 
-    await app.register(async (plugin) => {
-      plugin.get("/list", () => [1, 2, 3]);
-      plugin.post("/create", () => ({ id: 1 }));
-    }, { prefix: "/items" });
+    await app.register(
+      async (plugin) => {
+        plugin.get("/list", () => [1, 2, 3]);
+        plugin.post("/create", () => ({ id: 1 }));
+      },
+      { prefix: "/items" },
+    );
 
     const list = await app.inject({ url: "/items/list" });
     expect(list.status).toBe(200);
@@ -788,9 +814,7 @@ describe("Async patterns", () => {
       return { value: counter };
     });
 
-    const results = await Promise.all(
-      Array.from({ length: 10 }, () => app.inject({ url: "/counter" })),
-    );
+    const results = await Promise.all(Array.from({ length: 10 }, () => app.inject({ url: "/counter" })));
 
     expect(results.every((r) => r.status === 200)).toBe(true);
     expect(counter).toBe(10);

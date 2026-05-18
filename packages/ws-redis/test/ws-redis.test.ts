@@ -1,5 +1,5 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
 import { WSRegistry } from "@celsian/core";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RedisWSAdapter } from "../src/index.js";
 
 /**

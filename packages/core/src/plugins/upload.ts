@@ -1,7 +1,7 @@
 // @celsian/core -- File upload / multipart parsing plugin
 
 import { HttpError } from "../errors.js";
-import type { CelsianRequest, CelsianReply, PluginFunction } from "../types.js";
+import type { CelsianReply, CelsianRequest, PluginFunction } from "../types.js";
 
 const DEFAULT_MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const DEFAULT_MAX_FILES = 10;

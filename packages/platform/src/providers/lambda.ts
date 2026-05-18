@@ -100,10 +100,10 @@ export async function deployLambda(opts: LambdaDeployOptions = {}): Promise<{ ap
 
     if (isFirstDeploy) {
       // First deploy — use guided mode
-      execSync(
-        `sam deploy --guided --stack-name ${stackName} --region ${region} --capabilities CAPABILITY_IAM`,
-        { cwd, stdio: "inherit" },
-      );
+      execSync(`sam deploy --guided --stack-name ${stackName} --region ${region} --capabilities CAPABILITY_IAM`, {
+        cwd,
+        stdio: "inherit",
+      });
     } else {
       execSync("sam deploy", { cwd, stdio: "inherit" });
     }
@@ -125,8 +125,6 @@ export async function deployLambda(opts: LambdaDeployOptions = {}): Promise<{ ap
 
     return { apiUrl: `https://<api-id>.execute-api.${region}.amazonaws.com` };
   } catch (error) {
-    throw new PlatformError(
-      `Lambda deployment failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    throw new PlatformError(`Lambda deployment failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }

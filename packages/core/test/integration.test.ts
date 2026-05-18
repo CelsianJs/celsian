@@ -62,10 +62,12 @@ async function launchApp(app: ReturnType<typeof createApp>): Promise<{
   const readyPromise = new Promise<void>((resolve) => {
     const check = setInterval(() => {
       // Try to connect
-      fetch(`http://127.0.0.1:${freePort}/`).then(() => {
-        clearInterval(check);
-        resolve();
-      }).catch(() => {});
+      fetch(`http://127.0.0.1:${freePort}/`)
+        .then(() => {
+          clearInterval(check);
+          resolve();
+        })
+        .catch(() => {});
     }, 10);
   });
 
@@ -270,8 +272,7 @@ describe("HTTP Integration Tests", { timeout: 30_000 }, () => {
       fetch(`${baseUrl}/slow`),
     ];
 
-    const [jsonRes, echoRes, notFoundRes, errorRes, slowRes] =
-      await Promise.all(requests);
+    const [jsonRes, echoRes, notFoundRes, errorRes, slowRes] = await Promise.all(requests);
 
     expect(jsonRes.status).toBe(200);
     expect(echoRes.status).toBe(200);

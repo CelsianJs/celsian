@@ -85,9 +85,7 @@ export async function deployFly(opts: FlyDeployOptions = {}): Promise<{ url: str
   try {
     execSync("flyctl version", { cwd, stdio: "pipe" });
   } catch {
-    throw new PlatformError(
-      "flyctl CLI not found. Install it from: https://fly.io/docs/hands-on/install-flyctl/",
-    );
+    throw new PlatformError("flyctl CLI not found. Install it from: https://fly.io/docs/hands-on/install-flyctl/");
   }
 
   // Generate fly.toml if not present
@@ -140,8 +138,6 @@ export async function deployFly(opts: FlyDeployOptions = {}): Promise<{ url: str
     console.log(`[celsian:deploy] Deployed to ${url}`);
     return { url };
   } catch (error) {
-    throw new PlatformError(
-      `Fly.io deployment failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    throw new PlatformError(`Fly.io deployment failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }

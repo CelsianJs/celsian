@@ -2,16 +2,16 @@
 // nested routing, error handling, HEAD behavior, cookie lifecycle, adapter
 // interop, and verifying zero low-level internals in userland code.
 
-import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { type APIGatewayProxyEventV2, createLambdaHandler } from "../packages/adapter-lambda/src/index.js";
+import { createResponseCache, createSessionManager, MemoryKVStore } from "../packages/cache/src/index.js";
+import { compress } from "../packages/compress/src/index.js";
 import { createApp } from "../packages/core/src/app.js";
 import { HttpError } from "../packages/core/src/errors.js";
-import { security } from "../packages/core/src/plugins/security.js";
 import { cors } from "../packages/core/src/plugins/cors.js";
-import { MemoryKVStore, createResponseCache, createSessionManager } from "../packages/cache/src/index.js";
-import { rateLimit } from "../packages/rate-limit/src/index.js";
-import { compress } from "../packages/compress/src/index.js";
-import { createLambdaHandler, type APIGatewayProxyEventV2 } from "../packages/adapter-lambda/src/index.js";
+import { security } from "../packages/core/src/plugins/security.js";
 import { createSSEHub } from "../packages/core/src/sse.js";
+import { rateLimit } from "../packages/rate-limit/src/index.js";
 
 // ─── Realistic SaaS API App ────────────────────────────────────
 
@@ -26,38 +26,39 @@ describe("Realistic SaaS API", () => {
     app.register(cors({ origin: "https://app.example.com", credentials: true }), { encapsulate: false });
 
     // Auth middleware as a plugin
-    app.register(async (auth) => {
-      auth.addHook("onRequest", async (req, reply) => {
-        const cookie = req.headers.get("cookie") ?? "";
-        const sidMatch = cookie.match(/sid=([^;]+)/);
-        if (!sidMatch) {
-          return reply.status(401).json({ error: "No session" });
-        }
-        const session = await sessions.load(sidMatch[1]);
-        if (!session) {
-          return reply.status(401).json({ error: "Invalid session" });
-        }
-        (req as any).session = session;
-      });
+    app.register(
+      async (auth) => {
+        auth.addHook("onRequest", async (req, reply) => {
+          const cookie = req.headers.get("cookie") ?? "";
+          const sidMatch = cookie.match(/sid=([^;]+)/);
+          if (!sidMatch) {
+            return reply.status(401).json({ error: "No session" });
+          }
+          const session = await sessions.load(sidMatch[1]);
+          if (!session) {
+            return reply.status(401).json({ error: "Invalid session" });
+          }
+          (req as any).session = session;
+        });
 
-      auth.get("/me", (req) => {
-        const session = (req as any).session;
-        return { user: session.get("user") };
-      });
+        auth.get("/me", (req) => {
+          const session = (req as any).session;
+          return { user: session.get("user") };
+        });
 
-      auth.get("/settings", (req) => {
-        const session = (req as any).session;
-        return { settings: session.get("settings") ?? {} };
-      });
+        auth.get("/settings", (req) => {
+          const session = (req as any).session;
+          return { settings: session.get("settings") ?? {} };
+        });
 
-      auth.post("/logout", async (req, reply) => {
-        const session = (req as any).session;
-        await session.destroy();
-        return reply
-          .cookie("sid", "", { maxAge: 0, path: "/" })
-          .json({ ok: true });
-      });
-    }, { prefix: "/auth", encapsulate: true });
+        auth.post("/logout", async (req, reply) => {
+          const session = (req as any).session;
+          await session.destroy();
+          return reply.cookie("sid", "", { maxAge: 0, path: "/" }).json({ ok: true });
+        });
+      },
+      { prefix: "/auth", encapsulate: true },
+    );
 
     // Public routes (no auth)
     app.get("/health", () => ({ status: "ok", timestamp: Date.now() }));
@@ -571,16 +572,12 @@ describe("Compress + Cache", () => {
     const cachedHandler = cache.wrap(app.handle.bind(app));
 
     // First request with gzip
-    const res1 = await cachedHandler(
-      new Request("http://localhost/big", { headers: { "accept-encoding": "gzip" } }),
-    );
+    const res1 = await cachedHandler(new Request("http://localhost/big", { headers: { "accept-encoding": "gzip" } }));
     expect(res1.headers.get("x-cache")).toBe("MISS");
     expect(res1.headers.get("content-encoding")).toBe("gzip");
 
     // Second request — from cache
-    const res2 = await cachedHandler(
-      new Request("http://localhost/big", { headers: { "accept-encoding": "gzip" } }),
-    );
+    const res2 = await cachedHandler(new Request("http://localhost/big", { headers: { "accept-encoding": "gzip" } }));
     expect(res2.headers.get("x-cache")).toBe("HIT");
 
     cacheStore.destroy();
@@ -592,10 +589,7 @@ describe("Compress + Cache", () => {
 describe("Plugin registration order", () => {
   it("rate-limit before security: both headers present", async () => {
     const app = createApp();
-    await app.register(
-      rateLimit({ max: 100, window: 60000, keyGenerator: () => "k" }),
-      { encapsulate: false },
-    );
+    await app.register(rateLimit({ max: 100, window: 60000, keyGenerator: () => "k" }), { encapsulate: false });
     await app.register(security(), { encapsulate: false });
     app.get("/test", () => ({ ok: true }));
 
@@ -607,10 +601,7 @@ describe("Plugin registration order", () => {
   it("security before rate-limit: both headers present", async () => {
     const app = createApp();
     await app.register(security(), { encapsulate: false });
-    await app.register(
-      rateLimit({ max: 100, window: 60000, keyGenerator: () => "k" }),
-      { encapsulate: false },
-    );
+    await app.register(rateLimit({ max: 100, window: 60000, keyGenerator: () => "k" }), { encapsulate: false });
     app.get("/test", () => ({ ok: true }));
 
     const res = await app.inject({ url: "/test" });
@@ -621,10 +612,13 @@ describe("Plugin registration order", () => {
   it("compress inside encapsulated plugin should only affect plugin routes", async () => {
     const app = createApp();
 
-    await app.register(async (sub) => {
-      await sub.register(compress({ threshold: 10 }), { encapsulate: false });
-      sub.get("/compressed", (_req, reply) => reply.json({ data: "x".repeat(100) }));
-    }, { prefix: "/v1", encapsulate: true });
+    await app.register(
+      async (sub) => {
+        await sub.register(compress({ threshold: 10 }), { encapsulate: false });
+        sub.get("/compressed", (_req, reply) => reply.json({ data: "x".repeat(100) }));
+      },
+      { prefix: "/v1", encapsulate: true },
+    );
 
     app.get("/uncompressed", (_req, reply) => reply.json({ data: "x".repeat(100) }));
 
@@ -645,11 +639,15 @@ describe("Plugin registration order", () => {
 // ─── Lambda Adapter Full Stack ──────────────────────────────────
 
 describe("Lambda adapter full-stack", () => {
-  function makeLambdaEvent(method: string, path: string, opts: {
-    body?: string;
-    headers?: Record<string, string>;
-    query?: string;
-  } = {}): APIGatewayProxyEventV2 {
+  function makeLambdaEvent(
+    method: string,
+    path: string,
+    opts: {
+      body?: string;
+      headers?: Record<string, string>;
+      query?: string;
+    } = {},
+  ): APIGatewayProxyEventV2 {
     return {
       version: "2.0",
       routeKey: "$default",
@@ -693,9 +691,11 @@ describe("Lambda adapter full-stack", () => {
     const handler = createLambdaHandler(app);
 
     // Create
-    const createRes = await handler(makeLambdaEvent("POST", "/items", {
-      body: JSON.stringify({ name: "Lambda Item" }),
-    }));
+    const createRes = await handler(
+      makeLambdaEvent("POST", "/items", {
+        body: JSON.stringify({ name: "Lambda Item" }),
+      }),
+    );
     expect(createRes.statusCode).toBe(200);
     expect(JSON.parse(createRes.body!)).toEqual({ id: 1, name: "Lambda Item" });
 
@@ -723,9 +723,11 @@ describe("Lambda adapter full-stack", () => {
     app.get("/api", () => ({ ok: true }));
 
     const handler = createLambdaHandler(app);
-    const res = await handler(makeLambdaEvent("GET", "/api", {
-      headers: { origin: "https://frontend.com" },
-    }));
+    const res = await handler(
+      makeLambdaEvent("GET", "/api", {
+        headers: { origin: "https://frontend.com" },
+      }),
+    );
 
     expect(res.statusCode).toBe(200);
     expect(res.headers!["x-content-type-options"]).toBe("nosniff");
@@ -738,9 +740,7 @@ describe("Lambda adapter full-stack", () => {
 describe("SSE hub lifecycle", () => {
   it("hub should handle rapid subscribe/unsubscribe", () => {
     const hub = createSSEHub();
-    const channels = Array.from({ length: 50 }, () =>
-      hub.subscribe(new Request("http://localhost/events")),
-    );
+    const channels = Array.from({ length: 50 }, () => hub.subscribe(new Request("http://localhost/events")));
     expect(hub.size).toBe(50);
 
     // Close half
@@ -784,10 +784,13 @@ describe("SSE hub lifecycle", () => {
 describe("Nested prefix interactions", () => {
   it("app prefix + plugin prefix combine correctly", async () => {
     const app = createApp({ prefix: "/api/v2" });
-    await app.register(async (users) => {
-      users.get("/", () => [{ id: 1 }]);
-      users.get("/:id", (req) => ({ id: req.params.id }));
-    }, { prefix: "/users" });
+    await app.register(
+      async (users) => {
+        users.get("/", () => [{ id: 1 }]);
+        users.get("/:id", (req) => ({ id: req.params.id }));
+      },
+      { prefix: "/users" },
+    );
 
     const listRes = await app.inject({ url: "/api/v2/users/" });
     // Might be 200 or 404 depending on trailing slash handling
@@ -809,18 +812,30 @@ describe("Nested prefix interactions", () => {
     const hookOrder: string[] = [];
 
     // Non-encapsulated: affects all routes
-    app.addHook("onRequest", () => { hookOrder.push("root"); });
+    app.addHook("onRequest", () => {
+      hookOrder.push("root");
+    });
 
-    await app.register(async (v1) => {
-      v1.addHook("onRequest", () => { hookOrder.push("v1"); });
+    await app.register(
+      async (v1) => {
+        v1.addHook("onRequest", () => {
+          hookOrder.push("v1");
+        });
 
-      await v1.register(async (admin) => {
-        admin.addHook("onRequest", () => { hookOrder.push("admin"); });
-        admin.get("/users", () => ({ scope: "admin" }));
-      }, { prefix: "/admin", encapsulate: true });
+        await v1.register(
+          async (admin) => {
+            admin.addHook("onRequest", () => {
+              hookOrder.push("admin");
+            });
+            admin.get("/users", () => ({ scope: "admin" }));
+          },
+          { prefix: "/admin", encapsulate: true },
+        );
 
-      v1.get("/public", () => ({ scope: "v1" }));
-    }, { prefix: "/v1", encapsulate: true });
+        v1.get("/public", () => ({ scope: "v1" }));
+      },
+      { prefix: "/v1", encapsulate: true },
+    );
 
     hookOrder.length = 0;
     const adminRes = await app.inject({ url: "/api/v1/admin/users" });
@@ -841,12 +856,15 @@ describe("Nested prefix interactions", () => {
 describe("Error handling edge cases", () => {
   it("HttpError in plugin hook should still produce JSON response", async () => {
     const app = createApp();
-    await app.register(async (plugin) => {
-      plugin.addHook("onRequest", () => {
-        throw new HttpError(403, "Plugin says no", { code: "PLUGIN_BLOCKED" });
-      });
-      plugin.get("/blocked", () => ({ never: true }));
-    }, { encapsulate: true });
+    await app.register(
+      async (plugin) => {
+        plugin.addHook("onRequest", () => {
+          throw new HttpError(403, "Plugin says no", { code: "PLUGIN_BLOCKED" });
+        });
+        plugin.get("/blocked", () => ({ never: true }));
+      },
+      { encapsulate: true },
+    );
 
     const res = await app.inject({ url: "/blocked" });
     expect(res.status).toBe(403);
@@ -857,7 +875,9 @@ describe("Error handling edge cases", () => {
   it("error in async handler with onError hook", async () => {
     const app = createApp();
     const errors: Error[] = [];
-    app.addHook("onError", (err) => { errors.push(err); });
+    app.addHook("onError", (err) => {
+      errors.push(err);
+    });
 
     app.get("/boom", async () => {
       await new Promise((r) => setTimeout(r, 5));
@@ -873,7 +893,9 @@ describe("Error handling edge cases", () => {
   it("security headers should appear even on error responses", async () => {
     const app = createApp();
     await app.register(security(), { encapsulate: false });
-    app.get("/fail", () => { throw new HttpError(500, "oops"); });
+    app.get("/fail", () => {
+      throw new HttpError(500, "oops");
+    });
 
     const res = await app.inject({ url: "/fail" });
     expect(res.status).toBe(500);

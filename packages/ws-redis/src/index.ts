@@ -1,6 +1,6 @@
 // @celsian/ws-redis -- Distributed WebSocket broadcast via Redis pub/sub
 
-import { CelsianError, type WSConnection, WSRegistry } from "@celsian/core";
+import { CelsianError, type WSConnection, type WSRegistry } from "@celsian/core";
 import Redis from "ioredis";
 
 /** Channel prefix used for Redis pub/sub keys */
