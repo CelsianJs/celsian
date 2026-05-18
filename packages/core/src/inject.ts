@@ -32,9 +32,16 @@ export function createInject(app: CelsianApp) {
 
     let body: string | undefined;
     if (options.payload !== undefined) {
-      body = JSON.stringify(options.payload);
-      if (!headers.has("content-type")) {
-        headers.set("content-type", "application/json");
+      if (typeof options.payload === "string") {
+        body = options.payload;
+        if (!headers.has("content-type")) {
+          headers.set("content-type", "text/plain");
+        }
+      } else {
+        body = JSON.stringify(options.payload);
+        if (!headers.has("content-type")) {
+          headers.set("content-type", "application/json");
+        }
       }
     }
 
