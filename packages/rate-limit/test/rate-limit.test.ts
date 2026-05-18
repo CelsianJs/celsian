@@ -192,7 +192,7 @@ describe("MemoryRateLimitStore", () => {
 });
 
 describe("rate-limit XFF key generation", () => {
-  it("should use the rightmost IP from X-Forwarded-For when trustProxy is true", async () => {
+  it("should use the leftmost (client) IP from X-Forwarded-For when trustProxy is true", async () => {
     const app = createApp();
     await app.register(
       rateLimit({
@@ -205,25 +205,32 @@ describe("rate-limit XFF key generation", () => {
 
     app.get("/api", (_req, reply) => reply.json({ ok: true }));
 
-    // First two requests from the rightmost IP "10.0.0.1" should count
+    // First two requests from the same client IP "10.0.0.1" should count
     const r1 = await app.inject({
       url: "/api",
-      headers: { "x-forwarded-for": "spoofed-client, proxy1, 10.0.0.1" },
+      headers: { "x-forwarded-for": "10.0.0.1, proxy1, proxy2" },
     });
     expect(r1.status).toBe(200);
 
     const r2 = await app.inject({
       url: "/api",
-      headers: { "x-forwarded-for": "different-spoof, proxy2, 10.0.0.1" },
+      headers: { "x-forwarded-for": "10.0.0.1, different-proxy, proxy3" },
     });
     expect(r2.status).toBe(200);
 
-    // Third request from same rightmost IP should be blocked
+    // Third request from same client IP should be blocked
     const r3 = await app.inject({
       url: "/api",
-      headers: { "x-forwarded-for": "another-spoof, proxy3, 10.0.0.1" },
+      headers: { "x-forwarded-for": "10.0.0.1, another-proxy, proxy4" },
     });
     expect(r3.status).toBe(429);
+
+    // Different client IP should NOT be blocked
+    const r4 = await app.inject({
+      url: "/api",
+      headers: { "x-forwarded-for": "192.168.1.1, proxy1, proxy2" },
+    });
+    expect(r4.status).toBe(200);
   });
 
   it("should throw CelsianError when trustProxy is false and no keyGenerator provided", () => {
