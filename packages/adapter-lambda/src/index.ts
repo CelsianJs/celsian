@@ -40,7 +40,8 @@ function lambdaEventToRequest(event: APIGatewayProxyEventV2): Request {
   }
 
   const host = headers.get("host") ?? "localhost";
-  const proto = headers.get("x-forwarded-proto") ?? "https";
+  const rawProto = headers.get("x-forwarded-proto") ?? "https";
+  const proto = rawProto === "http" || rawProto === "https" ? rawProto : "https";
   const queryString = event.rawQueryString ? `?${event.rawQueryString}` : "";
   const url = `${proto}://${host}${event.rawPath}${queryString}`;
   const method = event.requestContext.http.method;
@@ -71,10 +72,15 @@ async function responseToLambdaResult(response: Response): Promise<APIGatewayPro
   const cookies: string[] = response.headers.getSetCookie?.() ?? [];
 
   const contentType = response.headers.get("content-type") ?? "";
-  const isBinary =
-    !contentType.includes("text/") &&
-    !contentType.includes("application/json") &&
-    !contentType.includes("application/xml");
+  const isText =
+    contentType.includes("text/") ||
+    contentType.includes("application/json") ||
+    contentType.includes("application/xml") ||
+    contentType.includes("application/javascript") ||
+    contentType.includes("application/x-www-form-urlencoded") ||
+    contentType.includes("+json") ||
+    contentType.includes("+xml");
+  const isBinary = contentType !== "" && !isText;
 
   let body: string | undefined;
   let isBase64Encoded = false;

@@ -108,10 +108,12 @@ export function createSessionManager(options: SessionOptions) {
         }
       },
       async regenerate(): Promise<Session> {
-        await store.delete(prefix + id);
         const newId = generateId();
-        const newSession = makeSession(newId, sessionData);
+        const dataCopy = { ...sessionData };
+        const newSession = makeSession(newId, dataCopy);
+        // Save new session first, then delete old — no race window
         await newSession.save();
+        await store.delete(prefix + id);
         return newSession;
       },
       async save() {

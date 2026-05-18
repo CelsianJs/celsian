@@ -57,7 +57,7 @@ export class Router {
         isStatic = false;
         if (!node.wildcardChild) {
           node.wildcardChild = createNode(seg);
-          node.wildcardName = seg.slice(1) || "wild";
+          node.wildcardName = seg.slice(1) || "*";
         }
         node = node.wildcardChild;
         break;

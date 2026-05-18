@@ -1,12 +1,44 @@
-// @celsian/cli — Deploy scaffold command for platform-specific deployment files
+// @celsian/cli — Deploy command: generates config files and deploys to platform CLIs
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { execSync } from "node:child_process";
 import { logger } from "../utils/logger.js";
 
 export type DeployTarget = "vercel" | "lambda" | "cloudflare" | "fly" | "railway" | "docker";
 
 const VALID_TARGETS: DeployTarget[] = ["vercel", "lambda", "cloudflare", "fly", "railway", "docker"];
+
+// -- Auto-detection from existing config files ----------------------------------
+
+const CONFIG_DETECTION: Array<[string, DeployTarget]> = [
+  ["wrangler.toml", "cloudflare"],
+  ["fly.toml", "fly"],
+  ["vercel.json", "vercel"],
+  ["railway.json", "railway"],
+  ["template.yaml", "lambda"],
+];
+
+function autoDetectPlatform(): DeployTarget | null {
+  const cwd = process.cwd();
+  for (const [file, target] of CONFIG_DETECTION) {
+    if (existsSync(resolve(cwd, file))) {
+      return target;
+    }
+  }
+  return null;
+}
+
+// -- CLI tool availability check -----------------------------------------------
+
+function isCliAvailable(command: string): boolean {
+  try {
+    execSync(command, { stdio: "pipe" });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 // -- File templates per target --------------------------------------------------
 
@@ -122,8 +154,11 @@ primary_region = "iad"
 
 const DOCKERFILE = `FROM node:20-alpine AS builder
 WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci
+COPY package.json package-lock.json* pnpm-lock.yaml* ./
+RUN \\
+  if [ -f pnpm-lock.yaml ]; then corepack enable && pnpm install --frozen-lockfile; \\
+  elif [ -f package-lock.json ]; then npm ci; \\
+  else npm install; fi
 COPY . .
 RUN npm run build
 
@@ -201,12 +236,50 @@ export function getFilesForTarget(target: DeployTarget): Array<[string, string]>
   }
 }
 
+// -- Platform CLI commands -------------------------------------------------------
+
+interface PlatformCli {
+  checkCmd: string;
+  installHint: string;
+  deployCmd: string;
+}
+
+const PLATFORM_CLIS: Partial<Record<DeployTarget, PlatformCli>> = {
+  cloudflare: {
+    checkCmd: "npx wrangler --version",
+    installHint: "npm install -D wrangler",
+    deployCmd: "npx wrangler deploy",
+  },
+  fly: {
+    checkCmd: "flyctl version",
+    installHint: "https://fly.io/docs/hands-on/install-flyctl/",
+    deployCmd: "flyctl deploy",
+  },
+  lambda: {
+    checkCmd: "sam --version",
+    installHint: "https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html",
+    deployCmd: "sam build && sam deploy --guided",
+  },
+  vercel: {
+    checkCmd: "npx vercel --version",
+    installHint: "npm install -g vercel",
+    deployCmd: "npx vercel deploy",
+  },
+  railway: {
+    checkCmd: "railway version",
+    installHint: "npm install -g @railway/cli",
+    deployCmd: "railway up",
+  },
+};
+
 // -- Next-steps output ----------------------------------------------------------
 
 const SERVERLESS_NOTE =
   "Note: Background tasks (app.task/app.enqueue) and cron jobs (app.cron) require a long-running server.\n      For serverless, use platform-native scheduling instead.";
 
-function printNextSteps(target: DeployTarget): void {
+function printNextSteps(target: DeployTarget, willDeploy: boolean): void {
+  if (willDeploy) return; // Already deploying, no need for next-steps hints
+
   switch (target) {
     case "vercel":
       logger.info("Run `vercel deploy` to deploy. Adjust api/index.ts to import your routes.");
@@ -237,7 +310,23 @@ function printNextSteps(target: DeployTarget): void {
 
 // -- Main command ---------------------------------------------------------------
 
-export async function deployCommand(target: string): Promise<void> {
+export async function deployCommand(targetOrNull: string | null, options?: { deploy?: boolean }): Promise<void> {
+  let target = targetOrNull;
+
+  // Auto-detect platform if not specified
+  if (!target) {
+    const detected = autoDetectPlatform();
+    if (detected) {
+      logger.info(`Auto-detected platform: ${detected}`);
+      target = detected;
+    } else {
+      logger.error("No platform specified and none could be auto-detected.");
+      logger.dim("Usage: celsian deploy --platform <vercel|lambda|cloudflare|fly|railway|docker>");
+      logger.dim("Or create a config file (wrangler.toml, fly.toml, vercel.json, etc.) for auto-detection.");
+      process.exit(1);
+    }
+  }
+
   if (!VALID_TARGETS.includes(target as DeployTarget)) {
     logger.error(`Unknown deploy target: "${target}". Valid targets: ${VALID_TARGETS.join(", ")}`);
     process.exit(1);
@@ -277,7 +366,39 @@ export async function deployCommand(target: string): Promise<void> {
     }
   }
 
-  // Print next steps
-  console.log("");
-  printNextSteps(target as DeployTarget);
+  // If --deploy flag is set, also run the platform CLI
+  const shouldDeploy = options?.deploy ?? false;
+  const platformCli = PLATFORM_CLIS[target as DeployTarget];
+
+  if (shouldDeploy && platformCli) {
+    // Check CLI availability
+    if (!isCliAvailable(platformCli.checkCmd)) {
+      logger.error(`Platform CLI not found for ${target}.`);
+      logger.dim(`Install it: ${platformCli.installHint}`);
+      process.exit(1);
+    }
+
+    // Build first
+    logger.info("Building app...");
+    try {
+      execSync("npx celsian build", { cwd, stdio: "inherit" });
+    } catch {
+      logger.error("Build failed. Fix build errors and try again.");
+      process.exit(1);
+    }
+
+    // Deploy
+    logger.info(`Deploying to ${target}...`);
+    try {
+      execSync(platformCli.deployCmd, { cwd, stdio: "inherit" });
+      logger.success(`Deployed to ${target} successfully!`);
+    } catch {
+      logger.error(`Deployment to ${target} failed. Check the output above for details.`);
+      process.exit(1);
+    }
+  } else {
+    // Print next steps
+    console.log("");
+    printNextSteps(target as DeployTarget, false);
+  }
 }

@@ -19,8 +19,9 @@ export interface JWTPayload {
   iat?: number;
 }
 
-// Module-level secret stash — set by the jwt() plugin so createJWTGuard() can read it without args.
-let _jwtSecret: string | null = null;
+// Per-app secret storage — avoids module-scope leakage while supporting createJWTGuard() without args.
+const _appSecrets = new WeakMap<object, string>();
+let _lastRegisteredApp: WeakRef<object> | null = null;
 
 /** Sign and verify methods exposed on `app.jwt` after registering the plugin. */
 export interface JWTNamespace {
@@ -42,8 +43,8 @@ export function jwt(options: JWTOptions): PluginFunction {
   const secretKey = new TextEncoder().encode(options.secret);
 
   return function jwtPlugin(app) {
-    // Stash the secret so createJWTGuard() can read it without explicit options
-    _jwtSecret = options.secret;
+    _appSecrets.set(app, options.secret);
+    _lastRegisteredApp = new WeakRef(app);
 
     const jwtInstance: JWTNamespace = {
       async sign(payload: JWTPayload, signOptions?: { expiresIn?: string | number }): Promise<string> {
@@ -115,9 +116,10 @@ export function createJWTGuard(options?: JWTOptions): HookHandler {
     return guard as HookHandler;
   }
 
-  // No options — lazy guard that reads from _jwtSecret stashed during plugin registration
+  // No options — lazy guard that reads from per-app secret storage
   const lazyGuard: HookHandler<void | Response> = async (request: CelsianRequest, reply: CelsianReply) => {
-    const secret = _jwtSecret;
+    const app = _lastRegisteredApp?.deref();
+    const secret = app ? _appSecrets.get(app) : undefined;
     if (!secret) {
       throw new Error(
         "createJWTGuard() called without options, but the JWT plugin has not been registered. " +

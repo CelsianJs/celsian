@@ -2,7 +2,8 @@
 
 const isDev =
   typeof process !== "undefined"
-    ? process.env.NODE_ENV === "development" || process.env.CELSIAN_ENV === "development"
+    ? (process.env.NODE_ENV === "development" || process.env.CELSIAN_ENV === "development") &&
+      process.env.NODE_ENV !== "production"
     : false;
 
 /** Base error class for all CelsianJS errors. Use instead of bare `Error` in library code. */

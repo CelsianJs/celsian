@@ -1,0 +1,49 @@
+{
+  "name": "@celsian/ws-redis",
+  "version": "0.3.18",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@celsian/core": "workspace:*",
+    "ioredis": "^5.4.0"
+  },
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CelsianJs/celsian.git",
+    "directory": "packages/ws-redis"
+  },
+  "homepage": "https://github.com/CelsianJs/celsian#readme",
+  "bugs": {
+    "url": "https://github.com/CelsianJs/celsian/issues"
+  },
+  "description": "Redis pub/sub adapter for distributed CelsianJS WebSocket broadcast",
+  "keywords": [
+    "celsian",
+    "websocket",
+    "redis",
+    "pubsub",
+    "distributed"
+  ],
+  "sideEffects": false
+}

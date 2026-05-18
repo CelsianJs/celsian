@@ -1,9 +1,11 @@
 // @celsian/core — CelsianApp: hook-based server with plugin encapsulation
 
 import { fromSchema, type StandardSchema } from "@celsian/schema";
+import { parseBody } from "./body-parser.js";
 import { EncapsulationContext } from "./context.js";
 import { parseCookies } from "./cookie.js";
 import { type CronJob, CronScheduler } from "./cron.js";
+import { handleError as handleErrorFn } from "./error-handler.js";
 import { assertPlugin, HttpError, ValidationError, wrapNonError } from "./errors.js";
 import { runHooks, runHooksFireAndForget, runOnSendHooks } from "./hooks.js";
 import { createInject, type InjectOptions } from "./inject.js";
@@ -554,29 +556,32 @@ export class CelsianApp {
 
       // Distinguish 404 (path not found) from 405 (wrong method)
       if (this.router.hasPath(pathname)) {
-        return new Response(CelsianApp.METHOD_NOT_ALLOWED_BODY, {
+        const r405 = new Response(CelsianApp.METHOD_NOT_ALLOWED_BODY, {
           status: 405,
           headers: missHeaders,
         });
+        return this.applyRootOnSend(r405, missContext.request, missContext.reply);
       }
       if (this.notFoundHandler) {
         try {
           const result = await this.notFoundHandler(missContext.request, missContext.reply);
-          if (result instanceof Response) return result;
+          if (result instanceof Response) return this.applyRootOnSend(result, missContext.request, missContext.reply);
           if (missContext.reply.sent) return new Response(null, { status: missContext.reply.statusCode });
           return new Response(null, { status: 404 });
         } catch (error) {
           console.error("[celsian]", error);
-          return new Response(CelsianApp.NOT_FOUND_BODY, {
+          const r404 = new Response(CelsianApp.NOT_FOUND_BODY, {
             status: 404,
             headers: missHeaders,
           });
+          return this.applyRootOnSend(r404, missContext.request, missContext.reply);
         }
       }
-      return new Response(CelsianApp.NOT_FOUND_BODY, {
+      const r404 = new Response(CelsianApp.NOT_FOUND_BODY, {
         status: 404,
         headers: missHeaders,
       });
+      return this.applyRootOnSend(r404, missContext.request, missContext.reply);
     }
 
     // Build CelsianRequest with fast query parsing (skip URL object when possible)
@@ -624,6 +629,7 @@ export class CelsianApp {
 
     // Run lifecycle — inline timeout logic to avoid closure allocation
     const timeout = this.cachedRequestTimeout;
+    const isHead = method === "HEAD";
 
     // Auto request logging
     if (this.hasLogger) {
@@ -632,13 +638,16 @@ export class CelsianApp {
       this.log.info("incoming request", { method, url: pathname, requestId });
 
       try {
-        const response = await this.runWithTimeout(celsianRequest, reply, match.route, timeout);
+        let response = await this.runWithTimeout(celsianRequest, reply, match.route, timeout);
+        if (isHead) response = new Response(null, { status: response.status, headers: response.headers });
         const duration = Math.round(performance.now() - start);
         this.log.info("request completed", { method, url: pathname, statusCode: response.status, duration, requestId });
         return response;
       } catch (thrown) {
         const error = wrapNonError(thrown);
-        const response = await this.handleError(error, celsianRequest, reply);
+        let response = await this.handleError(error, celsianRequest, reply);
+        response = await this.applyRootOnSend(response, celsianRequest, reply);
+        if (isHead) response = new Response(null, { status: response.status, headers: response.headers });
         const duration = Math.round(performance.now() - start);
         this.log.error("request error", {
           method,
@@ -653,9 +662,14 @@ export class CelsianApp {
     }
 
     try {
-      return await this.runWithTimeout(celsianRequest, reply, match.route, timeout);
+      let response = await this.runWithTimeout(celsianRequest, reply, match.route, timeout);
+      if (isHead) response = new Response(null, { status: response.status, headers: response.headers });
+      return response;
     } catch (thrown) {
-      return this.handleError(wrapNonError(thrown), celsianRequest, reply);
+      let response = await this.handleError(wrapNonError(thrown), celsianRequest, reply);
+      response = await this.applyRootOnSend(response, celsianRequest, reply);
+      if (isHead) response = new Response(null, { status: response.status, headers: response.headers });
+      return response;
     }
   }
 
@@ -757,6 +771,19 @@ export class CelsianApp {
       response = handlerResult;
     } else if (reply.sent) {
       response = new Response(null, { status: reply.statusCode });
+    } else if (handlerResult !== null && handlerResult !== undefined) {
+      // Auto-serialize non-Response return values (strings → text, objects → JSON)
+      if (typeof handlerResult === "string") {
+        response = new Response(handlerResult, {
+          status: reply.statusCode || 200,
+          headers: { "content-type": "text/plain; charset=utf-8", ...reply.headers },
+        });
+      } else {
+        response = new Response(JSON.stringify(handlerResult), {
+          status: reply.statusCode || 200,
+          headers: { "content-type": "application/json; charset=utf-8", ...reply.headers },
+        });
+      }
     } else {
       response = new Response(null, { status: 204 });
     }
@@ -770,18 +797,19 @@ export class CelsianApp {
     const hasRouteOnSend = route.hooks.onSend.length > 0;
     const hasRootOnSend = this.rootContext.hooks.onSend.length > 0;
     if (hasRouteOnSend || hasRootOnSend) {
-      // Snapshot reply headers before onSend (handler/onRequest hooks already baked into response)
       const headersBefore = new Map<string, string>();
       for (const [k, v] of Object.entries(reply.headers)) {
         headersBefore.set(k, v);
       }
 
-      // Route-level onSend (from route options only, not context-baked)
-      if (hasRouteOnSend) await runOnSendHooks(route.hooks.onSend, request, reply);
-      // Root-level onSend (includes hooks propagated up from encapsulated plugins)
-      if (hasRootOnSend) await runOnSendHooks(this.rootContext.hooks.onSend, request, reply);
+      try {
+        if (hasRouteOnSend) await runOnSendHooks(route.hooks.onSend, request, reply);
+        if (hasRootOnSend) await runOnSendHooks(this.rootContext.hooks.onSend, request, reply);
+      } catch (err) {
+        this.log.error("onSend hook error", { error: err instanceof Error ? err.message : String(err) });
+        return response;
+      }
 
-      // Merge headers that were added or changed during onSend
       const replyHeaders = reply.headers;
       let needsMerge = false;
       for (const [k, v] of Object.entries(replyHeaders)) {
@@ -837,8 +865,33 @@ export class CelsianApp {
     return headers;
   }
 
+  private async applyRootOnSend(
+    response: Response,
+    request: CelsianRequest,
+    reply: CelsianReply,
+  ): Promise<Response> {
+    if (this.rootContext.hooks.onSend.length === 0) return response;
+    try {
+      await runOnSendHooks(this.rootContext.hooks.onSend, request, reply);
+    } catch (err) {
+      this.log.error("onSend hook error", { error: err instanceof Error ? err.message : String(err) });
+      return response;
+    }
+    const replyHeaders = reply.headers;
+    if (Object.keys(replyHeaders).length === 0) return response;
+    const merged = new Headers(response.headers);
+    for (const [k, v] of Object.entries(replyHeaders)) {
+      merged.set(k, v);
+    }
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: merged,
+    });
+  }
+
   private validateRequest(request: CelsianRequest, schema: NonNullable<InternalRoute["schema"]>): void {
-    if (schema.body && request.parsedBody !== undefined) {
+    if (schema.body) {
       const bodySchema: StandardSchema = fromSchema(schema.body);
       const result = bodySchema.validate(request.parsedBody);
       if (!result.success) {
@@ -865,164 +918,12 @@ export class CelsianApp {
     }
   }
 
-  /**
-   * Read the request body as text, enforcing a byte limit during streaming.
-   * Rejects with 413 if the body exceeds the limit before reading completes,
-   * preventing memory exhaustion from chunked transfer encoding attacks.
-   */
-  private async readBodyText(request: Request, limit: number): Promise<string> {
-    // Fast path: Content-Length is known — pre-check without reading
-    const contentLength = request.headers.get("content-length");
-    if (contentLength && parseInt(contentLength, 10) > limit) {
-      throw new HttpError(413, "Payload Too Large");
-    }
-
-    // If no body or limit disabled, read directly
-    if (!request.body || limit <= 0) {
-      return request.text();
-    }
-
-    // Stream the body with a byte counter — abort early if limit exceeded
-    const reader = request.body.getReader();
-    const decoder = new TextDecoder();
-    let totalBytes = 0;
-    let result = "";
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        totalBytes += value.byteLength;
-        if (totalBytes > limit) {
-          throw new HttpError(413, "Payload Too Large");
-        }
-        result += decoder.decode(value, { stream: true });
-      }
-      // Flush the decoder
-      result += decoder.decode();
-    } finally {
-      reader.releaseLock();
-    }
-
-    return result;
+  private parseBody(request: CelsianRequest): Promise<void> {
+    return parseBody(request, this.cachedBodyLimit, this.contentTypeParsers);
   }
 
-  private async parseBody(request: CelsianRequest): Promise<void> {
-    const contentType = request.headers.get("content-type") ?? "";
-
-    if (request.method === "GET" || request.method === "HEAD") {
-      return;
-    }
-
-    const bodyLimit = this.cachedBodyLimit;
-
-    // Check custom content-type parsers (exact match then prefix match)
-    if (this.contentTypeParsers.size > 0) {
-      for (const [registeredType, parser] of this.contentTypeParsers) {
-        if (contentType === registeredType || contentType.startsWith(registeredType)) {
-          request.parsedBody = await parser(request);
-          return;
-        }
-      }
-    }
-
-    try {
-      if (contentType.includes("application/json")) {
-        try {
-          const text = await this.readBodyText(request, bodyLimit);
-          if (!text.trim()) {
-            // Empty body — leave as undefined
-            return;
-          }
-          request.parsedBody = JSON.parse(text);
-        } catch (parseErr) {
-          if (parseErr instanceof HttpError) throw parseErr;
-          throw new HttpError(400, `Invalid JSON (content-type: ${contentType}): ${(parseErr as Error).message}`, {
-            code: "INVALID_JSON",
-            cause: parseErr as Error,
-          });
-        }
-      } else if (
-        contentType.includes("application/x-www-form-urlencoded") ||
-        contentType.includes("multipart/form-data")
-      ) {
-        request.parsedBody = await request.formData();
-      } else if (contentType.includes("text/")) {
-        request.parsedBody = await this.readBodyText(request, bodyLimit);
-      } else if (!contentType) {
-        // No content-type: try JSON, fall back to text
-        const text = await this.readBodyText(request, bodyLimit);
-        if (!text.trim()) return;
-        try {
-          request.parsedBody = JSON.parse(text);
-        } catch {
-          request.parsedBody = text;
-        }
-      }
-    } catch (e) {
-      if (e instanceof HttpError) throw e;
-      // Body parsing failed for other reasons — log and leave as undefined
-      console.error("[celsian]", e);
-    }
-  }
-
-  private async handleError(error: Error, request: CelsianRequest, reply: CelsianReply): Promise<Response> {
-    // Try custom error handler first
-    if (this.errorHandler) {
-      try {
-        const result = await this.errorHandler(error, request, reply);
-        if (result instanceof Response) return result;
-      } catch (handlerError) {
-        console.error("[celsian]", handlerError);
-        // Fall through to hooks / default
-      }
-    }
-
-    for (const handler of this.rootContext.hooks.onError) {
-      try {
-        const result = await handler(error, request, reply);
-        if (result instanceof Response) {
-          return result;
-        }
-      } catch (hookError) {
-        console.error("[celsian]", hookError);
-        // Error in error handler — continue to default
-      }
-    }
-
-    if (error instanceof ValidationError) {
-      return new Response(JSON.stringify(error.toJSON()), {
-        status: 400,
-        headers: { "content-type": "application/json; charset=utf-8" },
-      });
-    }
-
-    if (error instanceof HttpError) {
-      return new Response(JSON.stringify(error.toJSON()), {
-        status: error.statusCode,
-        headers: { "content-type": "application/json; charset=utf-8" },
-      });
-    }
-
-    const status = (error as { statusCode?: number }).statusCode ?? 500;
-    const isProduction =
-      typeof process !== "undefined" &&
-      (process.env.NODE_ENV === "production" || process.env.CELSIAN_ENV === "production");
-
-    const body: Record<string, unknown> = {
-      error: status >= 500 && isProduction ? "Internal Server Error" : error.message || "Internal Server Error",
-      statusCode: status,
-      code: (error as { code?: string }).code ?? "INTERNAL_SERVER_ERROR",
-    };
-
-    if (!isProduction && error.stack) {
-      body.stack = error.stack;
-    }
-
-    return new Response(JSON.stringify(body), {
-      status,
-      headers: { "content-type": "application/json; charset=utf-8" },
-    });
+  private handleError(error: Error, request: CelsianRequest, reply: CelsianReply): Promise<Response> {
+    return handleErrorFn(error, request, reply, this.errorHandler, this.rootContext.hooks.onError);
   }
 }
 

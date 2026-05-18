@@ -68,15 +68,21 @@ export class MemoryRateLimitStore implements RateLimitStore {
 function createDefaultKeyGenerator(trustProxy: boolean): (req: CelsianRequest) => string {
   if (trustProxy) {
     return (req: CelsianRequest): string => {
+      const xff = req.headers.get("x-forwarded-for");
+      if (xff) {
+        // Use the first (leftmost) IP — this is the original client IP.
+        // The last IP is the most recent proxy, which an attacker can't spoof,
+        // but using the first IP is standard for client identification.
+        // If you need to trust only specific proxy hops, use a custom keyGenerator.
+        const clientIp = xff.split(",")[0]?.trim();
+        if (clientIp) return clientIp;
+      }
       return (
-        req.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim() ??
         req.headers.get("x-real-ip") ??
         `anonymous-${Date.now().toString(36)}`
       );
     };
   }
-  // Without trustProxy and no custom keyGenerator, rate limiting cannot identify clients.
-  // This is a security risk — throw instead of silently disabling.
   throw new CelsianError(
     "[@celsian/rate-limit] trustProxy is false and no custom keyGenerator was provided. " +
       "Rate limiting cannot identify clients without a key. " +

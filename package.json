@@ -20,7 +20,8 @@
     "lint:ci": "biome ci .",
     "verify:registry": "node scripts/verify-registry-install.mjs",
     "assert:release-private": "node scripts/assert-release-private.mjs",
-    "assert:public-metadata": "node scripts/assert-public-metadata.mjs"
+    "assert:public-metadata": "node scripts/assert-public-metadata.mjs",
+    "docs": "typedoc"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.9",
@@ -33,7 +34,10 @@
     "esbuild": "^0.27.7",
     "tsx": "^4.21.0",
     "typescript": "^5.7.0",
-    "vitest": "^3.0.0"
+    "vitest": "^3.0.0",
+    "typedoc": "^0.27.0",
+    "typedoc-plugin-markdown": "^4.4.0",
+    "zod": "^3.23.0"
   },
   "engines": {
     "node": ">=20",

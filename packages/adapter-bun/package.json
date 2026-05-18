@@ -1,0 +1,48 @@
+{
+  "name": "@celsian/adapter-bun",
+  "version": "0.3.18",
+  "description": "CelsianJS adapter for Bun — thin wrapper around Bun.serve",
+  "type": "module",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "prepublishOnly": "tsc -b"
+  },
+  "peerDependencies": {
+    "@celsian/core": "workspace:*"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CelsianJs/celsian.git",
+    "directory": "packages/adapter-bun"
+  },
+  "homepage": "https://github.com/CelsianJs/celsian#readme",
+  "bugs": {
+    "url": "https://github.com/CelsianJs/celsian/issues"
+  },
+  "keywords": [
+    "celsian",
+    "bun",
+    "adapter",
+    "deployment"
+  ],
+  "sideEffects": false
+}

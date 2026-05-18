@@ -1,0 +1,15 @@
+{
+  "entryPoints": [
+    "packages/core/src/index.ts",
+    "packages/schema/src/index.ts",
+    "packages/rpc/src/index.ts",
+    "packages/jwt/src/index.ts",
+    "packages/cache/src/index.ts",
+    "packages/cli/src/index.ts"
+  ],
+  "out": "docs/api",
+  "plugin": ["typedoc-plugin-markdown"],
+  "excludePrivate": true,
+  "excludeInternal": true,
+  "readme": "none"
+}
