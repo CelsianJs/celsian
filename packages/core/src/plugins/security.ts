@@ -81,6 +81,6 @@ export function security(options: SecurityOptions = {}): PluginFunction {
       }
     };
 
-    app.addHook("onRequest", hook);
+    app.addHook("onSend", hook);
   };
 }
