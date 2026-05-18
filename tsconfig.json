@@ -19,6 +19,9 @@
     { "path": "packages/adapter-fly" },
     { "path": "packages/adapter-railway" },
     { "path": "packages/edge-router" },
-    { "path": "packages/platform" }
+    { "path": "packages/platform" },
+    { "path": "packages/ws-redis" },
+    { "path": "packages/adapter-bun" },
+    { "path": "packages/adapter-deno" }
   ]
 }

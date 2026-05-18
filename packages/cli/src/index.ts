@@ -85,12 +85,9 @@ async function main(): Promise<void> {
     }
 
     case "deploy": {
-      const target = getFlag(args, "--target", "-t") ?? args[1];
-      if (!target) {
-        logger.error("Usage: celsian deploy --target <vercel|lambda|cloudflare|fly|railway|docker>");
-        process.exit(1);
-      }
-      await deployCommand(target);
+      const target = getFlag(args, "--platform", "-p") ?? getFlag(args, "--target", "-t") ?? args[1] ?? null;
+      const shouldDeploy = args.includes("--deploy");
+      await deployCommand(target, { deploy: shouldDeploy });
       break;
     }
 
@@ -112,7 +109,7 @@ async function main(): Promise<void> {
       console.log("    generate rpc <name>      Generate an RPC procedure");
       console.log("    routes                   Print registered routes");
       console.log("    build                    Bundle app for production");
-      console.log("    deploy --target <platform>  Generate deployment files for a platform");
+      console.log("    deploy --platform <target>  Generate deployment files (auto-detects if omitted)");
       console.log("");
       console.log("  Build options:");
       console.log("");
@@ -147,6 +144,12 @@ function getFlag(args: string[], long: string, short?: string): string | null {
   for (let i = 0; i < args.length; i++) {
     if (args[i] === long || (short && args[i] === short)) {
       return args[i + 1] ?? null;
+    }
+    if (args[i].startsWith(`${long}=`)) {
+      return args[i].slice(long.length + 1);
+    }
+    if (short && args[i].startsWith(`${short}=`)) {
+      return args[i].slice(short.length + 1);
     }
   }
   return null;
