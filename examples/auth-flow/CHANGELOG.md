@@ -1,5 +1,14 @@
 # celsian-auth-flow-example
 
+## 1.0.3
+
+### Patch Changes
+
+- Updated dependencies [dec80a7]
+  - @celsian/core@0.4.0
+  - @celsian/rate-limit@0.3.19
+  - @celsian/jwt@0.3.19
+
 ## 1.0.2
 
 ### Patch Changes
