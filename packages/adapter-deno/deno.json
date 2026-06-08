@@ -1,6 +1,7 @@
 {
-  "//": "Deno config so `deno check` uses Deno's web-standard globals (Request, Response, console, fetch, URL) instead of the Node-oriented root tsconfig. Node's `tsc -b` ignores this file.",
-  "compilerOptions": {
-    "lib": ["deno.window", "esnext"]
+  "//": "Deno config for the CI runtime smoke (deno-smoke.ts). Maps the workspace packages to their built dist so Deno resolves core's bare `@celsian/schema` import. Node's `tsc -b` ignores this file. Requires `pnpm build` first.",
+  "imports": {
+    "@celsian/core": "../core/dist/index.js",
+    "@celsian/schema": "../schema/dist/index.js"
   }
 }

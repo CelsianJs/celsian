@@ -136,11 +136,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
 
-      - name: Type-check the Deno adapter with Deno
-        # Deno resolves the workspace @celsian/core dependency through the
-        # node_modules created by pnpm. This is a real `deno check`, not a no-op.
+      - name: Smoke-test the Deno adapter under Deno
+        # Real runtime check (not a no-op): loads @celsian/core + the built adapter under
+        # Deno, builds an app, and serves a Request->Response. Stronger than `deno check`
+        # and avoids the Node-oriented d.ts type references. Needs `pnpm build` first.
         working-directory: packages/adapter-deno
-        run: deno check --node-modules-dir=auto src/index.ts
+        run: deno run -A deno-smoke.ts
 
   # Final gate — all required checks must pass before this reports success.
   # Use this as the single required status check in branch protection.
