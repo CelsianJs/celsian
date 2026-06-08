@@ -1,7 +1,16 @@
 // @celsian/jwt — JWT authentication plugin
 
-import type { CelsianReply, CelsianRequest, HookHandler, PluginFunction } from "@celsian/core";
+import {
+  CelsianError,
+  type CelsianReply,
+  type CelsianRequest,
+  type HookHandler,
+  type PluginFunction,
+} from "@celsian/core";
 import * as jose from "jose";
+
+/** Request property key under which each app's resolved JWT config is decorated. */
+const REQUEST_CONFIG_KEY = "_celsianJwtConfig";
 
 /** Options for the JWT plugin: shared secret and allowed algorithms. */
 export interface JWTOptions {
@@ -19,8 +28,18 @@ export interface JWTPayload {
   iat?: number;
 }
 
-// Per-app secret storage — avoids module-scope leakage while supporting createJWTGuard() without args.
-const _appSecrets = new WeakMap<object, string>();
+/** Resolved per-app JWT config (secret bytes + allowed algorithms). */
+interface ResolvedJWTConfig {
+  secretKey: Uint8Array;
+  algorithms: string[];
+}
+
+// Per-app config storage — avoids module-scope leakage while supporting createJWTGuard() without args.
+// Keyed by the PluginContext (app) the JWT plugin was registered on, so each app's secret/algorithms
+// stay isolated even when multiple CelsianApp instances exist in the same process.
+const _appConfigs = new WeakMap<object, ResolvedJWTConfig>();
+// Tracks the most-recently-registered app so a no-arg createJWTGuard() can bind to it at CALL time
+// (i.e. when the guard is created and added as a hook), not at request time.
 let _lastRegisteredApp: WeakRef<object> | null = null;
 
 /** Sign and verify methods exposed on `app.jwt` after registering the plugin. */
@@ -43,8 +62,16 @@ export function jwt(options: JWTOptions): PluginFunction {
   const secretKey = new TextEncoder().encode(options.secret);
 
   return function jwtPlugin(app) {
-    _appSecrets.set(app, options.secret);
+    const resolved: ResolvedJWTConfig = { secretKey, algorithms };
+    _appConfigs.set(app, resolved);
     _lastRegisteredApp = new WeakRef(app);
+
+    // Decorate every request handled by THIS app with its own JWT config. A no-arg
+    // createJWTGuard() then resolves the config from the request at request time —
+    // so the guard is always bound to the app actually handling the request,
+    // regardless of plugin-registration vs guard-creation order. This is what makes
+    // multi-app isolation correct (app A's requests carry A's secret, B's carry B's).
+    app.decorateRequest(REQUEST_CONFIG_KEY, resolved);
 
     const jwtInstance: JWTNamespace = {
       async sign(payload: JWTPayload, signOptions?: { expiresIn?: string | number }): Promise<string> {
@@ -116,12 +143,20 @@ export function createJWTGuard(options?: JWTOptions): HookHandler {
     return guard as HookHandler;
   }
 
-  // No options — lazy guard that reads from per-app secret storage
+  // No options — resolve the JWT config from the REQUEST at request time. The jwt()
+  // plugin decorates each of its app's requests with that app's config (see above), so
+  // the guard always uses the secret/algorithms of the app actually handling the request.
+  // This is correct regardless of register-vs-createJWTGuard ordering and prevents
+  // cross-app secret bleed when multiple CelsianApp instances share a process. We fall
+  // back to the most-recently-registered app's config only when the request carries no
+  // decoration (e.g. the guard is invoked outside a normal request flow).
   const lazyGuard: HookHandler<void | Response> = async (request: CelsianRequest, reply: CelsianReply) => {
-    const app = _lastRegisteredApp?.deref();
-    const secret = app ? _appSecrets.get(app) : undefined;
-    if (!secret) {
-      throw new Error(
+    const fromRequest = (request as Record<string, unknown>)[REQUEST_CONFIG_KEY] as ResolvedJWTConfig | undefined;
+    const fallback = _lastRegisteredApp ? _appConfigs.get(_lastRegisteredApp.deref() ?? {}) : undefined;
+    const config = fromRequest ?? fallback;
+
+    if (!config) {
+      throw new CelsianError(
         "createJWTGuard() called without options, but the JWT plugin has not been registered. " +
           "Either pass { secret } to createJWTGuard() or register the JWT plugin first with app.register(jwt({ secret })).",
       );
@@ -135,7 +170,9 @@ export function createJWTGuard(options?: JWTOptions): HookHandler {
     const token = auth.slice(7);
 
     try {
-      const { payload } = await jose.jwtVerify(token, new TextEncoder().encode(secret), { algorithms: ["HS256"] });
+      const { payload } = await jose.jwtVerify(token, config.secretKey, {
+        algorithms: config.algorithms,
+      });
       (request as Record<string, unknown>).user = payload;
     } catch {
       return reply.status(401).json({ error: "Invalid or expired token" });

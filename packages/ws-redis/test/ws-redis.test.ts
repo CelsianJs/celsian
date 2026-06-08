@@ -2,6 +2,22 @@ import { WSRegistry } from "@celsian/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RedisWSAdapter } from "../src/index.js";
 
+// Capture clients created via `new Redis(...)` so we can verify owned-client
+// error handling (item 2) without a live Redis server.
+const ownedRedisInstances: Array<{ on: ReturnType<typeof vi.fn> }> = [];
+vi.mock("ioredis", () => ({
+  default: class {
+    on = vi.fn();
+    subscribe = vi.fn().mockResolvedValue(undefined);
+    publish = vi.fn().mockResolvedValue(1);
+    unsubscribe = vi.fn().mockResolvedValue(undefined);
+    quit = vi.fn().mockResolvedValue("OK");
+    constructor() {
+      ownedRedisInstances.push(this);
+    }
+  },
+}));
+
 /**
  * Create a mock ioredis client with pub/sub support.
  * The messageHandler callback simulates receiving Redis messages.
@@ -92,7 +108,10 @@ describe("RedisWSAdapter", () => {
     await adapter.subscribePath("/chat");
     await adapter.subscribePath("/chat");
 
-    expect(sub.instance.subscribe).toHaveBeenCalledTimes(1);
+    // Count only subscribe calls for this path's channel — the adapter also
+    // subscribes to the dedicated fan-out channel ("ws:__all__") on construction.
+    const chatSubs = sub.instance.subscribe.mock.calls.filter((c) => c[0] === "ws:/chat");
+    expect(chatSubs).toHaveLength(1);
   });
 
   it("should receive and forward messages from Redis subscription", async () => {
@@ -245,5 +264,86 @@ describe("RedisWSAdapter", () => {
     sub.simulateMessage("ws:/chat", "not valid json{{{");
 
     expect(conn.send).not.toHaveBeenCalled();
+  });
+
+  it("subscribes to the dedicated fan-out channel on construction", () => {
+    // The fan-out channel is what makes cross-node broadcastAll reach paths that
+    // only exist on remote nodes.
+    expect(sub.instance.subscribe).toHaveBeenCalledWith("ws:__all__");
+  });
+
+  it("broadcastAll publishes once to the fan-out channel (not per-path)", async () => {
+    registry.register("/chat", {});
+    registry.register("/alerts", {});
+    await adapter.subscribePath("/chat");
+    await adapter.subscribePath("/alerts");
+
+    pub.instance.publish.mockClear();
+    await adapter.broadcastAll("global message");
+
+    // Exactly one publish, on the fan-out channel — regardless of how many
+    // per-path channels are subscribed locally.
+    expect(pub.instance.publish).toHaveBeenCalledTimes(1);
+    const [channel, payload] = pub.instance.publish.mock.calls[0] as [string, string];
+    expect(channel).toBe("ws:__all__");
+    const parsed = JSON.parse(payload);
+    expect(parsed.path).toBe("*");
+    expect(parsed.data).toBe("global message");
+  });
+
+  it("delivers a fan-out message from another node to ALL local connections across paths", async () => {
+    registry.register("/chat", {});
+    registry.register("/alerts", {});
+    const chatConn = createMockWSConnection("chat-1");
+    const alertConn = createMockWSConnection("alert-1");
+    registry.addConnection("/chat", chatConn);
+    registry.addConnection("/alerts", alertConn);
+
+    // This node only subscribed to /chat — the fan-out channel must still reach
+    // /alerts connections (the previous per-path fan-out would have missed it).
+    await adapter.subscribePath("/chat");
+
+    sub.simulateMessage(
+      "ws:__all__",
+      JSON.stringify({ nodeId: "other-node", path: "*", data: "everyone", binary: false }),
+    );
+
+    expect(chatConn.send).toHaveBeenCalledWith("everyone");
+    expect(alertConn.send).toHaveBeenCalledWith("everyone");
+  });
+
+  it("ignores its own fan-out message (no echo)", async () => {
+    registry.register("/chat", {});
+    const conn = createMockWSConnection("ws-1");
+    registry.addConnection("/chat", conn);
+
+    sub.simulateMessage(
+      "ws:__all__",
+      JSON.stringify({ nodeId: adapter.nodeId, path: "*", data: "mine", binary: false }),
+    );
+
+    expect(conn.send).not.toHaveBeenCalled();
+  });
+});
+
+describe("RedisWSAdapter — owned-client error handling", () => {
+  it("attaches an 'error' listener to owned clients and does not crash when one fires", () => {
+    // Item 2: owned ioredis clients must have an 'error' listener so a
+    // connection error degrades (logs) instead of crashing the process.
+    ownedRedisInstances.length = 0;
+    const onError = vi.fn();
+    const reg = new WSRegistry();
+    new RedisWSAdapter(reg, { url: "redis://localhost:6379", onError });
+
+    // Two owned clients (pub + sub) created.
+    expect(ownedRedisInstances.length).toBe(2);
+    for (const inst of ownedRedisInstances) {
+      const errCall = inst.on.mock.calls.find((c) => c[0] === "error");
+      expect(errCall).toBeDefined();
+      const handler = errCall?.[1] as (e: Error) => void;
+      // ioredis would emit 'error' on connection failure — handling must not throw.
+      expect(() => handler(new Error("ECONNREFUSED"))).not.toThrow();
+    }
+    expect(onError).toHaveBeenCalled();
   });
 });

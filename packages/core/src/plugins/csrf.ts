@@ -75,10 +75,12 @@ export function csrf(options: CSRFOptions = {}): PluginFunction {
           const token = generateToken(tokenLength);
           const cookieStr = serializeCookie(cookieName, token, {
             path: cookieOpts.path ?? "/",
-            secure: cookieOpts.secure,
+            // Secure by default in production (matches serializeCookie's policy);
+            // explicit cookie.secure overrides. Sent over HTTPS only in prod.
+            secure: cookieOpts.secure ?? process.env.NODE_ENV === "production",
             sameSite: cookieOpts.sameSite ?? "lax",
             domain: cookieOpts.domain,
-            httpOnly: false, // Must be readable by JS to send in header
+            httpOnly: false, // Must be readable by JS to send in header (double-submit)
           });
           reply.header("set-cookie", cookieStr);
         }

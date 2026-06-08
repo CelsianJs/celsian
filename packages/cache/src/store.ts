@@ -46,15 +46,28 @@ interface MemoryEntry {
   expiresAt: number | null;
 }
 
+/** Default cap on stored entries to prevent unbounded memory growth. */
+const DEFAULT_MAX_ENTRIES = 10_000;
+
 /**
  * In-memory KV store. Good for development, testing, and single-instance deployments.
  * Not shared across processes/workers.
+ *
+ * To bound memory use, entries are capped at `maxEntries` (default 10_000) with
+ * simple LRU eviction: on overflow the least-recently-used key is evicted.
+ * Reads and writes count as "use". Pass `maxEntries: 0` to disable the cap
+ * (unbounded — only do this if you control how many keys are written). TTL
+ * cleanup still runs independently of the LRU cap.
  */
 export class MemoryKVStore implements KVStore {
+  // Map preserves insertion order; we exploit that for LRU by re-inserting on
+  // access so the first key in iteration order is always the least-recently-used.
   private store = new Map<string, MemoryEntry>();
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
+  private readonly maxEntries: number;
 
-  constructor(options?: { cleanupIntervalMs?: number }) {
+  constructor(options?: { cleanupIntervalMs?: number; maxEntries?: number }) {
+    this.maxEntries = options?.maxEntries ?? DEFAULT_MAX_ENTRIES;
     const interval = options?.cleanupIntervalMs ?? 60_000;
     if (interval > 0) {
       this.cleanupInterval = setInterval(() => this.cleanup(), interval);
@@ -72,14 +85,20 @@ export class MemoryKVStore implements KVStore {
       this.store.delete(key);
       return undefined;
     }
+    // Mark as most-recently-used: re-insert to move to the end of iteration order.
+    this.store.delete(key);
+    this.store.set(key, entry);
     return entry.value as T;
   }
 
   async set<T = unknown>(key: string, value: T, ttlMs?: number): Promise<void> {
+    // Re-inserting (after delete) keeps this key as most-recently-used.
+    this.store.delete(key);
     this.store.set(key, {
       value,
       expiresAt: ttlMs ? Date.now() + ttlMs : null,
     });
+    this.evictIfNeeded();
   }
 
   async delete(key: string): Promise<boolean> {
@@ -168,6 +187,17 @@ export class MemoryKVStore implements KVStore {
 
   private isExpired(entry: MemoryEntry): boolean {
     return entry.expiresAt !== null && entry.expiresAt <= Date.now();
+  }
+
+  /** Evict least-recently-used entries until within the configured cap. */
+  private evictIfNeeded(): void {
+    if (this.maxEntries <= 0) return; // 0/undefined-as-0 => unbounded
+    while (this.store.size > this.maxEntries) {
+      // The first key in iteration order is the least-recently-used.
+      const oldest = this.store.keys().next().value;
+      if (oldest === undefined) break;
+      this.store.delete(oldest);
+    }
   }
 
   private cleanup(): void {

@@ -1,7 +1,7 @@
 # CelsianJS Feature Parity Report
 
 **Compared against: Express 4.x, Fastify 4.x**
-**CelsianJS audit date: 2026-03-08**
+**CelsianJS audit date: 2026-06-07**
 
 ---
 
@@ -46,8 +46,8 @@
 | `res.cookie()` | ✅ Full support | `reply.cookie(name, value, options)` with full cookie options |
 | `res.clearCookie()` | ✅ Full support | `reply.clearCookie(name, options)` |
 | `res.type()` | ⚠️ Partial | No shorthand; use `reply.header('content-type', '...')` |
-| `res.download()` | ❌ Not supported | No file download helper |
-| `res.sendFile()` | ❌ Not supported | No file-sending helper |
+| `res.download()` | ✅ Full support | `reply.download(filePath, filename?)` — sets Content-Disposition attachment, resolves absolute path to guard against traversal |
+| `res.sendFile()` | ✅ Full support | `reply.sendFile(filePath, { root })` — MIME detection, returns 403 if the resolved path escapes `root` (path-traversal guard) |
 | `res.html()` | ✅ Full support | `reply.html(content)` — not in Express but a nice addition |
 | `res.stream()` | ✅ Full support | `reply.stream(readable)` — not in Express |
 | Status code helpers | ✅ Full support | `reply.notFound()`, `reply.badRequest()`, `reply.unauthorized()`, etc. |
@@ -151,17 +151,15 @@
 
 These are features that teams migrating from Express or Fastify would expect and whose absence could block adoption:
 
-1. **No `res.sendFile()` / `res.download()`** — Any API that serves user-uploaded files, PDFs, or binary downloads needs this. Workaround exists (manually read file, create Response with correct headers), but it is boilerplate-heavy and error-prone (range requests, MIME detection, etc.).
+1. **No custom content-type parser API** — Fastify allows registering custom parsers for any content type (e.g., `text/xml`, `application/msgpack`). CelsianJS hardcodes JSON/form/text parsing. APIs consuming non-standard content types must handle parsing manually in handlers.
 
-2. **No custom content-type parser API** — Fastify allows registering custom parsers for any content type (e.g., `text/xml`, `application/msgpack`). CelsianJS hardcodes JSON/form/text parsing. APIs consuming non-standard content types must handle parsing manually in handlers.
+2. **No `setNotFoundHandler()` / custom 404** — The 404 response is a fixed JSON object. Many apps need custom 404 pages (HTML) or middleware that runs on 404 (e.g., SPA fallback to index.html). This is a common pattern that currently requires a wildcard catch-all route.
 
-3. **No `setNotFoundHandler()` / custom 404** — The 404 response is a fixed JSON object. Many apps need custom 404 pages (HTML) or middleware that runs on 404 (e.g., SPA fallback to index.html). This is a common pattern that currently requires a wildcard catch-all route.
+3. **No HTTPS/TLS support** — While most production deployments use a reverse proxy (nginx, Caddy), many developers expect `createServer` to accept a TLS cert for local HTTPS development and simple deployments.
 
-4. **No HTTPS/TLS support** — While most production deployments use a reverse proxy (nginx, Caddy), many developers expect `createServer` to accept a TLS cert for local HTTPS development and simple deployments.
+4. **No `decorateReply()`** — Fastify's `decorateReply()` is used heavily for attaching request-scoped helpers (e.g., `reply.sendCSV()` in plugins). Currently no way to extend the reply object per-plugin.
 
-5. **No `decorateReply()`** — Fastify's `decorateReply()` is used heavily for attaching request-scoped helpers (e.g., `reply.sendCSV()` in plugins). Currently no way to extend the reply object per-plugin.
-
-6. **No regex routes** — Some Express apps use regex patterns for complex route matching (e.g., `/\/api\/v[12]\/users/`). These would need refactoring.
+5. **No regex routes** — Some Express apps use regex patterns for complex route matching (e.g., `/\/api\/v[12]\/users/`). These would need refactoring.
 
 ---
 
@@ -225,7 +223,6 @@ These are features that experienced developers will notice are missing, but can 
 
 | Gap | Effort | Impact |
 |-----|--------|--------|
-| `reply.sendFile()` / `reply.download()` | Medium | High — blocks any file-serving use case |
 | Custom 404/not-found handler | Low | High — needed for SPAs and custom error pages |
 | Custom content-type parser API | Medium | High — blocks XML, protobuf, msgpack APIs |
 | `decorateReply()` | Low | Medium — needed for plugin ecosystem growth |

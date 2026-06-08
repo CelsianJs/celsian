@@ -190,6 +190,37 @@ describe("Session Manager", () => {
     expect(cookie).not.toContain("HttpOnly");
   });
 
+  it("encodes a session id with cookie-injection characters in the cookie value", () => {
+    // A malicious/custom generateId returning attribute-injection chars must
+    // not break out of the cookie value.
+    const { store } = makeManager();
+    const manager = createSessionManager({
+      store,
+      generateId: () => "evil; Domain=attacker.com",
+    });
+
+    const cookie = manager.cookie("evil; Domain=attacker.com");
+
+    // The raw `;` must not appear inside the value as an injected attribute.
+    expect(cookie).not.toContain("evil; Domain=attacker.com");
+    // Only our own attributes are present after the (single) value segment.
+    expect(cookie.toLowerCase()).not.toContain("domain=attacker.com");
+    // Value is percent-encoded.
+    expect(cookie).toContain(`sid=${encodeURIComponent("evil; Domain=attacker.com")}`);
+  });
+
+  it("rejects an empty session id", () => {
+    const { manager } = makeManager();
+    expect(() => manager.cookie("")).toThrow();
+  });
+
+  it("does not encode a normal hex session id", async () => {
+    const { manager } = makeManager();
+    const session = await manager.create();
+    const cookie = manager.cookie(session.id);
+    expect(cookie).toContain(`sid=${session.id}`);
+  });
+
   it("destroy by ID removes session", async () => {
     const { manager } = makeManager();
 

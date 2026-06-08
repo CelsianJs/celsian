@@ -36,6 +36,28 @@ const DEFAULT_OPTIONS = {
 };
 
 /**
+ * Denylist of per-user / credential-bearing headers that MUST NOT be cached.
+ *
+ * A response cache replays a single stored response to many users, so any
+ * header carrying a user's identity or credentials would leak to everyone
+ * hitting the cache. We deny exactly those headers and preserve everything
+ * else — representation headers (`content-type`, `etag`, ...), CORS headers,
+ * and importantly the security headers (`x-content-type-options`,
+ * `x-frame-options`, `content-security-policy`, `strict-transport-security`,
+ * ...) that `onSend`/security plugins attach and that a cached response must
+ * keep carrying. An allowlist would silently strip those, so we denylist.
+ */
+const NON_CACHEABLE_HEADERS = new Set([
+  "set-cookie",
+  "set-cookie2",
+  "authorization",
+  "proxy-authorization",
+  "www-authenticate",
+  "proxy-authenticate",
+  "x-cache",
+]);
+
+/**
  * Create a response cache handler.
  *
  * Returns a function that wraps a fetch handler with caching.
@@ -128,7 +150,12 @@ export function createResponseCache(options: ResponseCacheOptions) {
     const body = await response.clone().text();
     const responseHeaders: Record<string, string> = {};
     response.headers.forEach((value, key) => {
-      responseHeaders[key] = value;
+      // Persist all representation/security headers; drop only the per-user
+      // credential-bearing ones (set-cookie, authorization, ...) which would
+      // otherwise be replayed to other users on a cache HIT.
+      if (!NON_CACHEABLE_HEADERS.has(key.toLowerCase())) {
+        responseHeaders[key] = value;
+      }
     });
 
     await store.set<CachedResponse>(

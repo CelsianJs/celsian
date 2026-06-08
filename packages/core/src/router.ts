@@ -1,6 +1,19 @@
 // @celsian/core — Radix tree router with URL pattern matching
 
+import { HttpError } from "./errors.js";
 import type { InternalRoute, RouteHandler, RouteHooks, RouteMatch, RouteMethod } from "./types.js";
+
+/**
+ * Decode a route param/wildcard segment, converting malformed percent-encoding
+ * (e.g. "%ZZ") into a 400 HttpError instead of an uncaught URIError.
+ */
+function decodeSegment(seg: string): string {
+  try {
+    return decodeURIComponent(seg);
+  } catch {
+    throw new HttpError(400, "Malformed URI in path", { code: "MALFORMED_URI" });
+  }
+}
 
 interface RadixNode {
   segment: string;
@@ -157,7 +170,7 @@ export class Router {
 
     // 2. Parameter match
     if (node.paramChild && node.paramName) {
-      params[node.paramName] = decodeURIComponent(seg);
+      params[node.paramName] = decodeSegment(seg);
       const result = this.matchNode(node.paramChild, segments, index + 1, params, method);
       if (result) return result;
       delete params[node.paramName];
@@ -166,7 +179,7 @@ export class Router {
     // 3. Wildcard match (lowest priority, consumes rest)
     if (node.wildcardChild && node.wildcardName) {
       if (node.wildcardChild.routes.has(method)) {
-        params[node.wildcardName] = decodeURIComponent(segments.slice(index).join("/"));
+        params[node.wildcardName] = decodeSegment(segments.slice(index).join("/"));
         return node.wildcardChild;
       }
     }

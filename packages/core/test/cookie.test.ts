@@ -22,6 +22,15 @@ describe("Cookie parsing", () => {
     const cookies = parseCookies("token=abc=def");
     expect(cookies).toEqual({ token: "abc=def" });
   });
+
+  it("should not throw on a malformed percent-escape (falls back to raw value)", () => {
+    // Regression: an unguarded decodeURIComponent threw URIError on `%ZZ`, crashing
+    // cookie parsing for the whole request. It must degrade to the raw value instead.
+    expect(() => parseCookies("good=ok; bad=%ZZ")).not.toThrow();
+    const cookies = parseCookies("good=ok; bad=%ZZ");
+    expect(cookies.good).toBe("ok");
+    expect(cookies.bad).toBe("%ZZ");
+  });
 });
 
 describe("Cookie serialization", () => {

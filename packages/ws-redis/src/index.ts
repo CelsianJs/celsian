@@ -6,6 +6,14 @@ import Redis from "ioredis";
 /** Channel prefix used for Redis pub/sub keys */
 const CHANNEL_PREFIX = "ws:";
 
+/**
+ * Dedicated channel used for cross-node `broadcastAll('*')` fan-out. Every
+ * adapter instance subscribes to this on construction so a global broadcast
+ * reaches all connections on all nodes — including paths that only exist on
+ * remote nodes (which a per-path fan-out would miss).
+ */
+const FANOUT_CHANNEL = `${CHANNEL_PREFIX}__all__`;
+
 export interface RedisWSAdapterOptions {
   /** Redis connection URL (redis://...) */
   url?: string;
@@ -13,6 +21,13 @@ export interface RedisWSAdapterOptions {
   publisher?: Redis;
   /** Existing ioredis subscriber client */
   subscriber?: Redis;
+  /**
+   * Optional callback for connection-level errors emitted by owned ioredis
+   * clients. Defaults to logging via console.error. Ignored when external
+   * publisher/subscriber clients are supplied (the caller owns error handling
+   * for clients they created).
+   */
+  onError?: (error: Error) => void;
 }
 
 /**
@@ -69,10 +84,32 @@ export class RedisWSAdapter {
       throw new CelsianError("RedisWSAdapter requires either a url or publisher+subscriber clients");
     }
 
+    // Attach 'error' listeners to BOTH owned clients so a connection failure
+    // degrades (logs) instead of emitting an unhandled 'error' event that would
+    // crash the process. Skipped for external clients — the caller owns those.
+    if (this.ownsClients) {
+      const onError =
+        options.onError ??
+        ((error: Error) => {
+          console.error("[celsian:ws-redis] redis client error:", error.message);
+        });
+      this.pub.on("error", onError);
+      this.sub.on("error", onError);
+    }
+
     // Listen for messages from Redis and relay to local connections
     this.sub.on("message", (channel: string, message: string) => {
       this.handleRedisMessage(channel, message);
     });
+
+    // Subscribe to the global fan-out channel so cross-node broadcastAll works
+    // regardless of which paths exist locally. Errors are handled by the
+    // 'error' listener above; we intentionally don't await here (constructor).
+    void this.sub.subscribe(FANOUT_CHANNEL).catch(() => {
+      // Subscription failure is surfaced via the 'error' listener; broadcastAll
+      // will simply not reach this node until the connection recovers.
+    });
+    this.subscribedChannels.add(FANOUT_CHANNEL);
   }
 
   /**
@@ -110,8 +147,15 @@ export class RedisWSAdapter {
   }
 
   /**
-   * Broadcast a message to all connections across all paths, both
-   * locally and across all Redis-connected nodes.
+   * Broadcast a message to all connections across all paths, both locally and
+   * across all Redis-connected nodes.
+   *
+   * Cross-node fan-out goes over a single dedicated channel ({@link FANOUT_CHANNEL})
+   * that every adapter subscribes to on construction. Each receiving node then
+   * calls `registry.broadcastAll`, so the message reaches every connection on
+   * every node — including paths that exist only on remote nodes. (The previous
+   * implementation re-published to the originating node's per-path channels,
+   * which silently missed paths not subscribed locally.)
    */
   async broadcastAll(data: string | ArrayBuffer, exclude?: string): Promise<void> {
     if (this.closed) return;
@@ -119,8 +163,8 @@ export class RedisWSAdapter {
     // Send locally
     this.registry.broadcastAll(data, exclude);
 
-    // Publish to all subscribed channels
-    const msg: Omit<RedisWSMessage, "path"> & { path: string } = {
+    // Publish once to the global fan-out channel for all other nodes.
+    const msg: RedisWSMessage = {
       nodeId: this.nodeId,
       path: "*",
       data: typeof data === "string" ? data : bufferToBase64(data),
@@ -128,12 +172,7 @@ export class RedisWSAdapter {
       exclude,
     };
 
-    const serialized = JSON.stringify(msg);
-    const promises: Promise<number>[] = [];
-    for (const channel of this.subscribedChannels) {
-      promises.push(this.pub.publish(channel, serialized));
-    }
-    await Promise.all(promises);
+    await this.pub.publish(FANOUT_CHANNEL, JSON.stringify(msg));
   }
 
   /**
@@ -180,10 +219,9 @@ export class RedisWSAdapter {
 
       const data = parsed.binary ? base64ToBuffer(parsed.data) : parsed.data;
 
-      if (parsed.path === "*") {
-        // Broadcast to all local connections on the matching channel's path
-        const path = channel.slice(CHANNEL_PREFIX.length);
-        this.registry.broadcast(path, data, parsed.exclude);
+      if (channel === FANOUT_CHANNEL) {
+        // Global fan-out from another node — deliver to every local connection.
+        this.registry.broadcastAll(data, parsed.exclude);
       } else {
         this.registry.broadcast(parsed.path, data, parsed.exclude);
       }

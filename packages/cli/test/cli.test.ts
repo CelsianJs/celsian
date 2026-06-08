@@ -115,12 +115,12 @@ describe("generateRpc", () => {
     rmSync(TMP_DIR, { recursive: true, force: true });
   });
 
-  it("creates an RPC file in src/rpc/<name>.ts", () => {
+  it("creates an RPC file in src/routes/<name>.ts (matches scaffold convention)", () => {
     const originalCwd = process.cwd();
     process.chdir(TMP_DIR);
     try {
       generateRpc("tasks");
-      const filePath = join(TMP_DIR, "src", "rpc", "tasks.ts");
+      const filePath = join(TMP_DIR, "src", "routes", "tasks.ts");
       expect(existsSync(filePath)).toBe(true);
     } finally {
       process.chdir(originalCwd);
@@ -132,7 +132,7 @@ describe("generateRpc", () => {
     process.chdir(TMP_DIR);
     try {
       generateRpc("orders");
-      const filePath = join(TMP_DIR, "src", "rpc", "orders.ts");
+      const filePath = join(TMP_DIR, "src", "routes", "orders.ts");
       const content = readFileSync(filePath, "utf8");
       expect(content).toContain("procedure");
       expect(content).toContain("query");
@@ -148,7 +148,7 @@ describe("generateRpc", () => {
     process.chdir(TMP_DIR);
     try {
       generateRpc("payments");
-      const filePath = join(TMP_DIR, "src", "rpc", "payments.ts");
+      const filePath = join(TMP_DIR, "src", "routes", "payments.ts");
       const originalContent = readFileSync(filePath, "utf8");
 
       // Call again — should not overwrite
@@ -165,7 +165,7 @@ describe("generateRpc", () => {
     process.chdir(TMP_DIR);
     try {
       generateRpc("analytics");
-      const filePath = join(TMP_DIR, "src", "rpc", "analytics.ts");
+      const filePath = join(TMP_DIR, "src", "routes", "analytics.ts");
       const content = readFileSync(filePath, "utf8");
       expect(content).toContain("@celsian/rpc");
     } finally {
@@ -178,7 +178,7 @@ describe("generateRpc", () => {
     process.chdir(TMP_DIR);
     try {
       generateRpc("inventory");
-      const filePath = join(TMP_DIR, "src", "rpc", "inventory.ts");
+      const filePath = join(TMP_DIR, "src", "routes", "inventory.ts");
       const content = readFileSync(filePath, "utf8");
       expect(content).toContain("list:");
       expect(content).toContain("getById:");

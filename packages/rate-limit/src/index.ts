@@ -13,7 +13,17 @@ export interface RateLimitOptions {
   trustProxy?: boolean;
 }
 
-/** Pluggable store for rate limit counters (implement for Redis, etc.). */
+/**
+ * Pluggable store for rate limit counters (implement for Redis, etc.).
+ *
+ * CONTRACT: `increment` MUST be atomic. Concurrent calls for the same key must
+ * never lose updates — if N calls run for a key within one window, the final
+ * observed count must reach N. The in-process {@link MemoryRateLimitStore}
+ * achieves this by doing the read-modify-write synchronously (no `await` gap).
+ * A distributed implementation (e.g. Redis) MUST use an atomic primitive such
+ * as `INCR` + `EXPIRE` (ideally in a single Lua script / MULTI) rather than a
+ * GET-then-SET, otherwise the limiter can be bypassed under concurrency.
+ */
 export interface RateLimitStore {
   increment(key: string, window: number): Promise<{ count: number; resetAt: number }>;
 }
@@ -40,13 +50,19 @@ export class MemoryRateLimitStore implements RateLimitStore {
     this.cleanupTimer.unref?.();
   }
 
-  async increment(key: string, window: number): Promise<{ count: number; resetAt: number }> {
+  increment(key: string, window: number): Promise<{ count: number; resetAt: number }> {
+    // The entire read-modify-write below runs SYNCHRONOUSLY within this call:
+    // there is no `await` between reading `existing` and writing the updated
+    // count, so concurrent increments cannot interleave and lose updates. We
+    // compute the result first and only wrap it in a resolved promise at the
+    // end to satisfy the async store contract. Do NOT introduce an `await`
+    // here or the operation becomes non-atomic.
     const now = Date.now();
     const existing = this.entries.get(key);
 
     if (existing && existing.resetAt > now) {
       existing.count++;
-      return { count: existing.count, resetAt: existing.resetAt };
+      return Promise.resolve({ count: existing.count, resetAt: existing.resetAt });
     }
 
     const entry: WindowEntry = {
@@ -54,7 +70,7 @@ export class MemoryRateLimitStore implements RateLimitStore {
       resetAt: now + window,
     };
     this.entries.set(key, entry);
-    return { count: 1, resetAt: entry.resetAt };
+    return Promise.resolve({ count: 1, resetAt: entry.resetAt });
   }
 
   destroy(): void {
@@ -77,7 +93,12 @@ function createDefaultKeyGenerator(trustProxy: boolean): (req: CelsianRequest) =
         const clientIp = xff.split(",")[0]?.trim();
         if (clientIp) return clientIp;
       }
-      return req.headers.get("x-real-ip") ?? `anonymous-${Date.now().toString(36)}`;
+      // Fail closed: when we cannot identify the client (no XFF / X-Real-IP),
+      // bucket all such requests under one shared constant key so they share a
+      // single limit. A per-request unique value (e.g. a timestamp) would give
+      // every unidentified request its own counter, silently disabling the
+      // limiter for anonymous traffic.
+      return req.headers.get("x-real-ip") ?? "anonymous";
     };
   }
   throw new CelsianError(

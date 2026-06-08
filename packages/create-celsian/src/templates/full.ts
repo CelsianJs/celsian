@@ -1,3 +1,5 @@
+import { CELSIAN_VERSION, DEPS, DEV_DEPS } from "../versions.js";
+
 export const fullTemplate: Record<string, string> = {
   "package.json": JSON.stringify(
     {
@@ -12,18 +14,18 @@ export const fullTemplate: Record<string, string> = {
         lint: "npx tsc --noEmit",
       },
       dependencies: {
-        celsian: "^0.3.18",
-        "@celsian/core": "^0.3.18",
-        "@celsian/jwt": "^0.3.18",
-        "@celsian/rpc": "^0.3.18",
-        "@celsian/rate-limit": "^0.3.18",
-        "@sinclair/typebox": "^0.34.0",
+        celsian: CELSIAN_VERSION,
+        "@celsian/core": CELSIAN_VERSION,
+        "@celsian/jwt": CELSIAN_VERSION,
+        "@celsian/rpc": CELSIAN_VERSION,
+        "@celsian/rate-limit": CELSIAN_VERSION,
+        "@sinclair/typebox": DEPS.typebox,
       },
       devDependencies: {
-        typescript: "^5.7.0",
-        tsx: "^4.0.0",
-        vitest: "^3.0.0",
-        "@types/node": "^22.0.0",
+        typescript: DEV_DEPS.typescript,
+        tsx: DEV_DEPS.tsx,
+        vitest: DEV_DEPS.vitest,
+        "@types/node": DEV_DEPS.typesNode,
       },
     },
     null,
@@ -469,7 +471,8 @@ import { generateDailyReport } from './tasks/report.js';
 
 // ─── Create App ───
 
-const app = createApp({ logger: true });
+// Exported so tooling like \`celsian routes\` can discover the app.
+export const app = createApp({ logger: true });
 
 // ─── Security (CORS, CSRF, headers, rate limiting) ───
 

@@ -5,6 +5,39 @@ All notable changes to CelsianJS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-06-07
+
+Production-hardening release. **All public packages are now unified on a single version line**
+(changesets `fixed` group) so versions can no longer drift; the mistaken `@celsian/adapter-bun`
+and `@celsian/adapter-deno` `1.0.0` publishes are superseded by `0.5.0` (and should be deprecated).
+
+### Security
+- **core:** prototype-pollution scrub on parsed JSON bodies; `trustProxy` honors `x-forwarded-host`
+  only for a configured `trustedHosts` allowlist (host-header injection); CSRF cookie `Secure` in
+  production; cookie name/domain/path sanitized; `sendFile` traversal check fixed for sibling-prefixed
+  roots; malformed percent-encoding (`/%ZZ`) returns 400 instead of crashing.
+- **cache:** response cache no longer replays per-user `Set-Cookie`/`Authorization` across users
+  (credential-header denylist; security/representation headers preserved).
+- **rate-limit:** fails closed for unidentifiable clients (was bypassable to unlimited throughput).
+- **jwt:** lazy `createJWTGuard()` resolves each app's secret/algorithms from the request — fixes
+  cross-app secret bleed and honors configured algorithms.
+
+### Fixed
+- **core:** invalid cron fields (`*/0`, NaN, out-of-range) throw instead of hanging the event loop;
+  request timeout now aborts the handler via `request.signal`; malformed/oversized bodies return
+  400/413; errors route through the structured logger.
+- **queue-redis:** atomic pop (Lua) with an in-flight reaper honoring `visibilityTimeout`; ioredis
+  `error` listeners prevent process crashes during a Redis outage. (Key schema `:inflight` →
+  `:processing`/`:stamps` — drain in-flight messages before upgrading.)
+- **ws-redis:** real cross-node `broadcastAll('*')` fan-out; ioredis `error` listeners.
+- **schema:** StandardSchema-first detection (modern Zod/Valibot); TypeBox via its Kind symbol.
+- **create-celsian:** templates pin a valid unified range and `export const app` so `celsian routes`
+  works; `generate rpc` uses `src/routes/`; scaffolds `vitest@^4`.
+
+### Changed
+- `MemoryKVStore` now defaults to a bounded LRU (`maxEntries: 0` restores unbounded).
+- Added `@celsian/core` `./package.json` export; added a Deno CI job.
+
 ## [0.2.0] - 2026-03-26
 
 ### Added

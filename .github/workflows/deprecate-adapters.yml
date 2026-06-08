@@ -1,0 +1,35 @@
+name: Deprecate mistaken adapter 1.0.0 publishes
+
+# One-shot, manually triggered. Deprecates the @celsian/adapter-bun@1.0.0 and
+# @celsian/adapter-deno@1.0.0 publishes (released in error above the 0.x line) using
+# the repo's NPM_TOKEN secret — so no local npm token is ever needed. Run it AFTER
+# the 0.5.0 release is published. Trigger: Actions tab → this workflow → Run workflow.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "deprecate" to confirm'
+        required: true
+        default: ""
+
+jobs:
+  deprecate:
+    if: ${{ github.event.inputs.confirm == 'deprecate' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Deprecate the mistaken 1.0.0 adapter publishes
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          msg="Published in error. Use ^0.5.0 (unified Celsian release line)."
+          npm deprecate "@celsian/adapter-bun@1.0.0"  "$msg"
+          npm deprecate "@celsian/adapter-deno@1.0.0" "$msg"
+          echo "Deprecated. Current dist-tags:"
+          npm dist-tag ls @celsian/adapter-bun || true
+          npm dist-tag ls @celsian/adapter-deno || true

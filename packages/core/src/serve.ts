@@ -118,8 +118,18 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
       const url = new URL(req.url ?? "/", baseUrl);
       const { resolve } = await import("node:path");
       const staticRoot = resolve(options.staticDir!);
-      // Decode URI and normalize to prevent path traversal (e.g., /../../../etc/passwd)
-      const decodedPath = decodeURIComponent(url.pathname);
+      // Decode URI and normalize to prevent path traversal (e.g., /../../../etc/passwd).
+      // Malformed percent-encoding (e.g. "/%ZZ") throws URIError — respond 400
+      // rather than letting it crash the async server callback.
+      let decodedPath: string;
+      try {
+        decodedPath = decodeURIComponent(url.pathname);
+      } catch {
+        res.statusCode = 400;
+        res.end("Bad Request");
+        inFlight--;
+        return;
+      }
       const filePath = resolve(join(staticRoot, decodedPath));
       // Ensure the resolved path is within the static directory
       if (!filePath.startsWith(`${staticRoot}/`) && filePath !== staticRoot) {

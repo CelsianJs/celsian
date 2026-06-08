@@ -144,3 +144,157 @@ describe("createJWTGuard", () => {
     expect(response.status).toBe(401);
   });
 });
+
+describe("createJWTGuard (lazy, no-arg) honors configured algorithms", () => {
+  // Regression for: lazy createJWTGuard() hardcoded algorithms:["HS256"], ignoring the
+  // algorithm the JWT plugin was registered with. A token signed with HS512 must verify
+  // through the no-arg guard, and a token signed with a non-allowed alg must be rejected.
+  it("should verify HS512 tokens via the no-arg guard when the plugin is registered with HS512", async () => {
+    const app = createApp();
+    await app.register(jwt({ secret: SECRET, algorithms: ["HS512"] }), { encapsulate: false });
+    const jwtInstance = app.getDecoration("jwt") as JWTNamespace;
+
+    // No-arg guard — must read algorithms from the plugin's per-app config (HS512), not HS256.
+    const guard = createJWTGuard();
+
+    app.route({
+      method: "GET",
+      url: "/protected",
+      preHandler: guard,
+      handler: (req, reply) => reply.json({ user: (req as { user?: unknown }).user }),
+    });
+
+    const token = await jwtInstance.sign({ sub: "hs512-user" });
+    const res = await app.inject({
+      url: "/protected",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.user.sub).toBe("hs512-user");
+  });
+
+  it("should reject a token signed with a different alg than the plugin allows", async () => {
+    const app = createApp();
+    await app.register(jwt({ secret: SECRET, algorithms: ["HS512"] }), { encapsulate: false });
+
+    const guard = createJWTGuard();
+    app.route({
+      method: "GET",
+      url: "/protected",
+      preHandler: guard,
+      handler: (_req, reply) => reply.json({ ok: true }),
+    });
+
+    // Sign with HS256 using the SAME secret — should be rejected because the guard only allows HS512.
+    const { SignJWT } = await import("jose");
+    const hs256Token = await new SignJWT({ sub: "wrong-alg" })
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt()
+      .sign(new TextEncoder().encode(SECRET));
+
+    const res = await app.inject({
+      url: "/protected",
+      headers: { authorization: `Bearer ${hs256Token}` },
+    });
+    expect(res.status).toBe(401);
+  });
+});
+
+describe("createJWTGuard (lazy, no-arg) binds to its owning app (no cross-app secret bleed)", () => {
+  // Regression for: the lazy guard read the secret from a module-global WeakRef
+  // (_lastRegisteredApp), so with multiple apps the guard bound to whichever app registered
+  // LAST, leaking secrets across apps. Each guard must bind to the app it was created for.
+  it("should not verify app A's token on app B (and each verifies its own)", async () => {
+    const SECRET_A = "secret-A-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const SECRET_B = "secret-B-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+    const appA = createApp();
+    await appA.register(jwt({ secret: SECRET_A }), { encapsulate: false });
+    const jwtA = appA.getDecoration("jwt") as JWTNamespace;
+    const guardA = createJWTGuard();
+    appA.route({
+      method: "GET",
+      url: "/protected",
+      preHandler: guardA,
+      handler: (req, reply) => reply.json({ user: (req as { user?: unknown }).user }),
+    });
+
+    // App B registers AFTER app A — previously this would rebind app A's lazy guard to app B.
+    const appB = createApp();
+    await appB.register(jwt({ secret: SECRET_B }), { encapsulate: false });
+    const jwtB = appB.getDecoration("jwt") as JWTNamespace;
+    const guardB = createJWTGuard();
+    appB.route({
+      method: "GET",
+      url: "/protected",
+      preHandler: guardB,
+      handler: (req, reply) => reply.json({ user: (req as { user?: unknown }).user }),
+    });
+
+    const tokenA = await jwtA.sign({ sub: "user-A" });
+    const tokenB = await jwtB.sign({ sub: "user-B" });
+
+    // Each app verifies its own token.
+    const aSelf = await appA.inject({ url: "/protected", headers: { authorization: `Bearer ${tokenA}` } });
+    expect(aSelf.status).toBe(200);
+    expect((await aSelf.json()).user.sub).toBe("user-A");
+
+    const bSelf = await appB.inject({ url: "/protected", headers: { authorization: `Bearer ${tokenB}` } });
+    expect(bSelf.status).toBe(200);
+    expect((await bSelf.json()).user.sub).toBe("user-B");
+
+    // App A must NOT accept a token signed for app B, and vice versa.
+    const aRejectsB = await appA.inject({ url: "/protected", headers: { authorization: `Bearer ${tokenB}` } });
+    expect(aRejectsB.status).toBe(401);
+
+    const bRejectsA = await appB.inject({ url: "/protected", headers: { authorization: `Bearer ${tokenA}` } });
+    expect(bRejectsA.status).toBe(401);
+  });
+
+  // Regression for the reviewer-reproduced defeat: with the order "register A, register B,
+  // THEN create both guards", a creation-time binding to _lastRegisteredApp bound BOTH guards
+  // to app B, so app A accepted app B's token (200 instead of 401). The fix resolves config
+  // from the request at request time, so order no longer matters.
+  it("should isolate apps even when both guards are created AFTER both plugins are registered", async () => {
+    const SECRET_A = "secret-A-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const SECRET_B = "secret-B-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+    // Register BOTH plugins first...
+    const appA = createApp();
+    await appA.register(jwt({ secret: SECRET_A }), { encapsulate: false });
+    const jwtA = appA.getDecoration("jwt") as JWTNamespace;
+
+    const appB = createApp();
+    await appB.register(jwt({ secret: SECRET_B }), { encapsulate: false });
+    const jwtB = appB.getDecoration("jwt") as JWTNamespace;
+
+    // ...THEN create both guards (both would bind to the last-registered app B under the old fix).
+    const guardA = createJWTGuard();
+    const guardB = createJWTGuard();
+
+    appA.route({
+      method: "GET",
+      url: "/protected",
+      preHandler: guardA,
+      handler: (req, reply) => reply.json({ user: (req as { user?: unknown }).user }),
+    });
+    appB.route({
+      method: "GET",
+      url: "/protected",
+      preHandler: guardB,
+      handler: (req, reply) => reply.json({ user: (req as { user?: unknown }).user }),
+    });
+
+    const tokenA = await jwtA.sign({ sub: "user-A" });
+    const tokenB = await jwtB.sign({ sub: "user-B" });
+
+    // Each app verifies its own token.
+    expect((await appA.inject({ url: "/protected", headers: { authorization: `Bearer ${tokenA}` } })).status).toBe(200);
+    expect((await appB.inject({ url: "/protected", headers: { authorization: `Bearer ${tokenB}` } })).status).toBe(200);
+
+    // The defeat: app A must NOT accept a token signed for app B (was 200, must be 401).
+    expect((await appA.inject({ url: "/protected", headers: { authorization: `Bearer ${tokenB}` } })).status).toBe(401);
+    expect((await appB.inject({ url: "/protected", headers: { authorization: `Bearer ${tokenA}` } })).status).toBe(401);
+  });
+});

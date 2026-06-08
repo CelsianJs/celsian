@@ -2,6 +2,39 @@
 
 import type { KVStore } from "./store.js";
 
+/**
+ * Structured error for the cache package.
+ *
+ * `@celsian/cache` has no runtime dependencies (not even `@celsian/core`), so
+ * we define a local named error rather than throwing a bare `Error`, matching
+ * the framework convention of structured errors.
+ */
+export class CacheError extends Error {
+  override readonly name = "CacheError";
+  readonly code = "CACHE_ERROR";
+}
+
+/**
+ * RFC 6265 cookie-octet set: %x21 / %x23-2B / %x2D-3A / %x3C-5B / %x5D-7E.
+ * Excludes whitespace, control chars, `"`, `,`, `;`, and `\` — i.e. exactly
+ * the characters that could break out of the value into cookie attributes
+ * (e.g. injecting `; HttpOnly` or CRLF). A value matching this is safe to emit
+ * verbatim; anything else is percent-encoded as a defensive fallback so a
+ * custom `generateId` can never inject cookie attributes.
+ */
+const COOKIE_VALUE_SAFE = /^[\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]*$/;
+
+/** Ensure a session id is safe to place in a Set-Cookie value. */
+function encodeCookieValue(sessionId: string): string {
+  if (typeof sessionId !== "string" || sessionId.length === 0) {
+    throw new CacheError("[@celsian/cache] session id must be a non-empty string");
+  }
+  if (COOKIE_VALUE_SAFE.test(sessionId)) return sessionId;
+  // Percent-encode unsafe values so structural characters (`;`, CR, LF, etc.)
+  // cannot inject cookie attributes. encodeURIComponent neutralizes all of them.
+  return encodeURIComponent(sessionId);
+}
+
 export interface SessionData {
   [key: string]: unknown;
 }
@@ -178,7 +211,8 @@ export function createSessionManager(options: SessionOptions) {
     const path = opts?.path ?? "/";
     const maxAge = opts?.maxAge ?? Math.floor(ttlMs / 1000);
 
-    let cookieStr = `${cookieName}=${sessionId}; Path=${path}; Max-Age=${maxAge}; SameSite=${sameSite}`;
+    const safeValue = encodeCookieValue(sessionId);
+    let cookieStr = `${cookieName}=${safeValue}; Path=${path}; Max-Age=${maxAge}; SameSite=${sameSite}`;
     if (httpOnly) cookieStr += "; HttpOnly";
     if (secure) cookieStr += "; Secure";
     return cookieStr;
