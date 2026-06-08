@@ -1,0 +1,6 @@
+{
+  "//": "Deno config so `deno check` uses Deno's web-standard globals (Request, Response, console, fetch, URL) instead of the Node-oriented root tsconfig. Node's `tsc -b` ignores this file.",
+  "compilerOptions": {
+    "lib": ["deno.window", "esnext"]
+  }
+}

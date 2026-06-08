@@ -78,7 +78,12 @@ export function createDenoHandler(app: CelsianApp): DenoFetchHandler {
  * ```
  */
 export function serveDeno(app: CelsianApp, options: DenoAdapterOptions = {}): void {
-  const port = options.port ?? parseInt((typeof process !== "undefined" ? process.env.PORT : undefined) ?? "3000", 10);
+  // Read PORT via globalThis so the file type-checks under both Deno (no Node types)
+  // and Node (`tsc`), without a bare `process` identifier.
+  const proc = (globalThis as Record<string, unknown>).process as
+    | { env?: Record<string, string | undefined> }
+    | undefined;
+  const port = options.port ?? parseInt(proc?.env?.PORT ?? "3000", 10);
   const hostname = options.hostname ?? "0.0.0.0";
 
   const handler = createDenoHandler(app);
