@@ -34,24 +34,43 @@ export function parseCronExpression(expr: string): ParsedCron {
   };
 }
 
+/** Parse a single integer field value, rejecting NaN with a clear error. */
+function parseIntStrict(raw: string, field: string): number {
+  const n = parseInt(raw, 10);
+  if (Number.isNaN(n)) {
+    throw new CelsianError(`Invalid cron field: "${field}" (expected an integer, got "${raw}")`);
+  }
+  return n;
+}
+
 function parseField(field: string, min: number, max: number): Set<number> {
   const values = new Set<number>();
+
+  const inRange = (n: number): number => {
+    if (n < min || n > max) {
+      throw new CelsianError(`Invalid cron field: "${field}" (value ${n} out of range [${min}, ${max}])`);
+    }
+    return n;
+  };
 
   for (const part of field.split(",")) {
     if (part === "*") {
       for (let i = min; i <= max; i++) values.add(i);
     } else if (part.includes("/")) {
       const [range, stepStr] = part.split("/");
-      const step = parseInt(stepStr!, 10);
-      const start = range === "*" ? min : parseInt(range!, 10);
-      for (let i = start; i <= max; i += step) values.add(i);
+      const step = parseIntStrict(stepStr!, field);
+      if (step <= 0) {
+        throw new CelsianError(`Invalid cron field: "${field}" (step must be a positive integer, got ${step})`);
+      }
+      const start = range === "*" ? min : inRange(parseIntStrict(range!, field));
+      for (let i = start; i <= max; i += step) values.add(inRange(i));
     } else if (part.includes("-")) {
       const [startStr, endStr] = part.split("-");
-      const start = parseInt(startStr!, 10);
-      const end = parseInt(endStr!, 10);
-      for (let i = start; i <= end; i++) values.add(i);
+      const start = inRange(parseIntStrict(startStr!, field));
+      const end = inRange(parseIntStrict(endStr!, field));
+      for (let i = start; i <= end; i++) values.add(inRange(i));
     } else {
-      values.add(parseInt(part, 10));
+      values.add(inRange(parseIntStrict(part, field)));
     }
   }
 

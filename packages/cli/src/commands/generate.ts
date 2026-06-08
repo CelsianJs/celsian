@@ -39,7 +39,9 @@ export default ${name}Routes;
 }
 
 export function generateRpc(name: string): void {
-  const filePath = join(process.cwd(), "src", "rpc", `${name}.ts`);
+  // RPC procedures live alongside routes in `src/routes/` to match the
+  // convention shipped by the create-celsian scaffold (e.g. src/routes/rpc.ts).
+  const filePath = join(process.cwd(), "src", "routes", `${name}.ts`);
   const dir = dirname(filePath);
 
   if (!existsSync(dir)) {
@@ -71,5 +73,5 @@ export const ${name} = {
 `,
   );
 
-  logger.success(`Generated RPC procedure: src/rpc/${name}.ts`);
+  logger.success(`Generated RPC procedure: src/routes/${name}.ts`);
 }

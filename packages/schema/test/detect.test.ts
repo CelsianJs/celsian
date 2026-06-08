@@ -62,3 +62,43 @@ describe("fromSchema (auto-detect)", () => {
     expect(() => fromSchema({})).toThrow("Unsupported schema library");
   });
 });
+
+describe("fromSchema (modern / hardened detection)", () => {
+  // Regression for: Valibot was detected only via the removed `_parse` method, and TypeBox
+  // detection (`type !== undefined && properties !== undefined`) was over-broad.
+  it("should detect a modern Valibot schema via the `~standard` property", () => {
+    // Modern Valibot exposes the StandardSchema `~standard` interface and `~run`,
+    // but NOT `safeParse`/`parse` or the legacy `_parse`.
+    const modernValibot = {
+      "~standard": {
+        version: 1,
+        vendor: "valibot",
+        validate: (value: unknown) => ({ value }),
+      },
+      "~run": (dataset: { value: unknown }) => ({ typed: true, value: dataset.value }),
+    };
+
+    const schema = fromSchema(modernValibot);
+    expect(schema).toBeDefined();
+    // Routed through the Valibot adapter (falls back to safeParse/_parse internally).
+    expect(typeof schema.validate).toBe("function");
+  });
+
+  it("should NOT misdetect a plain object {type:'x', properties:{}} as TypeBox", () => {
+    const notASchema = { type: "x", properties: {} };
+    expect(() => fromSchema(notASchema)).toThrow("Unsupported schema library");
+  });
+
+  it("should detect a TypeBox schema via the TypeBox Kind symbol", () => {
+    const typeboxKind = Symbol.for("TypeBox.Kind");
+    const typeboxSchema = {
+      [typeboxKind]: "Object",
+      type: "object",
+      properties: { name: { type: "string" } },
+    };
+
+    const schema = fromSchema(typeboxSchema);
+    expect(schema).toBeDefined();
+    expect(schema.toJsonSchema()).toEqual(typeboxSchema);
+  });
+});

@@ -296,6 +296,43 @@ describe("Response Cache", () => {
     store.destroy();
   });
 
+  it("does not leak per-user set-cookie/authorization headers across users on HIT", async () => {
+    const store = new MemoryKVStore({ cleanupIntervalMs: 0 });
+    const cache = createResponseCache({ store });
+
+    let callCount = 0;
+    // Handler is invoked once (user1, MISS); user2 hits the cache.
+    const handler = () => {
+      callCount++;
+      return new Response(JSON.stringify({ value: callCount }), {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+          "set-cookie": "session=u1; HttpOnly",
+          authorization: "Bearer user1-token",
+          etag: '"abc"',
+        },
+      });
+    };
+
+    // User 1 — MISS. Gets their own set-cookie (correct).
+    const res1 = await cache.cached(makeRequest("/data"), handler);
+    expect(res1.headers.get("x-cache")).toBe("MISS");
+    expect(callCount).toBe(1);
+
+    // User 2 — HIT (handler not re-invoked). Must NOT receive user1's per-user headers.
+    const res2 = await cache.cached(makeRequest("/data"), handler);
+    expect(res2.headers.get("x-cache")).toBe("HIT");
+    expect(callCount).toBe(1);
+    expect(res2.headers.get("set-cookie")).toBeNull();
+    expect(res2.headers.get("authorization")).toBeNull();
+    // Safe representation headers are still replayed.
+    expect(res2.headers.get("content-type")).toBe("application/json");
+    expect(res2.headers.get("etag")).toBe('"abc"');
+
+    store.destroy();
+  });
+
   it("behaves the same as before when varyHeaders is not set", async () => {
     const store = new MemoryKVStore({ cleanupIntervalMs: 0 });
     const cache = createResponseCache({ store });

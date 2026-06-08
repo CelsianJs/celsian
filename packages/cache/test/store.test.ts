@@ -204,4 +204,50 @@ describe("MemoryKVStore", () => {
   it("incr starts from 0 for missing keys", async () => {
     expect(await store.incr("new")).toBe(1);
   });
+
+  // ─── LRU Eviction ───
+
+  describe("maxEntries LRU eviction", () => {
+    it("evicts the least-recently-used key when over maxEntries", async () => {
+      const lru = new MemoryKVStore({ cleanupIntervalMs: 0, maxEntries: 2 });
+
+      await lru.set("a", 1);
+      await lru.set("b", 2);
+      // Inserting a 3rd key should evict the LRU key ("a").
+      await lru.set("c", 3);
+
+      expect(await lru.get("a")).toBeUndefined();
+      expect(await lru.get("b")).toBe(2);
+      expect(await lru.get("c")).toBe(3);
+
+      lru.destroy();
+    });
+
+    it("treats reads as recent use (get refreshes LRU position)", async () => {
+      const lru = new MemoryKVStore({ cleanupIntervalMs: 0, maxEntries: 2 });
+
+      await lru.set("a", 1);
+      await lru.set("b", 2);
+      // Touch "a" so "b" becomes the least-recently-used.
+      await lru.get("a");
+      await lru.set("c", 3);
+
+      expect(await lru.get("b")).toBeUndefined();
+      expect(await lru.get("a")).toBe(1);
+      expect(await lru.get("c")).toBe(3);
+
+      lru.destroy();
+    });
+
+    it("maxEntries:0 disables the cap (unbounded)", async () => {
+      const lru = new MemoryKVStore({ cleanupIntervalMs: 0, maxEntries: 0 });
+
+      for (let i = 0; i < 50; i++) {
+        await lru.set(`k${i}`, i);
+      }
+
+      expect((await lru.keys()).length).toBe(50);
+      lru.destroy();
+    });
+  });
 });

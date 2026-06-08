@@ -238,6 +238,61 @@ describe("template name substitution", () => {
   });
 });
 
+// ─── Dependency version pin tests ───
+
+describe("Celsian dependency version pins", () => {
+  const allTemplates = {
+    basic: basicTemplate,
+    "rest-api": restApiTemplate,
+    "rpc-api": rpcApiTemplate,
+    full: fullTemplate,
+  };
+
+  it("pins every Celsian dependency to the unified release line ^0.5.0 (no ^0.3.x)", () => {
+    for (const [templateName, template] of Object.entries(allTemplates)) {
+      const pkg = JSON.parse(template["package.json"]);
+      const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+      for (const [name, version] of Object.entries(deps)) {
+        const isCelsian = name === "celsian" || name.startsWith("@celsian/");
+        if (isCelsian) {
+          expect(version, `${templateName} -> ${name}`).toBe("^0.5.0");
+          expect(version, `${templateName} -> ${name}`).not.toMatch(/\^0\.3\./);
+        }
+      }
+    }
+  });
+
+  it("scaffolds vitest ^4 (avoids GHSA-5xrq-8626-4rwp)", () => {
+    const pkg = JSON.parse(fullTemplate["package.json"]);
+    expect(pkg.devDependencies.vitest).toBe("^4.0.0");
+  });
+});
+
+// ─── App export tests (needed by `celsian routes`) ───
+
+describe("generated src/index.ts exports app", () => {
+  const entryTemplates = {
+    basic: basicTemplate,
+    "rest-api": restApiTemplate,
+    "rpc-api": rpcApiTemplate,
+    full: fullTemplate,
+  };
+
+  it("each template's entry file uses `export const app = createApp(`", () => {
+    for (const [templateName, template] of Object.entries(entryTemplates)) {
+      const entry = template["src/index.ts"];
+      expect(entry, templateName).toMatch(/export const app = createApp\(/);
+    }
+  });
+
+  it("each template still calls serve(app", () => {
+    for (const [templateName, template] of Object.entries(entryTemplates)) {
+      const entry = template["src/index.ts"];
+      expect(entry, templateName).toContain("serve(app");
+    }
+  });
+});
+
 // ─── Scaffold function filesystem tests ───
 
 const TMP_DIR = join(import.meta.dirname, ".tmp-scaffolder-test");

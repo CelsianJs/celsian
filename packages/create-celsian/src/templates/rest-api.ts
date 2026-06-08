@@ -1,3 +1,5 @@
+import { CELSIAN_VERSION, DEPS, DEV_DEPS } from "../versions.js";
+
 export const restApiTemplate = {
   "package.json": JSON.stringify(
     {
@@ -10,13 +12,13 @@ export const restApiTemplate = {
         start: "node dist/index.js",
       },
       dependencies: {
-        celsian: "^0.3.18",
-        "@sinclair/typebox": "^0.34.0",
+        celsian: CELSIAN_VERSION,
+        "@sinclair/typebox": DEPS.typebox,
       },
       devDependencies: {
-        typescript: "^5.7.0",
-        tsx: "^4.0.0",
-        "@types/node": "^22.0.0",
+        typescript: DEV_DEPS.typescript,
+        tsx: DEV_DEPS.tsx,
+        "@types/node": DEV_DEPS.typesNode,
       },
     },
     null,
@@ -42,7 +44,8 @@ export const restApiTemplate = {
   "src/index.ts": `import { createApp, serve, cors, security } from 'celsian';
 import { Type } from '@sinclair/typebox';
 
-const app = createApp();
+// Exported so tooling like \`celsian routes\` can discover the app.
+export const app = createApp();
 
 // ─── Security (CORS + security headers) ───
 

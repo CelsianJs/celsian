@@ -115,6 +115,33 @@ jobs:
         continue-on-error: true
         run: cd packages/core && bun test
 
+  # Deno smoke test — verifies the Deno adapter type-checks under Deno
+  test-deno:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      # Build so @celsian/core is compiled and resolvable via node_modules.
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: Type-check the Deno adapter with Deno
+        # Deno resolves the workspace @celsian/core dependency through the
+        # node_modules created by pnpm. This is a real `deno check`, not a no-op.
+        working-directory: packages/adapter-deno
+        run: deno check --node-modules-dir=auto src/index.ts
+
   # Final gate — all required checks must pass before this reports success.
   # Use this as the single required status check in branch protection.
   ci-passed:

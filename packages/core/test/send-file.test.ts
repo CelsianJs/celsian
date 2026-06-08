@@ -115,6 +115,23 @@ describe("reply.sendFile with root option", () => {
     const body = await response.json();
     expect(body.code).toBe("NOT_FOUND");
   });
+
+  it("rejects a sibling dir that shares a name prefix with root (BUG-12)", async () => {
+    // root = TMP_DIR/data ; sibling = TMP_DIR/data-secrets shares the "data" prefix.
+    const root = join(TMP_DIR, "data");
+    const siblingFile = join(TMP_DIR, "data-secrets", "leak.txt");
+    await mkdir(root, { recursive: true });
+    await mkdir(join(TMP_DIR, "data-secrets"), { recursive: true });
+    await writeFile(siblingFile, "TOP SECRET");
+
+    const app = createApp();
+    app.get("/file", async (_req, reply) => reply.sendFile("../data-secrets/leak.txt", { root }));
+
+    const response = await app.handle(new Request("http://localhost/file"));
+    expect(response.status).toBe(403);
+    const body = await response.json();
+    expect(body.code).toBe("FORBIDDEN");
+  });
 });
 
 describe("reply.download", () => {

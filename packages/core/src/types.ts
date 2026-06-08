@@ -309,6 +309,15 @@ export interface CelsianAppOptions {
   prefix?: string;
   /** Trust proxy headers */
   trustProxy?: boolean;
+  /**
+   * Allowlist of host values that may be honored from the `x-forwarded-host`
+   * header when `trustProxy` is enabled. If unset, `x-forwarded-host` is
+   * ignored and the real `Host` header is always used (prevents host-header
+   * injection). Match values exactly, including any non-default port
+   * (e.g. `"example.com"`, `"example.com:8443"`). `x-forwarded-proto` is
+   * always honored when `trustProxy` is enabled.
+   */
+  trustedHosts?: string[];
   /** Enable structured logging. true = default logger, or pass Logger instance */
   logger?: boolean | import("./logger.js").Logger;
   /** Max request body size in bytes (default: 1MB). Set to 0 to disable. */

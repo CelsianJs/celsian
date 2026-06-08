@@ -2,10 +2,31 @@
   "$schema": "https://unpkg.com/@changesets/config@3.0.0/schema.json",
   "changelog": "@changesets/cli/changelog",
   "commit": false,
-  "fixed": [],
-  "linked": [
-    ["@celsian/core", "@celsian/schema", "@celsian/rpc", "@celsian/cli", "celsian", "create-celsian"]
+  "fixed": [
+    [
+      "celsian",
+      "create-celsian",
+      "@celsian/core",
+      "@celsian/cli",
+      "@celsian/schema",
+      "@celsian/rpc",
+      "@celsian/cache",
+      "@celsian/compress",
+      "@celsian/jwt",
+      "@celsian/queue-redis",
+      "@celsian/rate-limit",
+      "@celsian/ws-redis",
+      "@celsian/adapter-bun",
+      "@celsian/adapter-cloudflare",
+      "@celsian/adapter-deno",
+      "@celsian/adapter-fly",
+      "@celsian/adapter-lambda",
+      "@celsian/adapter-node",
+      "@celsian/adapter-railway",
+      "@celsian/adapter-vercel"
+    ]
   ],
+  "linked": [],
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",

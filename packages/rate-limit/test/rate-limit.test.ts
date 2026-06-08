@@ -174,6 +174,22 @@ describe("MemoryRateLimitStore", () => {
     store.destroy();
   });
 
+  it("increments atomically under concurrency (no lost updates)", async () => {
+    const store = new MemoryRateLimitStore();
+    const N = 1000;
+
+    // Fire many concurrent increments for the same key. An atomic store must
+    // reach exactly N with no lost updates from interleaved read-modify-write.
+    const results = await Promise.all(Array.from({ length: N }, () => store.increment("hot-key", 60_000)));
+
+    const maxCount = Math.max(...results.map((r) => r.count));
+    expect(maxCount).toBe(N);
+    // Counts must be unique 1..N (every increment observed a distinct value).
+    expect(new Set(results.map((r) => r.count)).size).toBe(N);
+
+    store.destroy();
+  });
+
   it("should call unref on cleanup timer", () => {
     const unrefSpy = vi.fn();
     const originalSetInterval = globalThis.setInterval;
@@ -231,6 +247,31 @@ describe("rate-limit XFF key generation", () => {
       headers: { "x-forwarded-for": "192.168.1.1, proxy1, proxy2" },
     });
     expect(r4.status).toBe(200);
+  });
+
+  it("fails closed: unidentified clients (trustProxy, no proxy headers) share one bucket", async () => {
+    const app = createApp();
+    await app.register(
+      rateLimit({
+        max: 2,
+        window: 60_000,
+        trustProxy: true,
+      }),
+      { encapsulate: false },
+    );
+
+    app.get("/api", (_req, reply) => reply.json({ ok: true }));
+
+    const statuses: number[] = [];
+    for (let i = 0; i < 10; i++) {
+      // No x-forwarded-for / x-real-ip — all requests are unidentified.
+      const res = await app.inject({ url: "/api" });
+      statuses.push(res.status);
+    }
+
+    // First 2 pass, the rest are limited (they all share the "anonymous" bucket).
+    expect(statuses.filter((s) => s === 200).length).toBe(2);
+    expect(statuses.filter((s) => s === 429).length).toBe(8);
   });
 
   it("should throw CelsianError when trustProxy is false and no keyGenerator provided", () => {

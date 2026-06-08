@@ -1,3 +1,5 @@
+import { CELSIAN_VERSION, DEV_DEPS } from "../versions.js";
+
 export const basicTemplate = {
   "package.json": JSON.stringify(
     {
@@ -10,12 +12,12 @@ export const basicTemplate = {
         start: "node dist/index.js",
       },
       dependencies: {
-        celsian: "^0.3.18",
+        celsian: CELSIAN_VERSION,
       },
       devDependencies: {
-        typescript: "^5.7.0",
-        tsx: "^4.0.0",
-        "@types/node": "^22.0.0",
+        typescript: DEV_DEPS.typescript,
+        tsx: DEV_DEPS.tsx,
+        "@types/node": DEV_DEPS.typesNode,
       },
     },
     null,
@@ -40,7 +42,8 @@ export const basicTemplate = {
   ),
   "src/index.ts": `import { createApp, serve, cors, security } from 'celsian';
 
-const app = createApp();
+// Exported so tooling like \`celsian routes\` can discover the app.
+export const app = createApp();
 
 // ─── Security (CORS + security headers) ───
 

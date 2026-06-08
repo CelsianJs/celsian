@@ -168,7 +168,7 @@ export function createReply(): CelsianReply {
       try {
         // Lazy import — keeps reply.ts edge-compatible when sendFile isn't used
         const { readFile, stat } = await import("node:fs/promises");
-        const { extname, resolve } = await import("node:path");
+        const { extname, resolve, sep } = await import("node:path");
 
         let resolvedPath: string;
         if (options?.root) {
@@ -176,7 +176,9 @@ export function createReply(): CelsianReply {
           // verify the result stays within root to prevent path traversal.
           const resolvedRoot = resolve(options.root);
           resolvedPath = resolve(resolvedRoot, filePath);
-          if (!resolvedPath.startsWith(resolvedRoot)) {
+          // Append the path separator so a sibling dir with a shared prefix
+          // (e.g. "/var/database" vs root "/var/data") is not treated as inside.
+          if (resolvedPath !== resolvedRoot && !resolvedPath.startsWith(resolvedRoot + sep)) {
             return new Response(JSON.stringify({ error: "Forbidden", statusCode: 403, code: "FORBIDDEN" }), {
               status: 403,
               headers: buildHeaders({ "content-type": "application/json; charset=utf-8" }),

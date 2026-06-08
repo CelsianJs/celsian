@@ -93,12 +93,20 @@ export class TaskWorker {
     const tick = async () => {
       if (!this.running) return;
 
-      while (this.activeJobs < this.concurrency && this.running) {
-        const message = await this.queue.pop();
-        if (!message) break;
-        this.activeJobs++;
-        this.processMessage(message).finally(() => {
-          this.activeJobs--;
+      try {
+        while (this.activeJobs < this.concurrency && this.running) {
+          const message = await this.queue.pop();
+          if (!message) break;
+          this.activeJobs++;
+          this.processMessage(message).finally(() => {
+            this.activeJobs--;
+          });
+        }
+      } catch (error) {
+        // A rejected pop() (e.g. queue backend is temporarily unavailable) must
+        // not silently stop polling. Log and let the next tick be scheduled.
+        this.log.error("Task worker poll failed", {
+          error: error instanceof Error ? error.message : String(error),
         });
       }
 
@@ -115,7 +123,7 @@ export class TaskWorker {
     const definition = this.registry.get(message.taskName);
     if (!definition) {
       this.log.error("Unknown task", { taskName: message.taskName });
-      await this.queue.ack(message.id);
+      await this.safeAck(message.id);
       return;
     }
 
@@ -139,24 +147,55 @@ export class TaskWorker {
       } else {
         await definition.handler(message.input, ctx);
       }
-      await this.queue.ack(message.id);
+      await this.safeAck(message.id);
     } catch (error) {
       const retries = definition.retries ?? 0;
       if (message.attempt < retries) {
         const delay = Math.min(1000 * 2 ** message.attempt, 30000);
-        await this.queue.nack(message.id, delay);
         ctx.log.warn("Task failed, retrying", {
           attempt: message.attempt,
           maxRetries: retries,
           error: (error as Error).message,
         });
+        await this.safeNack(message.id, delay);
       } else {
-        await this.queue.ack(message.id);
         ctx.log.error("Task failed permanently", {
           attempt: message.attempt,
           error: (error as Error).message,
         });
+        await this.safeAck(message.id);
       }
+    }
+  }
+
+  /**
+   * Ack a message, swallowing (but logging) backend rejections so a transient
+   * queue failure never propagates up and stops the worker loop.
+   */
+  private async safeAck(id: string): Promise<void> {
+    try {
+      await this.queue.ack(id);
+    } catch (error) {
+      this.log.error("Failed to ack queue message", {
+        id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * Nack a message, swallowing (but logging) backend rejections. A failed nack
+   * leaves the message in-flight to be reclaimed by the backend's visibility
+   * timeout rather than crashing the worker.
+   */
+  private async safeNack(id: string, delay: number): Promise<void> {
+    try {
+      await this.queue.nack(id, delay);
+    } catch (error) {
+      this.log.error("Failed to nack queue message", {
+        id,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 }

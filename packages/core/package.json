@@ -1,6 +1,6 @@
 {
   "name": "@celsian/core",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -44,7 +44,8 @@
       "types": "./dist/plugins/analytics.d.ts",
       "import": "./dist/plugins/analytics.js",
       "default": "./dist/plugins/analytics.js"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist"

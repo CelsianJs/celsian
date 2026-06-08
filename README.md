@@ -449,7 +449,7 @@ CelsianJS is the backend half of [WhatStack](https://whatfw.com) — the agent-f
 |-------|-----------|-------------|
 | Frontend | [WhatFW](https://whatfw.com) | Signals, fine-grained rendering, MCP DevTools |
 | Backend | **CelsianJS** | Hooks, plugins, tasks, cron, RPC, multi-runtime |
-| Deploy | [Vura](https://github.com/zvndev/vura) | Platform deployment (coming soon) |
+| Deploy | Vura | Platform deployment (coming soon) |
 
 ## Contributing
 

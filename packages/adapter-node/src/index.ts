@@ -72,8 +72,15 @@ const MIME_TYPES = {
 };
 
 async function tryStaticFile(pathname, dirs) {
-  // Decode URI to handle encoded traversal sequences (e.g., %2e%2e%2f)
-  const decodedPath = decodeURIComponent(pathname);
+  // Decode URI to handle encoded traversal sequences (e.g., %2e%2e%2f).
+  // Malformed escapes (e.g. /%ZZ) throw URIError — treat as "not a static file"
+  // so the request falls through to the app instead of crashing the server.
+  let decodedPath;
+  try {
+    decodedPath = decodeURIComponent(pathname);
+  } catch {
+    return null;
+  }
   for (const dir of dirs) {
     const { resolve: resolvePath } = await import('node:path');
     const resolvedRoot = resolvePath(dir);
@@ -180,8 +187,17 @@ export function serve(app: CelsianApp, options: NodeAdapterOptions = {}): void {
 
     // Try static files
     if (staticDir) {
-      // Decode URI and resolve to prevent path traversal (e.g., /../../../etc/passwd)
-      const decodedPath = decodeURIComponent(url.pathname);
+      // Decode URI and resolve to prevent path traversal (e.g., /../../../etc/passwd).
+      // Malformed percent-encoding (e.g. "/%ZZ") throws URIError — respond 400
+      // instead of letting it escape the async server callback.
+      let decodedPath: string;
+      try {
+        decodedPath = decodeURIComponent(url.pathname);
+      } catch {
+        res.statusCode = 400;
+        res.end("Bad Request");
+        return;
+      }
       const resolvedRoot = resolve(staticDir);
       const filePath = resolve(join(staticDir, decodedPath));
       // Ensure the resolved path is within the static directory

@@ -538,14 +538,28 @@ export class CelsianApp {
       const proto = request.headers.get("x-forwarded-proto");
       const host = request.headers.get("x-forwarded-host");
       if (proto) fullUrl.protocol = `${proto}:`;
-      if (host) fullUrl.host = host;
+      // Host-header injection guard: only honor x-forwarded-host when the value
+      // appears in the configured trustedHosts allowlist. Without an allowlist,
+      // keep the real Host to prevent attacker-controlled host/fullUrl.
+      if (host && this.options.trustedHosts && this.options.trustedHosts.includes(host)) {
+        fullUrl.host = host;
+      }
     }
 
-    let match = this.router.match(method, pathname);
+    let match: import("./types.js").RouteMatch | null;
+    try {
+      match = this.router.match(method, pathname);
 
-    // HEAD fallback: try GET handler if no explicit HEAD route
-    if (!match && method === "HEAD") {
-      match = this.router.match("GET" as import("./types.js").RouteMethod, pathname);
+      // HEAD fallback: try GET handler if no explicit HEAD route
+      if (!match && method === "HEAD") {
+        match = this.router.match("GET" as import("./types.js").RouteMethod, pathname);
+      }
+    } catch (matchError) {
+      // Malformed URI in a param/wildcard segment (HttpError 400) — return a
+      // structured error response instead of crashing the request.
+      const missContext = await this.createMissContext(request, rawUrl, fullUrl);
+      const response = await this.handleError(wrapNonError(matchError), missContext.request, missContext.reply);
+      return this.applyRootOnSend(response, missContext.request, missContext.reply);
     }
 
     if (!match) {
@@ -569,7 +583,13 @@ export class CelsianApp {
           if (missContext.reply.sent) return new Response(null, { status: missContext.reply.statusCode });
           return new Response(null, { status: 404 });
         } catch (error) {
-          console.error("[celsian]", error);
+          if (this.hasLogger) {
+            this.log.error("notFound handler error", {
+              error: error instanceof Error ? error.message : String(error),
+            });
+          } else {
+            console.error("[celsian]", error);
+          }
           const r404 = new Response(CelsianApp.NOT_FOUND_BODY, {
             status: 404,
             headers: missHeaders,
@@ -719,11 +739,19 @@ export class CelsianApp {
     if (timeout <= 0) {
       return this.runLifecycle(request, reply, route);
     }
+    // Per-request AbortController: exposed as request.signal so handlers can
+    // observe cancellation, and aborted when the timeout fires (in addition to
+    // rejecting with 504) so in-flight work can stop promptly.
+    const controller = new AbortController();
+    (request as Record<string, unknown>).signal = controller.signal;
     let timer: ReturnType<typeof setTimeout>;
     return Promise.race([
       this.runLifecycle(request, reply, route).finally(() => clearTimeout(timer)),
       new Promise<Response>((_, reject) => {
-        timer = setTimeout(() => reject(new HttpError(504, "Gateway Timeout")), timeout);
+        timer = setTimeout(() => {
+          controller.abort(new HttpError(504, "Gateway Timeout"));
+          reject(new HttpError(504, "Gateway Timeout"));
+        }, timeout);
       }),
     ]);
   }
@@ -919,7 +947,14 @@ export class CelsianApp {
   }
 
   private handleError(error: Error, request: CelsianRequest, reply: CelsianReply): Promise<Response> {
-    return handleErrorFn(error, request, reply, this.errorHandler, this.rootContext.hooks.onError);
+    return handleErrorFn(
+      error,
+      request,
+      reply,
+      this.errorHandler,
+      this.rootContext.hooks.onError,
+      this.hasLogger ? this.log : null,
+    );
   }
 }
 

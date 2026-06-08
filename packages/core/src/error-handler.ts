@@ -1,7 +1,17 @@
 // @celsian/core -- Default error handling and response building
 
 import { HttpError, ValidationError } from "./errors.js";
+import type { Logger } from "./logger.js";
 import type { CelsianReply, CelsianRequest, OnErrorHandler } from "./types.js";
+
+/** Log an error through the structured logger when available, else console. */
+function logHandlerError(logger: Logger | null | undefined, message: string, err: unknown): void {
+  if (logger) {
+    logger.error(message, { error: err instanceof Error ? err.message : String(err) });
+  } else {
+    console.error("[celsian]", err);
+  }
+}
 
 /**
  * Process an error through custom handlers, onError hooks, and default formatting.
@@ -13,13 +23,14 @@ export async function handleError(
   reply: CelsianReply,
   customHandler: ((error: Error, request: CelsianRequest, reply: CelsianReply) => Response | Promise<Response>) | null,
   onErrorHooks: OnErrorHandler[],
+  logger?: Logger | null,
 ): Promise<Response> {
   if (customHandler) {
     try {
       const result = await customHandler(error, request, reply);
       if (result instanceof Response) return result;
     } catch (handlerError) {
-      console.error("[celsian]", handlerError);
+      logHandlerError(logger, "custom error handler failed", handlerError);
     }
   }
 
@@ -30,7 +41,7 @@ export async function handleError(
         return result;
       }
     } catch (hookError) {
-      console.error("[celsian]", hookError);
+      logHandlerError(logger, "onError hook failed", hookError);
     }
   }
 
