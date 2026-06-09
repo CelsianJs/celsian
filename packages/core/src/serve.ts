@@ -2,6 +2,7 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { CelsianApp } from "./app.js";
+import { getFastPayload } from "./fast-response.js";
 
 /** Options for `serve()` -- port, host, static files, graceful shutdown. */
 export interface ServeOptions {
@@ -392,12 +393,23 @@ export function nodeToWebRequest(req: IncomingMessage, url: URL): Request {
  * full URL parsing. Falls back to full URL when the runtime requires it.
  */
 function nodeToWebRequestFast(req: IncomingMessage, rawPath: string, baseUrl: string): Request {
-  const headers = new Headers();
-  for (const [key, value] of Object.entries(req.headers)) {
-    if (typeof value === "string") {
-      headers.set(key, value);
-    } else if (Array.isArray(value)) {
-      for (const v of value) headers.append(key, v);
+  const raw = req.headers;
+  // Common case: every header value is a string (Node coalesces duplicates,
+  // leaving only set-cookie and a handful as arrays). Pass the plain record
+  // straight to the Request constructor so it builds Headers once, instead of
+  // building an intermediate Headers ourselves and having Request copy it again.
+  let headers: Headers | Record<string, string> = raw as unknown as Record<string, string>;
+  for (const k in raw) {
+    if (Array.isArray(raw[k])) {
+      // An array-valued header (e.g. set-cookie) — build Headers explicitly.
+      const h = new Headers();
+      for (const key in raw) {
+        const value = raw[key];
+        if (typeof value === "string") h.set(key, value);
+        else if (Array.isArray(value)) for (const v of value) h.append(key, v);
+      }
+      headers = h;
+      break;
     }
   }
 
@@ -416,6 +428,24 @@ function nodeToWebRequestFast(req: IncomingMessage, rawPath: string, baseUrl: st
 
 /** Write a Web Standard Response back to a Node.js ServerResponse, preserving Set-Cookie headers. */
 export async function writeWebResponse(res: ServerResponse, response: Response): Promise<void> {
+  // Fast path: responses built by reply.json()/send()/html() or the auto-serializer
+  // carry their already-serialized body + plain headers. Write them in a single
+  // writeHead()+end() — no ReadableStream reader, no async drain, no second socket
+  // write, and with an explicit Content-Length (avoids chunked encoding).
+  const fast = getFastPayload(response);
+  if (fast !== undefined) {
+    const body = fast.body;
+    const headers: Record<string, string | string[]> = { ...fast.headers };
+    if (body !== null) {
+      headers["content-length"] = String(typeof body === "string" ? Buffer.byteLength(body) : body.byteLength);
+    }
+    if (fast.cookies.length > 0) headers["set-cookie"] = fast.cookies;
+    res.writeHead(fast.status, headers);
+    if (body === null) res.end();
+    else res.end(body);
+    return;
+  }
+
   res.statusCode = response.status;
 
   for (const [key, value] of response.headers.entries()) {

@@ -7,6 +7,7 @@ import { parseCookies } from "./cookie.js";
 import { type CronJob, CronScheduler } from "./cron.js";
 import { handleError as handleErrorFn } from "./error-handler.js";
 import { assertPlugin, HttpError, ValidationError, wrapNonError } from "./errors.js";
+import { fastResponse } from "./fast-response.js";
 import { runHooks, runHooksFireAndForget, runOnSendHooks } from "./hooks.js";
 import { createInject, type InjectOptions } from "./inject.js";
 import { createLogger, generateRequestId, type Logger } from "./logger.js";
@@ -802,14 +803,14 @@ export class CelsianApp {
     } else if (handlerResult !== null && handlerResult !== undefined) {
       // Auto-serialize non-Response return values (strings → text, objects → JSON)
       if (typeof handlerResult === "string") {
-        response = new Response(handlerResult, {
-          status: reply.statusCode || 200,
-          headers: { "content-type": "text/plain; charset=utf-8", ...reply.headers },
+        response = fastResponse(handlerResult, reply.statusCode || 200, {
+          "content-type": "text/plain; charset=utf-8",
+          ...reply.headers,
         });
       } else {
-        response = new Response(JSON.stringify(handlerResult), {
-          status: reply.statusCode || 200,
-          headers: { "content-type": "application/json; charset=utf-8", ...reply.headers },
+        response = fastResponse(JSON.stringify(handlerResult), reply.statusCode || 200, {
+          "content-type": "application/json; charset=utf-8",
+          ...reply.headers,
         });
       }
     } else {

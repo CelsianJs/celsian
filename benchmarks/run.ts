@@ -59,10 +59,6 @@ function pad(s: string, len: number, right = true): string {
   return right ? s + " ".repeat(Math.max(0, len - s.length)) : " ".repeat(Math.max(0, len - s.length)) + s;
 }
 
-function getMemoryMB(): number {
-  return Math.round((process.memoryUsage.rss() / 1024 / 1024) * 10) / 10;
-}
-
 async function runScenario(baseUrl: string, scenario: Scenario): Promise<ScenarioResult> {
   const opts: autocannon.Options = {
     url: `${baseUrl}${scenario.path}`,
@@ -90,13 +86,8 @@ async function benchFramework(
   port: number,
 ): Promise<FrameworkResults> {
   console.log(`\n─── ${name} ───`);
-  // Force GC if available to get cleaner memory baseline
-  if (global.gc) global.gc();
-  const memBefore = getMemoryMB();
   const server = await startServer(port);
   await new Promise((r) => setTimeout(r, 300));
-  const memAfterStart = getMemoryMB();
-  const memDeltaStartup = Math.round((memAfterStart - memBefore) * 10) / 10;
 
   const results: ScenarioResult[] = [];
   for (const scenario of scenarios) {
@@ -108,14 +99,14 @@ async function benchFramework(
     );
   }
 
-  const memAfterBench = getMemoryMB();
-  const memDeltaTotal = Math.round((memAfterBench - memBefore) * 10) / 10;
   await server.close();
   await new Promise((r) => setTimeout(r, 500));
 
-  console.log(`  Memory delta: +${memDeltaStartup}MB (startup), +${memDeltaTotal}MB (after load)`);
-
-  return { framework: name, results, memoryMB: memDeltaTotal };
+  // NOTE: memory is intentionally NOT measured here. All servers share this one
+  // process, so a per-framework RSS delta is dominated by whichever framework
+  // ran first (it absorbs V8/JIT/autocannon warm-up). For honest, isolated
+  // absolute RSS, run `benchmarks/mem.ts` (one fresh process per framework).
+  return { framework: name, results, memoryMB: 0 };
 }
 
 function printComparisonTable(all: FrameworkResults[]): void {
@@ -161,14 +152,11 @@ function printComparisonTable(all: FrameworkResults[]): void {
   }
   console.log("");
 
-  // Memory comparison
+  // Memory is measured separately, one fresh process per framework, to avoid the
+  // shared-process order bias that made the first framework look ~50× heavier.
   console.log("### Memory Usage\n");
-  console.log(`| Framework    | RSS (MB) |`);
-  console.log(`| ------------ | -------- |`);
-  for (const fw of all) {
-    console.log(`| ${pad(fw.framework, 12)} | ${pad(fmt(fw.memoryMB, 1), 8, false)} |`);
-  }
-  console.log("");
+  console.log("Measured separately (isolated process, absolute RSS). Run:");
+  console.log("  for fw in celsian express fastify; do NODE_OPTIONS=--expose-gc npx tsx benchmarks/mem.ts $fw; done\n");
 
   // Overall summary
   console.log("### Overall Summary (JSON response req/s)\n");

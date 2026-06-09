@@ -7,7 +7,7 @@
 TypeScript backend framework built on Web Standard APIs. Runs everywhere -- Node.js, Bun, Deno, Cloudflare Workers, AWS Lambda, Vercel.
 
 - **Multi-runtime** -- Write once, deploy to any JavaScript runtime. Built on `Request`/`Response`, not `req`/`res`.
-- **Significantly faster than Express** -- Radix-tree router, zero-copy request building, pre-stringified error paths. 1.3x-1.7x faster across all scenarios.
+- **Significantly faster than Express** -- Radix-tree router, low-allocation request building, single-write buffered responses. 1.25x-2.3x faster across all scenarios.
 - **Built-in everything** -- Background tasks, cron, WebSocket, CORS, CSRF protection, security headers, DB analytics, rate limiting, JWT, caching, compression, OpenAPI docs.
 - **Fastify-style plugin encapsulation** -- Scoped hooks and decorations by default. No accidental middleware leaks.
 - **Schema-agnostic validation** -- Auto-detects Zod, TypeBox, or Valibot. No config, no adapters.
@@ -85,15 +85,17 @@ Benchmarked on Node.js v22, Apple Silicon, 10 connections for 10 seconds per sce
 
 | Scenario              | Fastify (req/s) | CelsianJS (req/s) | Express (req/s) |
 | --------------------- | ---------------: | -----------------: | --------------: |
-| JSON response         |           45,866 |             27,996 |          16,321 |
-| Route params          |           45,440 |             27,026 |          16,288 |
-| Middleware (5 layers)  |           41,380 |             24,445 |          15,751 |
-| JSON body parsing     |           29,998 |             19,074 |          14,648 |
-| Error handling        |           32,398 |             18,542 |          14,765 |
+| JSON response         |           69,681 |             51,897 |          22,775 |
+| Route params          |           69,075 |             50,790 |          22,713 |
+| Middleware (5 layers)  |           64,826 |             45,028 |          22,248 |
+| JSON body parsing     |           43,824 |             35,488 |          20,217 |
+| Error handling        |           47,818 |             26,061 |          20,795 |
+
+Memory (isolated process, absolute RSS / retained heap under load): CelsianJS 187.6 MB / **13.9 MB heap**, Express 173.0 MB / 12.8 MB, Fastify 122.8 MB / 16.3 MB — CelsianJS's retained heap is on par with Express and below Fastify.
 
 **Fastify is faster.** It operates directly on Node.js internals with `fast-json-stringify` — hard to beat. CelsianJS pays a performance tax for Web Standard API compatibility (`Request`/`Response` object creation per request).
 
-**CelsianJS is 1.3-1.7x faster than Express** while shipping batteries that neither Fastify nor Express include: background task queues, cron scheduling, multi-runtime deployment, and DB analytics. If raw throughput is your only concern, use Fastify. If you need application infrastructure in a single framework, that's where CelsianJS fits.
+**CelsianJS is 1.25-2.3x faster than Express** (and ~74% of Fastify on JSON) while shipping batteries that neither Fastify nor Express include: background task queues, cron scheduling, multi-runtime deployment, and DB analytics. If raw throughput is your only concern, use Fastify. If you need application infrastructure in a single framework, that's where CelsianJS fits.
 
 ### Built-In Everything
 
@@ -418,7 +420,7 @@ Node.js v22.13.1, macOS Darwin (Apple Silicon), 10 connections, 10s per scenario
 | JSON body parsing     |           29,998 |             19,074 |          14,648 |
 | Error handling        |           32,398 |             18,542 |          14,765 |
 
-Fastify is the fastest Node.js framework. CelsianJS is 1.3-1.7x faster than Express. The gap with Fastify comes from Web Standard API overhead (`Request`/`Response` per request). CelsianJS trades some throughput for multi-runtime portability and built-in application infrastructure.
+Fastify is the fastest Node.js framework. CelsianJS is 1.25-2.3x faster than Express and runs at ~74% of Fastify on JSON throughput. The remaining gap with Fastify comes from Web Standard API overhead (`Request`/`Response` per request). CelsianJS trades some throughput for multi-runtime portability and built-in application infrastructure.
 
 ## Configuration
 
