@@ -1,5 +1,14 @@
 # example-aws-lambda
 
+## 1.0.4
+
+### Patch Changes
+
+- Updated dependencies [0c69589]
+  - @celsian/core@0.5.1
+  - @celsian/adapter-lambda@0.5.1
+  - @celsian/schema@0.5.1
+
 ## 1.0.3
 
 ### Patch Changes
