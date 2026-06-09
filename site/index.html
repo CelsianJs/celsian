@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CelsianJS — The Application Framework for Every Runtime</title>
-  <meta name="description" content="1.7x faster than Express with batteries included. Task queues, cron, RPC, OpenAPI, multi-runtime — all on Web Standard APIs. Part of the WhatStack ecosystem.">
+  <meta name="description" content="Up to 2.3x faster than Express with batteries included. Task queues, cron, RPC, OpenAPI, multi-runtime — all on Web Standard APIs. Part of the WhatStack ecosystem.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -803,7 +803,7 @@
       <a href="#code">Code</a>
       <a href="#middleware">Middleware</a>
       <a href="#performance">Performance</a>
-      <a href="/docs">Docs</a>
+      <a href="https://github.com/CelsianJs/celsian/tree/main/docs">Docs</a>
       <a href="https://github.com/CelsianJs">GitHub</a>
     </div>
   </nav>
@@ -818,7 +818,7 @@
           <span class="gradient">for every runtime</span>
         </h1>
         <p class="hero-subtitle animate delay-1">
-          1.7x faster than Express with batteries included. Task queues, cron scheduling, background jobs, RPC, OpenAPI, schema-agnostic validation — all on Web Standard APIs. One codebase runs on Node, Bun, Deno, Workers, Lambda, and Vercel.
+          Up to 2.3x faster than Express with batteries included. Task queues, cron scheduling, background jobs, RPC, OpenAPI, schema-agnostic validation — all on Web Standard APIs. One codebase runs on Node, Bun, Deno, Workers, Lambda, and Vercel.
         </p>
         <div class="hero-actions animate delay-2">
           <a href="#get-started" class="btn btn-primary">Get Started</a>
@@ -826,15 +826,15 @@
         </div>
         <div class="hero-stats animate delay-3">
           <div class="stat">
-            <span class="stat-value">28K</span>
+            <span class="stat-value">52K</span>
             <span class="stat-label">req/sec</span>
           </div>
           <div class="stat">
-            <span class="stat-value">1.7x</span>
+            <span class="stat-value">2.3x</span>
             <span class="stat-label">faster than Express</span>
           </div>
           <div class="stat">
-            <span class="stat-value">770+</span>
+            <span class="stat-value">1,400+</span>
             <span class="stat-label">passing tests</span>
           </div>
         </div>
@@ -911,8 +911,8 @@ Deno.<span class="fn">serve</span>(app.fetch);</pre>
       </div>
       <div class="feature">
         <div class="feature-icon">&#x1F680;</div>
-        <h3>6 Deployment Adapters</h3>
-        <p>Node, Bun, Cloudflare Workers, AWS Lambda, Vercel, and Fly.io. One codebase, any runtime. Adapters auto-generate deployment configs.</p>
+        <h3>8 Deployment Adapters</h3>
+        <p>Node, Bun, Deno, Cloudflare Workers, AWS Lambda, Vercel, Fly.io, and Railway. One codebase, any runtime. Adapters auto-generate deployment configs.</p>
       </div>
     </div>
   </section>
@@ -1092,7 +1092,7 @@ app.<span class="fn">post</span>(<span class="str">'/api/login'</span>, <span cl
       <div class="mw-card">
         <div class="mw-icon">&#x1F6E1;</div>
         <h4>Rate Limit</h4>
-        <p>Sliding window with custom store support</p>
+        <p>Fixed-window with custom store support</p>
       </div>
       <div class="mw-card">
         <div class="mw-icon">&#x1F511;</div>
@@ -1118,36 +1118,36 @@ app.<span class="fn">post</span>(<span class="str">'/api/login'</span>, <span cl
       <div class="section-header section-center" style="margin-left: auto; margin-right: auto;">
         <p class="section-label">Performance</p>
         <h2 class="section-title">Measured, not promised</h2>
-        <p class="section-desc">Real benchmarks on Node.js v22, Apple Silicon, 10 connections, 10s per scenario. 1.7x faster than Express with batteries included.</p>
+        <p class="section-desc">Real benchmarks on Node.js v22, Apple Silicon, 10 connections, 10s per scenario. 1.25–2.3x faster than Express with batteries included (~74% of Fastify on JSON).</p>
       </div>
 
       <div class="benchmarks-grid">
         <div class="bench-card">
-          <div class="bench-value">28K</div>
+          <div class="bench-value">52K</div>
           <div class="bench-unit">req/sec</div>
           <div class="bench-label">JSON response</div>
-          <div class="bench-detail">1.7x faster than Express</div>
+          <div class="bench-detail">2.3x faster than Express</div>
         </div>
         <div class="bench-card">
-          <div class="bench-value">27K</div>
+          <div class="bench-value">51K</div>
           <div class="bench-unit">req/sec</div>
           <div class="bench-label">Route params</div>
           <div class="bench-detail">radix-tree router</div>
         </div>
         <div class="bench-card">
-          <div class="bench-value">24.4K</div>
+          <div class="bench-value">45K</div>
           <div class="bench-unit">req/sec</div>
           <div class="bench-label">Middleware chain (5)</div>
-          <div class="bench-detail">1.6x faster than Express</div>
+          <div class="bench-detail">2.0x faster than Express</div>
         </div>
         <div class="bench-card">
-          <div class="bench-value">19K</div>
+          <div class="bench-value">35K</div>
           <div class="bench-unit">req/sec</div>
           <div class="bench-label">JSON body parsing</div>
-          <div class="bench-detail">1.3x faster than Express</div>
+          <div class="bench-detail">1.8x faster than Express</div>
         </div>
         <div class="bench-card">
-          <div class="bench-value">18.5K</div>
+          <div class="bench-value">26K</div>
           <div class="bench-unit">req/sec</div>
           <div class="bench-label">Error handling</div>
           <div class="bench-detail">structured 500 responses</div>
@@ -1165,10 +1165,10 @@ app.<span class="fn">post</span>(<span class="str">'/api/login'</span>, <span cl
           <div class="bench-detail">Node, Bun, Deno, Workers, Lambda, Vercel</div>
         </div>
         <div class="bench-card">
-          <div class="bench-value">770+</div>
+          <div class="bench-value">1,400+</div>
           <div class="bench-unit">tests</div>
           <div class="bench-label">Test coverage</div>
-          <div class="bench-detail">68 test files, zero flaky</div>
+          <div class="bench-detail">88 test files, zero flaky</div>
         </div>
       </div>
     </div>
@@ -1321,10 +1321,10 @@ Bun.<span class="fn">serve</span>({ fetch: app.fetch, port: <span class="num">30
   <footer>
     <div class="footer-content">
       <div class="footer-left">
-        CelsianJS v0.3.0 &mdash; MIT License &mdash; Part of <a href="https://whatfw.com" style="color: var(--accent); text-decoration: none;">WhatStack</a>
+        CelsianJS v0.5.1 &mdash; MIT License &mdash; Part of <a href="https://whatfw.com" style="color: var(--accent); text-decoration: none;">WhatStack</a>
       </div>
       <div class="footer-links">
-        <a href="/docs">Documentation</a>
+        <a href="https://github.com/CelsianJs/celsian/tree/main/docs">Documentation</a>
         <a href="https://github.com/CelsianJs">GitHub</a>
         <a href="https://www.npmjs.com/org/celsian">npm</a>
       </div>
