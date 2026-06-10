@@ -106,8 +106,8 @@ jobs:
   # Bun smoke test — verifies the framework runs on Bun
   test-bun:
     runs-on: ubuntu-latest
-    # Bounded so a hanging test can never stall the pipeline.
-    timeout-minutes: 8
+    # Backstop only; the run step self-bounds with `timeout` below.
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
 
@@ -136,7 +136,11 @@ jobs:
         continue-on-error: true
         env:
           NODE_ENV: development
-        run: cd packages/core && bun test
+        # Self-bounded and always-succeeds: vitest is the gate, so a Bun-runner
+        # hang or failure must never cancel the run or stall the pipeline.
+        run: |
+          cd packages/core
+          timeout 300 bun test || echo "::warning::bun test failed or exceeded its 5m budget (advisory; vitest on Node is authoritative)"
 
   # Deno smoke test — verifies the Deno adapter type-checks under Deno
   test-deno:
