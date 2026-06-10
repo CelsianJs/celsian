@@ -140,7 +140,9 @@ jobs:
         # hang or failure must never cancel the run or stall the pipeline.
         run: |
           cd packages/core
-          timeout 300 bun test || echo "::warning::bun test failed or exceeded its 5m budget (advisory; vitest on Node is authoritative)"
+          # -k 30: if bun ignores SIGTERM at 300s (a hung event loop from a
+          # real-server test), SIGKILL it 30s later so the step always returns.
+          timeout -k 30 300 bun test || echo "::warning::bun test failed or exceeded its 5m budget (advisory; vitest on Node is authoritative)"
 
   # Deno smoke test — verifies the Deno adapter type-checks under Deno
   test-deno:
