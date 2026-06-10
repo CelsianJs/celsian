@@ -1,6 +1,6 @@
 {
   "name": "@celsian/adapter-deno",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "CelsianJS adapter for Deno — thin wrapper around Deno.serve",
   "type": "module",
   "license": "MIT",

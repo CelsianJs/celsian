@@ -1,5 +1,12 @@
 # celsian-crud-api-example
 
+## 1.0.5
+
+### Patch Changes
+
+- Updated dependencies [05eb2b4]
+  - @celsian/core@0.5.2
+
 ## 1.0.4
 
 ### Patch Changes
