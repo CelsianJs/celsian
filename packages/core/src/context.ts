@@ -1,6 +1,6 @@
 // @celsian/core — Encapsulation context for plugin isolation
 
-import { assertDecorationUnique } from "./errors.js";
+import { assertDecorationUnique, CelsianError } from "./errors.js";
 import { cloneHookStore, createHookStore, type HookStore } from "./hooks.js";
 import type { Router } from "./router.js";
 import type {
@@ -91,6 +91,24 @@ export class EncapsulationContext {
       });
     };
 
+    // Options-object signature support: app.post(url, { schema, handler }).
+    // A trailing handler argument takes precedence over opts.handler; registering
+    // a route with no resolvable handler is a programming error — fail fast.
+    const resolveHandler = (
+      method: RouteMethod,
+      url: string,
+      opts: Record<string, unknown>,
+      handler?: RouteHandler,
+    ): RouteHandler => {
+      const resolved = handler ?? opts.handler;
+      if (typeof resolved !== "function") {
+        throw new CelsianError(
+          `Route ${method} ${url} has no handler. Pass it as the last argument — app.${method.toLowerCase()}(url, opts, handler) — or as opts.handler.`,
+        );
+      }
+      return resolved as RouteHandler;
+    };
+
     // Cast to PluginContext: the generic route method signatures are type-level only.
     // At runtime, handlers always receive CelsianRequest<Record<string, string>>.
     return {
@@ -115,35 +133,60 @@ export class EncapsulationContext {
         if (typeof handlerOrOpts === "function") {
           addRoute("GET", url, handlerOrOpts);
         } else {
-          addRoute("GET", url, handler as RouteHandler, handlerOrOpts as Partial<RouteOptions>);
+          addRoute(
+            "GET",
+            url,
+            resolveHandler("GET", url, handlerOrOpts, handler),
+            handlerOrOpts as Partial<RouteOptions>,
+          );
         }
       },
       post(url: string, handlerOrOpts: RouteHandler | Record<string, unknown>, handler?: RouteHandler) {
         if (typeof handlerOrOpts === "function") {
           addRoute("POST", url, handlerOrOpts);
         } else {
-          addRoute("POST", url, handler as RouteHandler, handlerOrOpts as Partial<RouteOptions>);
+          addRoute(
+            "POST",
+            url,
+            resolveHandler("POST", url, handlerOrOpts, handler),
+            handlerOrOpts as Partial<RouteOptions>,
+          );
         }
       },
       put(url: string, handlerOrOpts: RouteHandler | Record<string, unknown>, handler?: RouteHandler) {
         if (typeof handlerOrOpts === "function") {
           addRoute("PUT", url, handlerOrOpts);
         } else {
-          addRoute("PUT", url, handler as RouteHandler, handlerOrOpts as Partial<RouteOptions>);
+          addRoute(
+            "PUT",
+            url,
+            resolveHandler("PUT", url, handlerOrOpts, handler),
+            handlerOrOpts as Partial<RouteOptions>,
+          );
         }
       },
       patch(url: string, handlerOrOpts: RouteHandler | Record<string, unknown>, handler?: RouteHandler) {
         if (typeof handlerOrOpts === "function") {
           addRoute("PATCH", url, handlerOrOpts);
         } else {
-          addRoute("PATCH", url, handler as RouteHandler, handlerOrOpts as Partial<RouteOptions>);
+          addRoute(
+            "PATCH",
+            url,
+            resolveHandler("PATCH", url, handlerOrOpts, handler),
+            handlerOrOpts as Partial<RouteOptions>,
+          );
         }
       },
       delete(url: string, handlerOrOpts: RouteHandler | Record<string, unknown>, handler?: RouteHandler) {
         if (typeof handlerOrOpts === "function") {
           addRoute("DELETE", url, handlerOrOpts);
         } else {
-          addRoute("DELETE", url, handler as RouteHandler, handlerOrOpts as Partial<RouteOptions>);
+          addRoute(
+            "DELETE",
+            url,
+            resolveHandler("DELETE", url, handlerOrOpts, handler),
+            handlerOrOpts as Partial<RouteOptions>,
+          );
         }
       },
 

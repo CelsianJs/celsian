@@ -81,3 +81,69 @@ describe("Serverless Safety Warnings", () => {
     app.stopCron();
   });
 });
+
+describe("Safety warnings visible with default noop logger (CORE-04)", () => {
+  it("escalates the enqueue-without-worker warning to console.warn", async () => {
+    const app = createApp(); // no logger -> default noop
+    app.task({ name: "noop-task", handler: async () => {} });
+
+    const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await app.enqueue("noop-task", { data: 1 });
+      const hits = consoleSpy.mock.calls.filter(
+        (call) => typeof call[0] === "string" && call[0].includes("no worker is running"),
+      );
+      expect(hits).toHaveLength(1);
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
+  it("escalates the cron-not-started warning to console.warn", async () => {
+    const app = createApp(); // no logger -> default noop
+    app.cron("noop-cron", "* * * * *", async () => {});
+    app.get("/t", (_req, reply) => reply.json({ ok: true }));
+
+    const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await app.handle(new Request("http://localhost/t"));
+      const hits = consoleSpy.mock.calls.filter(
+        (call) => typeof call[0] === "string" && call[0].includes("scheduler not started"),
+      );
+      expect(hits).toHaveLength(1);
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
+  it("uses the user-supplied logger instead of console.warn when one is provided", async () => {
+    const warn = vi.fn();
+    const noop = () => {};
+    const logger = {
+      level: "info" as const,
+      trace: noop,
+      debug: noop,
+      info: noop,
+      warn,
+      error: noop,
+      fatal: noop,
+      child() {
+        return logger;
+      },
+    };
+    const app = createApp({ logger });
+    app.task({ name: "logged-task", handler: async () => {} });
+
+    const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await app.enqueue("logged-task", { data: 1 });
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("no worker is running"));
+      const hits = consoleSpy.mock.calls.filter(
+        (call) => typeof call[0] === "string" && call[0].includes("no worker is running"),
+      );
+      expect(hits).toHaveLength(0);
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+});

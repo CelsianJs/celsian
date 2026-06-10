@@ -34,8 +34,21 @@ function resolveOriginHeader(origin: string, opts: Required<CORSOptions>): strin
   return opts.origin === "*" && !opts.credentials ? "*" : origin;
 }
 
+/** Append "Origin" to an existing Vary header value (no duplicates). */
+function appendVaryOrigin(existing: string | undefined): string {
+  if (!existing) return "Origin";
+  const parts = existing.split(",").map((v) => v.trim().toLowerCase());
+  if (parts.includes("origin") || parts.includes("*")) return existing;
+  return `${existing}, Origin`;
+}
+
 export function cors(options: CORSOptions = {}): PluginFunction {
   const opts = { ...DEFAULTS, ...options };
+
+  // When the allowed origin is reflected (string/array/function) rather than the
+  // literal "*", responses differ per Origin — caches MUST be told via Vary: Origin
+  // or a CDN can serve one origin's CORS headers to another (cache poisoning).
+  const varyByOrigin = opts.origin !== "*";
 
   if (opts.origin === "*" && opts.credentials) {
     throw new CelsianError(
@@ -55,10 +68,14 @@ export function cors(options: CORSOptions = {}): PluginFunction {
 
         // Don't leak CORS headers to disallowed origins
         if (!allowOrigin) {
-          return new Response(null, { status: 204 });
+          return new Response(null, {
+            status: 204,
+            headers: varyByOrigin ? { vary: "Origin" } : undefined,
+          });
         }
 
         const headers: Record<string, string> = {};
+        if (varyByOrigin) headers.vary = "Origin";
         headers["access-control-allow-origin"] = allowOrigin;
         headers["access-control-allow-methods"] = opts.methods.join(", ");
 
@@ -87,6 +104,12 @@ export function cors(options: CORSOptions = {}): PluginFunction {
     const sendHook: HookHandler = (request, reply) => {
       const origin = request.headers.get("origin") ?? "";
       const allowOrigin = resolveOriginHeader(origin, opts);
+
+      // Response varies by Origin even when this particular origin is rejected
+      // (a different origin would get CORS headers) — always mark it for caches.
+      if (varyByOrigin) {
+        reply.header("vary", appendVaryOrigin(reply.headers.vary));
+      }
 
       // Don't set any CORS headers for disallowed origins
       if (!allowOrigin) return;

@@ -6,7 +6,8 @@ import { EncapsulationContext } from "./context.js";
 import { parseCookies } from "./cookie.js";
 import { type CronJob, CronScheduler } from "./cron.js";
 import { handleError as handleErrorFn } from "./error-handler.js";
-import { assertPlugin, HttpError, ValidationError, wrapNonError } from "./errors.js";
+import { assertPlugin, CelsianError, HttpError, ValidationError, wrapNonError } from "./errors.js";
+import { fastResponse } from "./fast-response.js";
 import { runHooks, runHooksFireAndForget, runOnSendHooks } from "./hooks.js";
 import { createInject, type InjectOptions } from "./inject.js";
 import { createLogger, generateRequestId, type Logger } from "./logger.js";
@@ -96,6 +97,10 @@ export class CelsianApp {
   private readonly cachedBodyLimit: number;
   private readonly cachedRequestTimeout: number;
 
+  // True when the user supplied no logger and we fell back to the silent no-op.
+  // Safety warnings escalate to console.warn in that case so they stay visible.
+  private readonly usingNoopLogger: boolean;
+
   constructor(private options: CelsianAppOptions = {}) {
     this.rootContext = new EncapsulationContext(null, options.prefix ?? "", this.router);
     this.pluginContext = this.rootContext.toPluginContext();
@@ -106,6 +111,7 @@ export class CelsianApp {
     this.cachedRequestTimeout = options.requestTimeout ?? 30_000;
 
     // Logger setup
+    this.usingNoopLogger = !options.logger;
     if (options.logger === true) {
       this.log = createLogger();
     } else if (options.logger && typeof options.logger === "object") {
@@ -160,6 +166,10 @@ export class CelsianApp {
     options: RouteSchemaOptions<TBody, TQuery>,
     handler: TypedSchemaHandler<ExtractRouteParams<T>>,
   ): void;
+  get<T extends string, TBody, TQuery>(
+    url: T,
+    options: RouteSchemaOptions<TBody, TQuery> & { handler: TypedSchemaHandler<ExtractRouteParams<T>> },
+  ): void;
   get<T extends string>(
     url: T,
     handlerOrOpts: TypedRouteHandler<ExtractRouteParams<T>> | RouteSchemaOptions,
@@ -168,7 +178,7 @@ export class CelsianApp {
     if (typeof handlerOrOpts === "function") {
       this.pluginContext.get(url, handlerOrOpts);
     } else {
-      this._routeWithSchema("GET", url, handlerOrOpts, handler!);
+      this._routeWithSchema("GET", url, handlerOrOpts, handler);
     }
   }
 
@@ -178,6 +188,10 @@ export class CelsianApp {
     options: RouteSchemaOptions<TBody, TQuery>,
     handler: TypedSchemaHandler<ExtractRouteParams<T>>,
   ): void;
+  post<T extends string, TBody, TQuery>(
+    url: T,
+    options: RouteSchemaOptions<TBody, TQuery> & { handler: TypedSchemaHandler<ExtractRouteParams<T>> },
+  ): void;
   post<T extends string>(
     url: T,
     handlerOrOpts: TypedRouteHandler<ExtractRouteParams<T>> | RouteSchemaOptions,
@@ -186,7 +200,7 @@ export class CelsianApp {
     if (typeof handlerOrOpts === "function") {
       this.pluginContext.post(url, handlerOrOpts);
     } else {
-      this._routeWithSchema("POST", url, handlerOrOpts, handler!);
+      this._routeWithSchema("POST", url, handlerOrOpts, handler);
     }
   }
 
@@ -196,6 +210,10 @@ export class CelsianApp {
     options: RouteSchemaOptions<TBody, TQuery>,
     handler: TypedSchemaHandler<ExtractRouteParams<T>>,
   ): void;
+  put<T extends string, TBody, TQuery>(
+    url: T,
+    options: RouteSchemaOptions<TBody, TQuery> & { handler: TypedSchemaHandler<ExtractRouteParams<T>> },
+  ): void;
   put<T extends string>(
     url: T,
     handlerOrOpts: TypedRouteHandler<ExtractRouteParams<T>> | RouteSchemaOptions,
@@ -204,7 +222,7 @@ export class CelsianApp {
     if (typeof handlerOrOpts === "function") {
       this.pluginContext.put(url, handlerOrOpts);
     } else {
-      this._routeWithSchema("PUT", url, handlerOrOpts, handler!);
+      this._routeWithSchema("PUT", url, handlerOrOpts, handler);
     }
   }
 
@@ -214,6 +232,10 @@ export class CelsianApp {
     options: RouteSchemaOptions<TBody, TQuery>,
     handler: TypedSchemaHandler<ExtractRouteParams<T>>,
   ): void;
+  patch<T extends string, TBody, TQuery>(
+    url: T,
+    options: RouteSchemaOptions<TBody, TQuery> & { handler: TypedSchemaHandler<ExtractRouteParams<T>> },
+  ): void;
   patch<T extends string>(
     url: T,
     handlerOrOpts: TypedRouteHandler<ExtractRouteParams<T>> | RouteSchemaOptions,
@@ -222,7 +244,7 @@ export class CelsianApp {
     if (typeof handlerOrOpts === "function") {
       this.pluginContext.patch(url, handlerOrOpts);
     } else {
-      this._routeWithSchema("PATCH", url, handlerOrOpts, handler!);
+      this._routeWithSchema("PATCH", url, handlerOrOpts, handler);
     }
   }
 
@@ -232,6 +254,10 @@ export class CelsianApp {
     options: RouteSchemaOptions<TBody, TQuery>,
     handler: TypedSchemaHandler<ExtractRouteParams<T>>,
   ): void;
+  delete<T extends string, TBody, TQuery>(
+    url: T,
+    options: RouteSchemaOptions<TBody, TQuery> & { handler: TypedSchemaHandler<ExtractRouteParams<T>> },
+  ): void;
   delete<T extends string>(
     url: T,
     handlerOrOpts: TypedRouteHandler<ExtractRouteParams<T>> | RouteSchemaOptions,
@@ -240,7 +266,7 @@ export class CelsianApp {
     if (typeof handlerOrOpts === "function") {
       this.pluginContext.delete(url, handlerOrOpts);
     } else {
-      this._routeWithSchema("DELETE", url, handlerOrOpts, handler!);
+      this._routeWithSchema("DELETE", url, handlerOrOpts, handler);
     }
   }
 
@@ -249,14 +275,22 @@ export class CelsianApp {
     method: import("./types.js").RouteMethod,
     url: string,
     opts: RouteSchemaOptions,
-    handler: TypedSchemaHandler,
+    handler?: TypedSchemaHandler,
   ): void {
+    // Fastify-style options-object signature: app.post(url, { schema, handler }).
+    // A trailing handler argument takes precedence over opts.handler.
+    const resolvedHandler = handler ?? opts.handler;
+    if (typeof resolvedHandler !== "function") {
+      throw new CelsianError(
+        `Route ${method} ${url} has no handler. Pass it as the last argument — app.${method.toLowerCase()}(url, opts, handler) — or as opts.handler.`,
+      );
+    }
     this.pluginContext.route({
       method,
       url,
       // Safe cast: at runtime, the request object will have parsedBody/parsedQuery
       // populated by validateRequest before the handler is called
-      handler: handler as unknown as RouteHandler,
+      handler: resolvedHandler as unknown as RouteHandler,
       schema: opts.schema,
       onRequest: opts.onRequest,
       preHandler: opts.preHandler,
@@ -304,7 +338,15 @@ export class CelsianApp {
 
   // ─── Content-Type Parsers ───
 
-  /** Register a custom body parser for a content-type (exact or prefix match). */
+  /**
+   * Register a custom body parser for a content-type (exact or prefix match).
+   *
+   * The app's `bodyLimit` is enforced for custom parsers: the body is pre-read
+   * through a capped reader (the request is rejected with a 413 HttpError when
+   * the limit is exceeded), and the parser receives a Request whose body methods
+   * (`text()`, `json()`, `arrayBuffer()`, ...) operate on the already-bounded
+   * bytes. Set `bodyLimit: 0` on the app to disable the cap.
+   */
   addContentTypeParser(contentType: string, parser: (request: Request) => Promise<unknown>): void {
     this.contentTypeParsers.set(contentType, parser);
   }
@@ -323,10 +365,22 @@ export class CelsianApp {
     this.taskRegistry.register(definition);
   }
 
+  /**
+   * Serverless-safety warning: must stay visible even with the default no-op
+   * logger (silent task loss on Lambda otherwise). Falls back to console.warn
+   * only when the user supplied no logger; a user-provided logger is respected.
+   */
+  private safetyWarn(message: string): void {
+    this.log.warn(message);
+    if (this.usingNoopLogger) {
+      console.warn(`[celsian] ${message}`);
+    }
+  }
+
   /** Enqueue a background task by name. Returns the task ID. */
   async enqueue(taskName: string, input: unknown): Promise<string> {
     if (!this.taskWorker && !this._enqueuedWithoutWorkerWarned) {
-      this.log.warn(
+      this.safetyWarn(
         `Task '${taskName}' enqueued but no worker is running. Call app.startWorker() or use serve() to process background tasks.`,
       );
       this._enqueuedWithoutWorkerWarned = true;
@@ -477,7 +531,7 @@ export class CelsianApp {
     // Serverless safety: warn once if cron jobs registered but scheduler not started
     if (!this._cronNotStartedWarned && this.cronScheduler.getJobs().length > 0 && !this.cronScheduler.isRunning) {
       const count = this.cronScheduler.getJobs().length;
-      this.log.warn(
+      this.safetyWarn(
         `${count} cron job(s) registered but scheduler not started. In serverless environments, use platform-native cron (Vercel Cron Jobs, AWS EventBridge, CF Cron Triggers) instead of app.cron().`,
       );
       this._cronNotStartedWarned = true;
@@ -802,14 +856,14 @@ export class CelsianApp {
     } else if (handlerResult !== null && handlerResult !== undefined) {
       // Auto-serialize non-Response return values (strings → text, objects → JSON)
       if (typeof handlerResult === "string") {
-        response = new Response(handlerResult, {
-          status: reply.statusCode || 200,
-          headers: { "content-type": "text/plain; charset=utf-8", ...reply.headers },
+        response = fastResponse(handlerResult, reply.statusCode || 200, {
+          "content-type": "text/plain; charset=utf-8",
+          ...reply.headers,
         });
       } else {
-        response = new Response(JSON.stringify(handlerResult), {
-          status: reply.statusCode || 200,
-          headers: { "content-type": "application/json; charset=utf-8", ...reply.headers },
+        response = fastResponse(JSON.stringify(handlerResult), reply.statusCode || 200, {
+          "content-type": "application/json; charset=utf-8",
+          ...reply.headers,
         });
       }
     } else {

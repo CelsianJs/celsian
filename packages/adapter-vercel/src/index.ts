@@ -1,6 +1,5 @@
 // @celsian/adapter-vercel — Vercel deployment adapter
 
-import { createHash, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { CelsianApp } from "@celsian/core";
 import { nodeToWebRequest, writeWebResponse } from "@celsian/core";
@@ -50,6 +49,26 @@ export function createVercelEdgeHandler(app: CelsianApp) {
 }
 
 /**
+ * Timing-safe string comparison using Web Crypto (works on Node, Edge, Workers).
+ * Hashes both inputs to fixed-length digests, then compares in constant time.
+ * No `node:crypto` import — keeps the module bundleable for edge runtimes.
+ */
+async function timingSafeEqualWeb(a: string, b: string): Promise<boolean> {
+  const encoder = new TextEncoder();
+  const [digestA, digestB] = await Promise.all([
+    globalThis.crypto.subtle.digest("SHA-256", encoder.encode(a)),
+    globalThis.crypto.subtle.digest("SHA-256", encoder.encode(b)),
+  ]);
+  const bytesA = new Uint8Array(digestA);
+  const bytesB = new Uint8Array(digestB);
+  let diff = 0;
+  for (let i = 0; i < bytesA.length; i++) {
+    diff |= (bytesA[i] as number) ^ (bytesB[i] as number);
+  }
+  return diff === 0;
+}
+
+/**
  * Create a Vercel Cron Job handler with CRON_SECRET validation.
  * Vercel Cron Jobs call API routes on a schedule. This handler validates
  * the Authorization header against the CRON_SECRET environment variable
@@ -72,9 +91,7 @@ export function createVercelCronHandler(app: CelsianApp, cronSecret?: string) {
     const authHeader = request.headers.get("authorization") ?? "";
     const expected = `Bearer ${secret}`;
     // Timing-safe comparison: hash both to normalize length, then compare digests
-    const authDigest = createHash("sha256").update(authHeader).digest();
-    const expectedDigest = createHash("sha256").update(expected).digest();
-    if (!timingSafeEqual(authDigest, expectedDigest)) {
+    if (!(await timingSafeEqualWeb(authHeader, expected))) {
       return new Response(JSON.stringify({ error: "Unauthorized", statusCode: 401 }), {
         status: 401,
         headers: { "content-type": "application/json; charset=utf-8" },

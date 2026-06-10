@@ -5,8 +5,8 @@ export default defineConfig({
     include: [
       "packages/*/test/**/*.test.ts",
       "examples/*/test/**/*.test.ts",
-      "test-real-world/**/*.test.ts",
-      "realism-audit/**/*.test.ts",
+      "docs/internal/test-real-world/**/*.test.ts",
+      "docs/internal/realism-audit/**/*.test.ts",
     ],
     globals: true,
     env: {

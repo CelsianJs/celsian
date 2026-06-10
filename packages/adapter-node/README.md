@@ -17,7 +17,7 @@ Peer dependencies: `@celsian/core`, `@celsian/build`.
 Set the adapter in your config and the build pipeline will invoke it automatically:
 
 ```typescript
-// then.config.ts
+// celsian.config.ts
 import { defineConfig } from 'celsian';
 
 export default defineConfig({

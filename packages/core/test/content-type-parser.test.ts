@@ -96,3 +96,60 @@ describe("addContentTypeParser", () => {
     expect(body.body).toEqual({ type: "yaml", text: "key: value" });
   });
 });
+
+describe("custom parser bodyLimit enforcement (CORE-06)", () => {
+  it("rejects bodies over bodyLimit with 413 before the custom parser runs", async () => {
+    const app = createApp({ bodyLimit: 16 });
+    let parserRan = false;
+    app.addContentTypeParser("application/xml", async (request) => {
+      parserRan = true;
+      return { xml: await request.text() };
+    });
+    app.post("/data", (req, reply) => reply.json({ body: req.parsedBody }));
+
+    const response = await app.handle(
+      new Request("http://localhost/data", {
+        method: "POST",
+        headers: { "content-type": "application/xml" },
+        body: "x".repeat(1000),
+      }),
+    );
+
+    expect(response.status).toBe(413);
+    expect(parserRan).toBe(false);
+  });
+
+  it("hands the custom parser the full body when under the limit", async () => {
+    const app = createApp({ bodyLimit: 1024 });
+    app.addContentTypeParser("application/xml", async (request) => ({ xml: await request.text() }));
+    app.post("/data", (req, reply) => reply.json({ body: req.parsedBody }));
+
+    const response = await app.handle(
+      new Request("http://localhost/data", {
+        method: "POST",
+        headers: { "content-type": "application/xml" },
+        body: "<ok/>",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).body).toEqual({ xml: "<ok/>" });
+  });
+
+  it("does not cap custom parsers when bodyLimit is 0 (disabled)", async () => {
+    const app = createApp({ bodyLimit: 0 });
+    app.addContentTypeParser("application/xml", async (request) => ({ len: (await request.text()).length }));
+    app.post("/data", (req, reply) => reply.json({ body: req.parsedBody }));
+
+    const response = await app.handle(
+      new Request("http://localhost/data", {
+        method: "POST",
+        headers: { "content-type": "application/xml" },
+        body: "y".repeat(5000),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).body).toEqual({ len: 5000 });
+  });
+});

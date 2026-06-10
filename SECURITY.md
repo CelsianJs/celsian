@@ -4,8 +4,8 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.2.x   | Yes                |
-| < 0.2   | No                 |
+| 0.5.x   | Yes                |
+| < 0.5   | No                 |
 
 ## Reporting a Vulnerability
 
@@ -13,7 +13,11 @@ If you discover a security vulnerability in CelsianJS, please report it responsi
 
 **Do not open a public issue.**
 
-Instead, email **security@celsianjs.dev** with:
+Instead, report it through GitHub's private vulnerability reporting:
+
+**[Open a private security advisory →](https://github.com/CelsianJs/celsian/security/advisories/new)**
+
+(On the repository, go to the **Security** tab → **Report a vulnerability**.) Include:
 
 1. A description of the vulnerability
 2. Steps to reproduce (or a proof-of-concept)

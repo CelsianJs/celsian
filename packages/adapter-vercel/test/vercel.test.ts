@@ -1,5 +1,10 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { cors, createApp } from "@celsian/core";
-import { describe, expect, it } from "vitest";
+import { build } from "esbuild";
+import { afterAll, describe, expect, it } from "vitest";
 import { createVercelCronHandler, createVercelEdgeHandler } from "../src/index.js";
 
 function makeRequest(path: string, init?: RequestInit) {
@@ -248,5 +253,48 @@ describe("@celsian/adapter-vercel (Cron Handler)", () => {
     } else {
       delete process.env.CRON_SECRET;
     }
+  });
+});
+
+describe("@celsian/adapter-vercel (Edge bundling smoke)", () => {
+  // ADP-04: a module-level `import ... from "node:crypto"` breaks edge bundlers.
+  // Bundle an entry that imports only createVercelEdgeHandler at platform=neutral
+  // and assert the edge path carries no static top-level node: imports at all.
+  const smokeDir = mkdtempSync(join(tmpdir(), "celsian-edge-smoke-"));
+
+  afterAll(() => {
+    rmSync(smokeDir, { recursive: true, force: true });
+  });
+
+  it("should bundle createVercelEdgeHandler at platform=neutral without static node: imports", async () => {
+    const adapterSrc = fileURLToPath(new URL("../src/index.ts", import.meta.url));
+    const entry = join(smokeDir, "entry.ts");
+    writeFileSync(
+      entry,
+      `import { createVercelEdgeHandler } from ${JSON.stringify(adapterSrc)};\nexport default createVercelEdgeHandler;\n`,
+    );
+
+    // node:* externals cover @celsian/core's *lazy* `await import("node:...")`
+    // helpers (sendFile/serve — never executed on the edge request path).
+    // Static top-level node: imports would survive as `import` statements in
+    // the output, which is exactly what we assert against below.
+    const result = await build({
+      entryPoints: [entry],
+      bundle: true,
+      format: "esm",
+      platform: "neutral",
+      external: ["node:*"],
+      write: false,
+    });
+
+    expect(result.errors).toHaveLength(0);
+    const output = result.outputFiles[0]!.text;
+
+    // No static top-level imports of node builtins in the bundled edge entry
+    const staticNodeImport = /^\s*import\s[^\n]*["']node:/m;
+    expect(output).not.toMatch(staticNodeImport);
+
+    // node:crypto must be gone entirely (replaced by Web Crypto)
+    expect(output).not.toContain("node:crypto");
   });
 });

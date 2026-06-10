@@ -113,6 +113,12 @@ export interface RouteSchemaOptions<TBody = unknown, TQuery = unknown> {
     params?: unknown;
     response?: Record<number, unknown>;
   };
+  /**
+   * Route handler (Fastify-style options-object signature):
+   * `app.post('/x', { schema, handler })`. A trailing handler argument,
+   * when provided, takes precedence over this property.
+   */
+  handler?: TypedSchemaHandler;
   onRequest?: HookHandler | HookHandler[];
   preHandler?: HookHandler | HookHandler[];
 }
@@ -233,6 +239,16 @@ export interface PluginContext {
       TQuery extends unknown ? Record<string, string | string[]> : InferOutput<TQuery>
     >,
   ): void;
+  get<T extends string, TBody, TQuery>(
+    url: T,
+    options: RouteSchemaOptions<TBody, TQuery> & {
+      handler: TypedSchemaHandler<
+        ExtractRouteParams<T>,
+        InferOutput<TBody>,
+        TQuery extends unknown ? Record<string, string | string[]> : InferOutput<TQuery>
+      >;
+    },
+  ): void;
 
   post<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void;
   post<T extends string, TBody, TQuery>(
@@ -243,6 +259,16 @@ export interface PluginContext {
       InferOutput<TBody>,
       TQuery extends unknown ? Record<string, string | string[]> : InferOutput<TQuery>
     >,
+  ): void;
+  post<T extends string, TBody, TQuery>(
+    url: T,
+    options: RouteSchemaOptions<TBody, TQuery> & {
+      handler: TypedSchemaHandler<
+        ExtractRouteParams<T>,
+        InferOutput<TBody>,
+        TQuery extends unknown ? Record<string, string | string[]> : InferOutput<TQuery>
+      >;
+    },
   ): void;
 
   put<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void;
@@ -255,6 +281,16 @@ export interface PluginContext {
       TQuery extends unknown ? Record<string, string | string[]> : InferOutput<TQuery>
     >,
   ): void;
+  put<T extends string, TBody, TQuery>(
+    url: T,
+    options: RouteSchemaOptions<TBody, TQuery> & {
+      handler: TypedSchemaHandler<
+        ExtractRouteParams<T>,
+        InferOutput<TBody>,
+        TQuery extends unknown ? Record<string, string | string[]> : InferOutput<TQuery>
+      >;
+    },
+  ): void;
 
   patch<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void;
   patch<T extends string, TBody, TQuery>(
@@ -266,6 +302,16 @@ export interface PluginContext {
       TQuery extends unknown ? Record<string, string | string[]> : InferOutput<TQuery>
     >,
   ): void;
+  patch<T extends string, TBody, TQuery>(
+    url: T,
+    options: RouteSchemaOptions<TBody, TQuery> & {
+      handler: TypedSchemaHandler<
+        ExtractRouteParams<T>,
+        InferOutput<TBody>,
+        TQuery extends unknown ? Record<string, string | string[]> : InferOutput<TQuery>
+      >;
+    },
+  ): void;
 
   delete<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void;
   delete<T extends string, TBody, TQuery>(
@@ -276,6 +322,16 @@ export interface PluginContext {
       InferOutput<TBody>,
       TQuery extends unknown ? Record<string, string | string[]> : InferOutput<TQuery>
     >,
+  ): void;
+  delete<T extends string, TBody, TQuery>(
+    url: T,
+    options: RouteSchemaOptions<TBody, TQuery> & {
+      handler: TypedSchemaHandler<
+        ExtractRouteParams<T>,
+        InferOutput<TBody>,
+        TQuery extends unknown ? Record<string, string | string[]> : InferOutput<TQuery>
+      >;
+    },
   ): void;
 
   addHook(name: "onRequest", handler: HookHandler): void;

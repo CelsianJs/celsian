@@ -1,5 +1,13 @@
 # @celsian/example-saas-demo
 
+## 0.0.4
+
+### Patch Changes
+
+- Updated dependencies [0c69589]
+  - @celsian/core@0.5.1
+  - @celsian/jwt@0.5.1
+
 ## 0.0.3
 
 ### Patch Changes

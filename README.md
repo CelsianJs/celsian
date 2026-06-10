@@ -4,13 +4,15 @@
 [![license](https://img.shields.io/npm/l/celsian)](https://github.com/CelsianJs/celsian/blob/main/LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/CelsianJs/celsian/test.yml?branch=main&label=tests)](https://github.com/CelsianJs/celsian/actions)
 
-TypeScript backend framework built on Web Standard APIs. Runs everywhere -- Node.js, Bun, Deno, Cloudflare Workers, AWS Lambda, Vercel.
+The batteries-included TypeScript backend that goes serverless without leaving its batteries behind. Built on Web Standard APIs -- one app deploys to Node.js, Bun, Deno, Cloudflare Workers, AWS Lambda, Vercel.
 
+- **Durable jobs that cross the serverless boundary** -- Background tasks with retries and cron, built in. Run them in-process on a long-lived server, or back them with `@celsian/queue-redis` so a serverless producer and a hot-server worker share one queue. No separate BullMQ worker process to stand up.
+- **Built-in everything** -- Background tasks, cron, WebSocket, CORS, CSRF protection, security headers, DB analytics, rate limiting, JWT, caching, compression, OpenAPI docs. No plugin scavenger hunt.
 - **Multi-runtime** -- Write once, deploy to any JavaScript runtime. Built on `Request`/`Response`, not `req`/`res`.
-- **Significantly faster than Express** -- Radix-tree router, zero-copy request building, pre-stringified error paths. 1.3x-1.7x faster across all scenarios.
-- **Built-in everything** -- Background tasks, cron, WebSocket, CORS, CSRF protection, security headers, DB analytics, rate limiting, JWT, caching, compression, OpenAPI docs.
 - **Fastify-style plugin encapsulation** -- Scoped hooks and decorations by default. No accidental middleware leaks.
 - **Schema-agnostic validation** -- Auto-detects Zod, TypeBox, or Valibot. No config, no adapters.
+
+> **On performance:** Celsian's radix-tree router and low-allocation request path make it markedly faster than Express (1.25x-2.3x across our scenarios), though Fastify remains faster on raw throughput -- see the honest [benchmark table](#benchmark-results) below. Speed isn't the reason to pick Celsian; the durable-job-to-serverless story is.
 
 ## Quick Start
 
@@ -24,7 +26,10 @@ Or manually:
 
 ```bash
 npm install @celsian/core
+npm pkg set type=module   # CelsianJS is ESM-only
 ```
+
+> **CelsianJS is ESM-only.** Set `"type": "module"` in your `package.json` (the command above does this). Without it, Node treats your files as CommonJS and `@celsian/schema` fails to load with `Top-level await is currently not supported with the "cjs" output format`.
 
 ```typescript
 import { createApp, serve } from '@celsian/core';
@@ -85,15 +90,17 @@ Benchmarked on Node.js v22, Apple Silicon, 10 connections for 10 seconds per sce
 
 | Scenario              | Fastify (req/s) | CelsianJS (req/s) | Express (req/s) |
 | --------------------- | ---------------: | -----------------: | --------------: |
-| JSON response         |           45,866 |             27,996 |          16,321 |
-| Route params          |           45,440 |             27,026 |          16,288 |
-| Middleware (5 layers)  |           41,380 |             24,445 |          15,751 |
-| JSON body parsing     |           29,998 |             19,074 |          14,648 |
-| Error handling        |           32,398 |             18,542 |          14,765 |
+| JSON response         |           69,681 |             51,897 |          22,775 |
+| Route params          |           69,075 |             50,790 |          22,713 |
+| Middleware (5 layers)  |           64,826 |             45,028 |          22,248 |
+| JSON body parsing     |           43,824 |             35,488 |          20,217 |
+| Error handling        |           47,818 |             26,061 |          20,795 |
+
+Memory (isolated process, absolute RSS / retained heap under load): CelsianJS 187.6 MB / **13.9 MB heap**, Express 173.0 MB / 12.8 MB, Fastify 122.8 MB / 16.3 MB — CelsianJS's retained heap is on par with Express and below Fastify.
 
 **Fastify is faster.** It operates directly on Node.js internals with `fast-json-stringify` — hard to beat. CelsianJS pays a performance tax for Web Standard API compatibility (`Request`/`Response` object creation per request).
 
-**CelsianJS is 1.3-1.7x faster than Express** while shipping batteries that neither Fastify nor Express include: background task queues, cron scheduling, multi-runtime deployment, and DB analytics. If raw throughput is your only concern, use Fastify. If you need application infrastructure in a single framework, that's where CelsianJS fits.
+**CelsianJS is 1.25-2.3x faster than Express** (and ~74% of Fastify on JSON) while shipping batteries that neither Fastify nor Express include: background task queues, cron scheduling, multi-runtime deployment, and DB analytics. If raw throughput is your only concern, use Fastify. If you need application infrastructure in a single framework, that's where CelsianJS fits.
 
 ### Built-In Everything
 
@@ -103,7 +110,9 @@ No hunting for middleware packages:
 await app.register(security(), { encapsulate: false });  // Helmet-style headers
 await app.register(cors({ origin: 'https://myapp.com' }));
 await app.register(csrf(), { encapsulate: false });      // CSRF token protection
-await app.register(rateLimit({ max: 100, window: 60_000 }));
+// trustProxy lets the limiter read the client IP from X-Forwarded-For behind a proxy.
+// Set it (or pass a keyGenerator) — without one of them, rateLimit() throws at registration.
+await app.register(rateLimit({ max: 100, window: 60_000, trustProxy: true }));
 await app.register(compress());
 await app.register(jwt({ secret: process.env.JWT_SECRET! }));
 await app.register(openapi({ title: 'My API' }));
@@ -113,6 +122,8 @@ app.task({ name: 'email', handler, retries: 3 });        // Background tasks
 app.cron('cleanup', '0 3 * * *', cleanupHandler);        // Cron jobs
 app.ws('/chat', { open, message, close });                // WebSocket
 ```
+
+> **WebSocket note.** WebSocket is supported on Node (via `serve()`) and Bun (via `@celsian/adapter-bun`) today — not yet on Deno, Cloudflare Workers, or other adapters. On **Node**, WebSocket needs the `ws` package, which is not bundled: `npm i ws`. Bun serves WebSockets natively, with no extra install.
 
 ### Plugin Encapsulation
 
@@ -262,6 +273,8 @@ app.setErrorHandler((error, req, reply) => {
 });
 ```
 
+See the [Error Reference](docs/errors.md) for every error `code`, its cause, and how to fix it.
+
 ### Type-Safe RPC
 
 `@celsian/rpc` provides tRPC-style procedures with type inference, middleware, and OpenAPI generation.
@@ -295,10 +308,13 @@ const newUser = await client.users.create.mutate({ name: 'Bob', email: 'bob@exam
 
 The [SaaS Demo](examples/saas-demo/) builds a complete backend in one file (~250 lines): JWT auth, users CRUD, background tasks, cron, SSE, and OpenAPI docs.
 
+The example depends on workspace packages (`@celsian/*` via the `workspace:` protocol), so install and build from the repo root with pnpm — `npm install` inside the example folder fails because npm can't resolve `workspace:`.
+
 ```bash
-cd examples/saas-demo
-npm install
-npx tsx src/index.ts
+# From the repo root
+pnpm install
+pnpm build
+pnpm --filter @celsian/example-saas-demo start
 ```
 
 Then hit `http://localhost:3000/docs` for the Swagger UI, or:
@@ -334,10 +350,12 @@ curl -X POST http://localhost:3000/login \
 
 | Package | Target |
 | ------- | ------ |
+| `@celsian/adapter-node` | Standalone Node.js server |
+| `@celsian/adapter-bun` | Bun (`Bun.serve`, native WebSocket) |
+| `@celsian/adapter-deno` | Deno (`Deno.serve`) |
 | `@celsian/adapter-cloudflare` | Cloudflare Workers (env bindings, execution context) |
 | `@celsian/adapter-lambda` | AWS Lambda + API Gateway v2 |
 | `@celsian/adapter-vercel` | Vercel Serverless + Edge Functions |
-| `@celsian/adapter-node` | Standalone Node.js server |
 | `@celsian/adapter-fly` | Fly.io (generates fly.toml, Dockerfile, multi-region) |
 | `@celsian/adapter-railway` | Railway (generates railway.json, Procfile) |
 
@@ -408,17 +426,17 @@ Fly.io and Railway adapters auto-generate deployment configs (fly.toml, Dockerfi
 
 ## Benchmark Results
 
-Node.js v22.13.1, macOS Darwin (Apple Silicon), 10 connections, 10s per scenario.
+Node.js v22.13.1, macOS Darwin (Apple Silicon), 10 connections, 10s per scenario. Full methodology and reproduction steps in [`benchmarks/RESULTS.md`](benchmarks/RESULTS.md).
 
 | Scenario              | Fastify (req/s) | CelsianJS (req/s) | Express (req/s) |
 | --------------------- | ---------------: | -----------------: | --------------: |
-| JSON response         |           45,866 |             27,996 |          16,321 |
-| Route params          |           45,440 |             27,026 |          16,288 |
-| Middleware (5)        |           41,380 |             24,445 |          15,751 |
-| JSON body parsing     |           29,998 |             19,074 |          14,648 |
-| Error handling        |           32,398 |             18,542 |          14,765 |
+| JSON response         |           69,681 |             51,897 |          22,775 |
+| Route params          |           69,075 |             50,790 |          22,713 |
+| Middleware (5 layers)  |           64,826 |             45,028 |          22,248 |
+| JSON body parsing     |           43,824 |             35,488 |          20,217 |
+| Error handling        |           47,818 |             26,061 |          20,795 |
 
-Fastify is the fastest Node.js framework. CelsianJS is 1.3-1.7x faster than Express. The gap with Fastify comes from Web Standard API overhead (`Request`/`Response` per request). CelsianJS trades some throughput for multi-runtime portability and built-in application infrastructure.
+Fastify is the fastest Node.js framework. CelsianJS is 1.25-2.3x faster than Express and runs at ~74% of Fastify on JSON throughput. The remaining gap with Fastify comes from Web Standard API overhead (`Request`/`Response` per request). CelsianJS trades some throughput for multi-runtime portability and built-in application infrastructure.
 
 ## Configuration
 
@@ -440,6 +458,7 @@ export default defineConfig({
 - [Plugins and Encapsulation](docs/plugins.md)
 - [Deployment Guide](docs/deployment.md)
 - [Database Plugin](docs/database.md)
+- [Error Reference](docs/errors.md)
 
 ## WhatStack
 
@@ -457,10 +476,11 @@ CelsianJS is the backend half of [WhatStack](https://whatfw.com) — the agent-f
 git clone https://github.com/CelsianJs/celsian.git
 cd celsian
 pnpm install
+pnpm build   # build all packages first — tests import from built dist/
 pnpm test
 ```
 
-The project uses pnpm workspaces. All packages are in `packages/`. Tests use Vitest.
+The project uses pnpm workspaces. All packages are in `packages/`. Tests use Vitest. Run `pnpm build` before `pnpm test`: many test files import workspace packages from their built output, so they fail on a fresh clone until the build runs once.
 
 ## License
 

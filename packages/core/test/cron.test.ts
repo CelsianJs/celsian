@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { CronScheduler, parseCronExpression, shouldRun } from "../src/cron.js";
 
 describe("Cron Expression Parser", () => {
@@ -109,5 +109,79 @@ describe("CronScheduler", () => {
     const jobs = app.getCronJobs();
     expect(jobs).toHaveLength(1);
     expect(jobs[0].name).toBe("test-job");
+  });
+});
+
+describe("CronScheduler same-minute dedupe (CORE-10)", () => {
+  it("never fires a job twice within the same minute, even if the minute guard resets", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T10:00:00.500Z"));
+    try {
+      let count = 0;
+      const scheduler = new CronScheduler();
+      scheduler.add({
+        name: "every-minute",
+        schedule: "* * * * *",
+        handler: () => {
+          count++;
+        },
+      });
+      scheduler.start();
+
+      // 30 one-second ticks inside the 10:00 minute -> exactly one fire
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(count).toBe(1);
+
+      // Simulate the observed double-fire: the scheduler-level minute guard is
+      // defeated mid-minute (restart/race). The per-job guard must still hold.
+      (scheduler as unknown as { lastMinute: number }).lastMinute = -1;
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(count).toBe(1);
+
+      // Restarting mid-minute must not re-fire either
+      scheduler.stop();
+      scheduler.start();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(count).toBe(1);
+
+      // The next minute fires exactly once more
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(count).toBe(2);
+
+      scheduler.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("dedupes per job, not globally — both jobs still fire in the minute", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T11:00:00.500Z"));
+    try {
+      const fired: string[] = [];
+      const scheduler = new CronScheduler();
+      scheduler.add({
+        name: "a",
+        schedule: "* * * * *",
+        handler: () => {
+          fired.push("a");
+        },
+      });
+      scheduler.add({
+        name: "b",
+        schedule: "* * * * *",
+        handler: () => {
+          fired.push("b");
+        },
+      });
+      scheduler.start();
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(fired.sort()).toEqual(["a", "b"]);
+
+      scheduler.stop();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

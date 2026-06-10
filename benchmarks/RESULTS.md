@@ -1,117 +1,78 @@
 # CelsianJS Benchmark Results
 
-**Date:** 2026-03-08 (updated after optimization pass)
+**Date:** 2026-06-08 (post 0.5.x performance pass)
 **Node.js:** v22.13.1
-**Platform:** macOS Darwin 25.2.0 (Apple Silicon, arm64)
+**Platform:** macOS Darwin (Apple Silicon, arm64)
 **Config:** 10 connections, 10s per scenario
-**Frameworks:** CelsianJS (workspace), Express 5.2.1, Fastify 5.8.1
+**Frameworks:** CelsianJS (workspace), Express 5.x, Fastify 5.x
 
-## Results by Scenario
+> Reproduce: `npx tsx benchmarks/run.ts` (throughput) and
+> `for fw in celsian express fastify; do NODE_OPTIONS=--expose-gc npx tsx benchmarks/mem.ts $fw; done` (memory).
 
-### 1. JSON Response (GET /json)
+## Throughput by Scenario
 
-Simple `{ message: "Hello, World!" }` response. Measures raw framework overhead.
+| Scenario             | Fastify | CelsianJS | Express | Celsian vs Express | Celsian vs Fastify |
+| -------------------- | ------: | --------: | ------: | -----------------: | -----------------: |
+| JSON response        |  69,681 |    51,897 |  22,775 |             2.28×  |              74%   |
+| Route params         |  69,075 |    50,790 |  22,713 |             2.24×  |              74%   |
+| Middleware chain (5) |  64,826 |    45,028 |  22,248 |             2.02×  |              69%   |
+| JSON body parsing    |  43,824 |    35,488 |  20,217 |             1.76×  |              81%   |
+| Error handling       |  47,818 |    26,061 |  20,795 |             1.25×  |              55%   |
 
-| Framework    |      Req/s | P50 (ms) | P99 (ms) | Throughput |
-| ------------ | ---------- | -------- | -------- | ---------- |
-| Fastify      |     45,866 |      0.0 |      0.0 |   8.7 MB/s |
-| CelsianJS    |     27,996 |      0.0 |      0.0 |   5.8 MB/s |
-| Express      |     16,321 |      0.0 |      1.0 |   3.0 MB/s |
+**Fastify wins every scenario** (it operates directly on Node `req`/`res` + `fast-json-stringify`).
+**CelsianJS beats Express in all 5 scenarios** by **1.25×–2.28×**. The gap to Fastify is the cost
+of the Web Standard `Request`/`Response` round-trip on Node — the tradeoff for multi-runtime portability.
 
-### 2. Route Params (GET /user/:id)
+## Memory Usage (honest, isolated)
 
-Returns `{ id, name, email }` from URL param. Measures router matching + param extraction.
+Each framework runs in its **own fresh process**, driven by an **external** autocannon client (so the
+load generator's memory is not counted), then RSS/heap are read after GC. This is the apples-to-apples
+number — see the correction below about the old, misleading figure.
 
-| Framework    |      Req/s | P50 (ms) | P99 (ms) | Throughput |
-| ------------ | ---------- | -------- | -------- | ---------- |
-| Fastify      |     45,440 |      0.0 |      0.0 |   9.8 MB/s |
-| CelsianJS    |     27,026 |      0.0 |      0.0 |   6.3 MB/s |
-| Express      |     16,288 |      0.0 |      1.0 |   4.5 MB/s |
+| Framework | RSS (MB) | Heap used (MB) |
+| --------- | -------: | -------------: |
+| CelsianJS |    187.6 |           13.9 |
+| Express   |    173.0 |           12.8 |
+| Fastify   |    122.8 |           16.3 |
 
-### 3. Middleware Chain (GET /middleware, 5 layers)
+CelsianJS's **retained heap (13.9 MB) is on par with Express (12.8 MB) and lower than Fastify (16.3 MB)**.
+RSS is within ~8% of Express. There is no memory problem.
 
-5 middleware/hook layers each setting a response header, then JSON response.
+> ⚠️ **Correction.** Earlier results reported CelsianJS at ~94 MB vs "2.5 MB" for Express. That was a
+> **measurement artifact**, not real usage: `run.ts` hosted all three servers in a single shared process
+> and reported per-framework RSS *deltas*. Whichever framework ran first (CelsianJS) absorbed the entire
+> one-time process warm-up — V8 heap growth, JIT, and autocannon's connection pools — while the others,
+> running into an already-grown heap, showed impossibly small deltas (an absolute RSS of "2.5 MB" is below
+> Node's ~40 MB floor). The throughput numbers were always valid; only the memory table was wrong.
+> Memory is now measured by `benchmarks/mem.ts` in isolated processes.
 
-| Framework    |      Req/s | P50 (ms) | P99 (ms) | Throughput |
-| ------------ | ---------- | -------- | -------- | ---------- |
-| Fastify      |     41,380 |      0.0 |      0.0 |  10.3 MB/s |
-| CelsianJS    |     24,445 |      0.0 |      0.0 |   6.5 MB/s |
-| Express      |     15,751 |      0.0 |      1.0 |   4.9 MB/s |
+## 0.5.x Performance Pass — What Changed
 
-### 4. JSON Body Parsing (POST /echo)
+Throughput improvements vs the pre-pass 0.5.0 baseline (same machine):
 
-Parses JSON body (`~90 bytes`) and echoes it back. Measures body parsing overhead.
+| Scenario          | Before | After  | Improvement |
+| ----------------- | -----: | -----: | ----------: |
+| JSON response     | 41,433 | 51,897 |       +25%  |
+| Route params      | 41,773 | 50,790 |       +22%  |
+| Middleware chain  | 38,925 | 45,028 |       +16%  |
+| JSON body parsing | 32,003 | 35,488 |       +11%  |
+| Error handling    | 18,948 | 26,061 |       +38%  |
 
-| Framework    |      Req/s | P50 (ms) | P99 (ms) | Throughput |
-| ------------ | ---------- | -------- | -------- | ---------- |
-| Fastify      |     29,998 |      0.0 |      1.0 |   7.1 MB/s |
-| CelsianJS    |     19,074 |      0.0 |      1.0 |   4.9 MB/s |
-| Express      |     14,648 |      0.0 |      1.0 |   4.4 MB/s |
+Three changes, all at the Node adapter boundary (the core lifecycle was already fast — ~245K ops/s in-process):
 
-### 5. Error Handling (GET /error)
-
-Route throws `new Error()`, framework catches and returns 500 JSON response.
-
-| Framework    |      Req/s | P50 (ms) | P99 (ms) | Throughput |
-| ------------ | ---------- | -------- | -------- | ---------- |
-| Fastify      |     32,398 |      0.0 |      0.0 |   7.1 MB/s |
-| CelsianJS    |     18,542 |      0.0 |      1.0 |  15.6 MB/s |
-| Express      |     14,765 |      0.0 |      1.0 |   4.1 MB/s |
-
-## Winner Table
-
-| Scenario               | Winner       |      Req/s |
-| ---------------------- | ------------ | ---------- |
-| JSON response          | Fastify      |     45,866 |
-| Route params           | Fastify      |     45,440 |
-| Middleware chain (5)   | Fastify      |     41,380 |
-| JSON body parsing      | Fastify      |     29,998 |
-| Error handling         | Fastify      |     32,398 |
-
-**Fastify wins every scenario** (operates directly on Node.js internals + fast-json-stringify).
-**CelsianJS beats Express in all 5 scenarios** by 1.26x–1.71x.
-
-## Relative Performance (JSON response baseline)
-
-| Framework  | Req/s  | vs Fastify | vs Express |
-| ---------- | ------ | ---------- | ---------- |
-| Fastify    | 45,866 | 100%       | 2.81x      |
-| CelsianJS  | 27,996 | 61%        | 1.71x      |
-| Express    | 16,321 | 36%        | 1.00x      |
-
-## Memory Usage (RSS after load)
-
-| Framework    | RSS (MB) |
-| ------------ | -------- |
-| Express      |      2.5 |
-| Fastify      |     17.4 |
-| CelsianJS    |     94.2 |
-
-CelsianJS uses more memory due to Web Standard `Request`/`Response` object creation per request. There is room for optimization (object pooling, reducing per-request allocations), but no memory leak — RSS is stable under sustained load.
-
-## Optimization History
-
-After the initial benchmark run, three critical optimizations were applied:
-
-1. **Fixed timer leak in `Promise.race` timeout** — Each request's 30s timeout `setTimeout` was never cleared, retaining closure references. At 22K req/s this accumulated 660K+ live timer references. **Fixed with `clearTimeout` in `.finally()`.**
-
-2. **Rewrote `buildRequest()`** — Replaced 15 getter closures with direct property assignment. Reduced per-request allocation from ~15 function objects to 6 bound methods.
-
-3. **Optimized logger `child()`** — Replaced full `createLogger()` call per request with a lightweight inline object that reuses the parent's write function.
-
-| Scenario | Before | After | Improvement |
-|---|---|---|---|
-| JSON response | 22,366 | 27,996 | **+25%** |
-| Route params | 16,397 | 27,026 | **+65%** |
-| Middleware chain | 13,707 | 24,445 | **+78%** |
-| Body parsing | 9,255 | 19,074 | **+106%** |
-| Error handling | 9,389 | 18,542 | **+97%** |
-| Memory (RSS) | 7,009 MB | 94 MB | **-99%** |
+1. **Fast buffered response write.** `reply.json()/send()/html()` and the auto-serializer tag the Response
+   with their already-serialized body + plain headers (`fast-response.ts`). The Node writer emits it in a
+   single `res.writeHead() + res.end(body)` with an explicit `Content-Length` — skipping the
+   `response.body.getReader()` stream drain, the second socket write, and chunked encoding.
+2. **Prototype-based request wrapper.** `buildRequestFast()` builds the per-request object from a shared
+   prototype whose body methods/accessors delegate to the source Request — eliminating 6 `.bind()` calls and
+   2 `Object.defineProperty` calls per request (~10× cheaper to construct: 357 ns → 36 ns).
+3. **Single Headers build at the boundary.** `nodeToWebRequestFast()` passes Node's header record straight to
+   the `Request` constructor in the common (all-string) case instead of building an intermediate `Headers`.
 
 ## Remaining Optimization Opportunities
 
-- Pre-compile static route handler chains (skip hook iteration for hookless routes)
-- Pool/reuse CelsianRequest wrapper objects
-- Stream body parsing instead of full-text-then-parse (double allocation)
-- Consider fast-json-stringify for known response schemas
-- Skip body-size-limit check when Content-Length is below limit
+- Lightweight/lazy `Request` (defer header + URL materialization) — the largest remaining gap to Fastify.
+- `fast-json-stringify` for routes with a declared response schema.
+- Stream body parsing instead of read-full-text-then-parse (avoids double allocation on POST).
+- Fast-path the error response through `fast-response.ts` (error handling is the weakest scenario).

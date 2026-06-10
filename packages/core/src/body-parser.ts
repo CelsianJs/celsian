@@ -132,6 +132,25 @@ async function parseFormData(request: CelsianRequest, bodyLimit: number): Promis
 }
 
 /**
+ * Enforce the bodyLimit for custom content-type parsers: read the body through
+ * the capped reader (throws 413 HttpError on overflow), then rebuild a Request
+ * with the bounded bytes so the parser's `text()`/`json()`/`arrayBuffer()` etc.
+ * all operate on capped data. With no limit (<= 0), the original request is
+ * handed through untouched.
+ */
+async function capRequestBody(request: CelsianRequest, bodyLimit: number): Promise<Request> {
+  if (bodyLimit <= 0) {
+    return request as unknown as Request;
+  }
+  const bytes = await readBodyBytes(request as unknown as Request, bodyLimit);
+  return new Request(request.url, {
+    method: request.method,
+    headers: request.headers,
+    body: bytes,
+  });
+}
+
+/**
  * Parse the request body based on Content-Type header.
  * Supports JSON, form-urlencoded, multipart, and plain text.
  * Skips parsing for GET/HEAD or missing Content-Type.
@@ -147,11 +166,14 @@ export async function parseBody(
     return;
   }
 
-  // Check custom content-type parsers (exact match then prefix match)
+  // Check custom content-type parsers (exact match then prefix match).
+  // bodyLimit is enforced for custom parsers too: the body is pre-read through
+  // the capped reader (413 on overflow) and the parser receives a reconstructed
+  // Request carrying the already-bounded bytes — its body methods are all capped.
   if (contentTypeParsers.size > 0) {
     for (const [registeredType, parser] of contentTypeParsers) {
       if (contentType === registeredType || contentType.startsWith(registeredType)) {
-        request.parsedBody = await parser(request);
+        request.parsedBody = await parser(await capRequestBody(request, bodyLimit));
         return;
       }
     }

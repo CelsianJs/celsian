@@ -10,3 +10,13 @@ docs/api/
 
 # Keep safe deployment placeholders tracked for release smoke documentation.
 !.env.example
+
+# Local wrangler dev state (created by scripts/workerd-smoke.mjs)
+.wrangler/
+
+# Internal planning artifacts (kept locally, not published)
+.dev/
+
+# Browser-automation captures and scratch artifacts (never commit — may contain tokens)
+.playwright-mcp/
+artifacts/

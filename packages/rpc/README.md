@@ -17,7 +17,16 @@ const appRouter = router({
   greet: procedure.input(z.object({ name: z.string() })).query(({ input }) => `Hello, ${input.name}!`),
 });
 const rpc = new RPCHandler(appRouter);
-app.all('/_rpc/*path', (req) => rpc.handle(req));
+rpc.mount(app); // serves /_rpc/* (pass a prefix to mount elsewhere: rpc.mount(app, '/api/rpc'))
+```
+
+`mount()` registers both `GET` and `POST` wildcard routes — the RPC client uses
+GET for queries and POST for mutations. (Note: `CelsianApp` has no `.all()`
+method.) If you prefer to register the routes yourself:
+
+```typescript
+app.get('/_rpc/*path', (req) => rpc.handle(req));
+app.post('/_rpc/*path', (req) => rpc.handle(req));
 ```
 
 ## Documentation

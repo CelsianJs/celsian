@@ -33,7 +33,7 @@ export interface DeployAdapter {
 /**
  * Create a Railway deployment adapter.
  *
- * Usage in then.config.ts:
+ * Usage in celsian.config.ts:
  * ```ts
  * import { railwayAdapter } from '@celsian/adapter-railway';
  *

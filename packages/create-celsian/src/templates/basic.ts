@@ -72,4 +72,35 @@ app.get('/hello/:name', (req, reply) => {
 
 serve(app);
 `,
+  ".gitignore": `node_modules/
+dist/
+*.tsbuildinfo
+.env
+`,
+  "README.md": `# {{name}}
+
+A minimal API server built with [CelsianJS](https://github.com/CelsianJs/celsian).
+
+## Quick Start
+
+\`\`\`bash
+npm install
+npm run dev
+\`\`\`
+
+The server starts at http://localhost:3000.
+
+## Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | \`/health\` | Server health check |
+| GET | \`/hello/:name\` | Greeting by name |
+
+## Scripts
+
+- \`npm run dev\` — start the dev server with hot reload
+- \`npm run build\` — compile TypeScript to \`dist/\`
+- \`npm start\` — run the compiled server
+`,
 };

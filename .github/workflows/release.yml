@@ -8,6 +8,9 @@ concurrency: ${{ github.workflow }}-${{ github.ref }}
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # Skip husky's prepare-time hook install in CI; the changesets action
+  # creates commits and must not run the local pre-commit hook.
+  HUSKY: 0
 
 jobs:
   # Gate: run the full test suite before any release happens
@@ -66,3 +69,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # REQUIRED for provenance. The `--provenance` CLI flag on
+          # `changeset publish` is silently ignored (changesets does not pass
+          # it through to `npm publish`) — 0.5.0/0.5.1 shipped with ZERO
+          # attestations despite the flag. npm DOES honor the equivalent
+          # npm_config_* environment variable, so set it here. Requires the
+          # `id-token: write` permission above — keep both together.
+          NPM_CONFIG_PROVENANCE: true

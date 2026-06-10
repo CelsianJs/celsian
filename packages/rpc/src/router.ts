@@ -17,13 +17,23 @@ export function router<T extends RouterDefinition>(routes: T): T {
 }
 
 /**
+ * Minimal structural interface for {@link RPCHandler.mount} targets. Satisfied
+ * by `CelsianApp` (and any router exposing `get`/`post` registration) without
+ * requiring a dependency on `@celsian/core`.
+ */
+export interface RPCMountTarget {
+  get(url: string, handler: (request: Request) => Response | Promise<Response>): void;
+  post(url: string, handler: (request: Request) => Response | Promise<Response>): void;
+}
+
+/**
  * Server-side RPC handler. Flattens a router definition, validates input/output,
  * runs middleware, and serves OpenAPI and manifest endpoints.
  *
  * @example
  * ```ts
  * const rpc = new RPCHandler(appRouter);
- * app.all('/_rpc/*path', (req) => rpc.handle(req));
+ * rpc.mount(app); // registers GET + POST routes at /_rpc/*
  * ```
  */
 export class RPCHandler {
@@ -41,6 +51,34 @@ export class RPCHandler {
     this.contextFactory = options?.contextFactory ?? ((request) => ({ request }));
     this.basePath = options?.basePath ?? "/_rpc";
     this.flattenRoutes(routes, "");
+  }
+
+  /**
+   * Mount this handler on a Celsian app (or any compatible router). Registers
+   * BOTH `GET` and `POST` wildcard routes — the RPC client uses GET for
+   * queries and POST for mutations, and `CelsianApp` has no `.all()` method.
+   * This is the recommended way to wire up the handler.
+   *
+   * @param app - App exposing `get`/`post` route registration (e.g. `CelsianApp`).
+   * @param prefix - Mount prefix. Defaults to the handler's `basePath`
+   *   (`"/_rpc"`). When provided, it replaces the handler's base path so URL
+   *   stripping in `handle()` matches the mounted location.
+   *
+   * @example
+   * ```ts
+   * const rpc = new RPCHandler(appRouter);
+   * rpc.mount(app);              // serves /_rpc/*
+   * rpc.mount(app, '/api/rpc');  // serves /api/rpc/*
+   * ```
+   */
+  mount(app: RPCMountTarget, prefix?: string): void {
+    if (prefix) {
+      this.basePath = prefix.endsWith("/") ? prefix.slice(0, -1) : prefix;
+    }
+    const route = `${this.basePath}/*path`;
+    const handler = (request: Request): Promise<Response> => this.handle(request);
+    app.get(route, handler);
+    app.post(route, handler);
   }
 
   private flattenRoutes(routes: RouterDefinition, prefix: string): void {
@@ -146,9 +184,28 @@ export class RPCHandler {
         headers: { "content-type": "application/json" },
       });
     } catch (error) {
+      const status = (error as { statusCode?: number }).statusCode ?? 500;
+      const isProduction =
+        typeof process !== "undefined" &&
+        (process.env.NODE_ENV === "production" || process.env.CELSIAN_ENV === "production");
+
+      // Always log unexpected errors server-side so operators keep full detail
+      // even when the client-facing message is sanitized below.
+      if (status >= 500) {
+        console.error(`[@celsian/rpc] procedure "${rpcPath}" error:`, error);
+      }
+
+      // In production, unexpected (5xx-equivalent) errors must not leak
+      // internals — raw error messages/codes can disclose stack details, file
+      // paths, or query fragments. Mirrors @celsian/core's error-handler
+      // sanitization. Intentional HTTP-style errors (statusCode < 500, e.g.
+      // thrown HttpErrors) pass through unchanged.
+      if (isProduction && status >= 500) {
+        return this.errorResponse(status, "INTERNAL_ERROR", "Internal error");
+      }
+
       const message = error instanceof Error ? error.message : "Internal error";
       const code = (error as { code?: string }).code ?? "INTERNAL_ERROR";
-      const status = (error as { statusCode?: number }).statusCode ?? 500;
       return this.errorResponse(status, code, message);
     }
   }

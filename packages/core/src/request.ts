@@ -8,6 +8,40 @@ const EMPTY_QUERY: Record<string, string | string[]> = Object.freeze(Object.crea
 // Keys that must never be set via user input (prototype pollution prevention)
 const BLOCKED_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
+// Symbol holding the source Web Request on the wrapper (excluded from Object.keys/JSON).
+const SRC = Symbol("celsian.srcRequest");
+
+// Shared prototype for fast request wrappers: body-consuming methods and the
+// live body/bodyUsed accessors delegate to the source Request via `this[SRC]`.
+// Using a prototype avoids per-request `.bind()` (×6) and `Object.defineProperty`
+// (×2) — ~10× cheaper to construct than per-request property definition.
+const REQUEST_PROTO = {
+  get body() {
+    return (this as Record<symbol, Request>)[SRC].body;
+  },
+  get bodyUsed() {
+    return (this as Record<symbol, Request>)[SRC].bodyUsed;
+  },
+  json() {
+    return (this as Record<symbol, Request>)[SRC].json();
+  },
+  text() {
+    return (this as Record<symbol, Request>)[SRC].text();
+  },
+  formData() {
+    return (this as Record<symbol, Request>)[SRC].formData();
+  },
+  arrayBuffer() {
+    return (this as Record<symbol, Request>)[SRC].arrayBuffer();
+  },
+  blob() {
+    return (this as Record<symbol, Request>)[SRC].blob();
+  },
+  clone() {
+    return (this as Record<symbol, Request>)[SRC].clone();
+  },
+};
+
 /**
  * Build a CelsianRequest from a Web Standard Request, parsed URL, and route params.
  * Body-consuming methods are bound to the original Request to preserve internal slots.
@@ -99,8 +133,12 @@ export function buildRequestFast(
     }
   }
 
-  const celsianRequest = Object.create(null) as CelsianRequest;
-  const req = celsianRequest as Record<string, unknown>;
+  // Construct from a shared prototype: body/bodyUsed and the body-consuming
+  // methods delegate to the source Request via `this[SRC]`. This avoids 6
+  // per-request `.bind()` calls and 2 `Object.defineProperty` calls (~10× cheaper).
+  const celsianRequest = Object.create(REQUEST_PROTO) as CelsianRequest;
+  const req = celsianRequest as unknown as Record<string | symbol, unknown>;
+  req[SRC] = request;
   req.headers = request.headers;
   req.method = request.method;
   req.url = request.url;
@@ -108,22 +146,6 @@ export function buildRequestFast(
   req.params = params;
   req.query = query;
   req.parsedBody = undefined;
-
-  // Bind body-consuming methods
-  req.json = request.json.bind(request);
-  req.text = request.text.bind(request);
-  req.formData = request.formData.bind(request);
-  req.arrayBuffer = request.arrayBuffer.bind(request);
-  req.blob = request.blob.bind(request);
-  req.clone = request.clone.bind(request);
-
-  // Lazy getters for rarely-accessed properties
-  Object.defineProperty(celsianRequest, "body", { get: () => request.body, configurable: true, enumerable: true });
-  Object.defineProperty(celsianRequest, "bodyUsed", {
-    get: () => request.bodyUsed,
-    configurable: true,
-    enumerable: true,
-  });
 
   // Copy any custom properties set on the request (e.g., env/ctx from Cloudflare adapter)
   const requestKeys = Object.keys(request);

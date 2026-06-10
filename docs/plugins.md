@@ -240,13 +240,17 @@ Serves an OpenAPI 3.1 JSON spec at `/docs/openapi.json` and a Swagger UI at `/do
 
 ## Ecosystem Plugins
 
-| Package | Global Registration | Scoped Registration |
+| Package | Global Registration | Scoped Registration (inside a feature plugin) |
 | ------- | ------------------- | ------------------- |
 | `@celsian/jwt` | `app.register(jwt({ secret }))` | N/A |
-| `@celsian/rate-limit` | `app.register(rateLimit({ max: 100, window: 60_000 }), { encapsulate: false })` | `app.register(rateLimit({ max: 50, window: 60_000 }))` (inside a feature plugin) |
-| `@celsian/compress` | `app.register(compress({ threshold: 1024 }), { encapsulate: false })` | `app.register(compress())` (inside a feature plugin) |
+| `@celsian/rate-limit` | `app.register(rateLimit({ max: 100, window: 60_000, trustProxy: true }), { encapsulate: false })` | `app.register(rateLimit({ max: 50, window: 60_000, trustProxy: true }), { encapsulate: false })` |
+| `@celsian/compress` | `app.register(compress({ threshold: 1024 }), { encapsulate: false })` | `app.register(compress(), { encapsulate: false })` |
 
-**Important:** Rate-limit and compress add `onRequest` hooks that only apply to routes registered in the same encapsulation scope. To apply them globally (all routes), pass `{ encapsulate: false }`. For scoped usage (per-feature rate limits), register them inside a feature plugin alongside the routes they should protect.
+**Important:** Rate-limit and compress install their logic as an `onRequest` hook. That hook applies to routes in the *same* encapsulation scope as where the hook is added. Always register these plugins with `{ encapsulate: false }` — both globally **and** inside a feature plugin.
+
+Why `{ encapsulate: false }` even for scoped use? When you `app.register(rateLimit(...))` with the default (encapsulated) registration, the plugin runs in a fresh **child** scope and adds its `onRequest` hook there. Your feature's routes live in the parent scope, so the hook never runs against them — the limiter is silently disabled. Passing `{ encapsulate: false }` runs the plugin against your feature's own scope, so its hook protects that feature's routes. To get a *per-feature* limit, register the limiter with `{ encapsulate: false }` inside each feature plugin (see [Pattern: Feature Plugin](#pattern-feature-plugin)).
+
+> `rateLimit()` also requires either `trustProxy: true` (to read the client IP from `X-Forwarded-For`/`X-Real-IP`) or a custom `keyGenerator`. With neither, it throws at registration so the limiter can never silently run without a way to identify clients.
 
 ## Pattern: Feature Plugin
 
@@ -255,8 +259,9 @@ A common pattern is to group routes, hooks, and services into a feature plugin:
 ```typescript
 async function usersFeature(app) {
   // Scoped rate limit — use { encapsulate: false } so the onRequest hook
-  // applies to routes registered in this plugin context
-  await app.register(rateLimit({ max: 50, window: 60_000 }), { encapsulate: false });
+  // applies to routes registered in this plugin context. trustProxy reads the
+  // client IP from X-Forwarded-For (or pass a keyGenerator); one is required.
+  await app.register(rateLimit({ max: 50, window: 60_000, trustProxy: true }), { encapsulate: false });
 
   // Routes
   app.get('/users', listUsers);
@@ -268,7 +273,7 @@ async function usersFeature(app) {
 
 async function ordersFeature(app) {
   // Different rate limit for orders
-  await app.register(rateLimit({ max: 20, window: 60_000 }), { encapsulate: false });
+  await app.register(rateLimit({ max: 20, window: 60_000, trustProxy: true }), { encapsulate: false });
 
   app.get('/orders', listOrders);
   app.post('/orders', createOrder);

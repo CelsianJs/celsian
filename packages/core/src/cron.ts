@@ -96,6 +96,9 @@ export class CronScheduler {
   private jobs: Array<{ job: CronJob; parsed: ParsedCron }> = [];
   private timer: ReturnType<typeof setInterval> | null = null;
   private lastMinute = -1;
+  // Per-job double-fire guard: absolute epoch minute each job last fired in.
+  // Survives scheduler stop/start within the same minute, unlike lastMinute alone.
+  private lastFiredEpochMinute = new Map<string, number>();
 
   add(job: CronJob): void {
     const parsed = parseCronExpression(job.schedule);
@@ -124,14 +127,20 @@ export class CronScheduler {
 
   private tick(): void {
     const now = new Date();
-    const currentMinute = now.getHours() * 60 + now.getMinutes();
+    // Absolute epoch minute — unlike hours*60+minutes it never repeats across
+    // days, so the guard cannot be fooled at day boundaries.
+    const epochMinute = Math.floor(now.getTime() / 60_000);
 
     // Only fire once per minute
-    if (currentMinute === this.lastMinute) return;
-    this.lastMinute = currentMinute;
+    if (epochMinute === this.lastMinute) return;
+    this.lastMinute = epochMinute;
 
     for (const { job, parsed } of this.jobs) {
       if (shouldRun(parsed, now)) {
+        // Per-job dedupe: never fire the same job twice within one minute,
+        // even if ticks race or the scheduler restarts mid-minute.
+        if (this.lastFiredEpochMinute.get(job.name) === epochMinute) continue;
+        this.lastFiredEpochMinute.set(job.name, epochMinute);
         // Fire and forget — log errors instead of silently swallowing
         Promise.resolve(job.handler()).catch((err) => {
           console.error("[celsian] Cron job error:", err);

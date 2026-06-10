@@ -25,8 +25,11 @@ If you prefer to start from scratch:
 ```bash
 mkdir my-api && cd my-api
 npm init -y
+npm pkg set type=module   # CelsianJS is ESM-only
 npm install @celsian/core
 ```
+
+> **CelsianJS is ESM-only.** The `npm pkg set type=module` step sets `"type": "module"` in `package.json`. Without it, Node treats your files as CommonJS and `@celsian/schema` fails to load with `Top-level await is currently not supported with the "cjs" output format`.
 
 Create `server.ts`:
 

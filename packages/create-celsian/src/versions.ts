@@ -14,7 +14,9 @@ export const DEPS = {
 /** Dev-dependency pins shared across templates. */
 export const DEV_DEPS = {
   typescript: "^5.7.0",
-  tsx: "^4.0.0",
+  // >=4.16 required: the full template's dev script relies on tsx forwarding
+  // Node's --env-file flag (supported in tsx from 4.16).
+  tsx: "^4.16.0",
   vitest: "^4.0.0",
   typesNode: "^22.0.0",
 } as const;

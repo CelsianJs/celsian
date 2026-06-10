@@ -33,17 +33,21 @@ async function main(): Promise<void> {
       const name = args[1];
       if (!name || name.startsWith("-")) {
         console.log("");
-        console.log("  Usage: celsian create <name> [--template basic|rest-api|rpc-api]");
+        console.log("  Usage: celsian create <name> [--template full|basic|rest-api|rpc-api] [--force]");
         console.log("");
         console.log("  Templates:");
-        console.log("    basic       Minimal API server (default)");
+        console.log("    full        Full-stack API with auth, CRUD, RPC, tasks, cron, OpenAPI, Docker (default)");
+        console.log("    basic       Minimal API server");
         console.log("    rest-api    REST API with TypeBox schemas");
-        console.log("    rpc-api    RPC-first with typed client");
+        console.log("    rpc-api     RPC-first with typed client");
+        console.log("");
+        console.log("  Options:");
+        console.log("    --force     Scaffold into an existing non-empty directory");
         console.log("");
         process.exit(name === "--help" || name === "-h" ? 0 : 1);
       }
-      const template = (getFlag(args, "--template", "-t") ?? "basic") as Template;
-      await createCommand(name, template);
+      const template = (getFlag(args, "--template", "-t") ?? "full") as Template;
+      await createCommand(name, template, { force: args.includes("--force") });
       break;
     }
 

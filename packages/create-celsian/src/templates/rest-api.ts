@@ -64,9 +64,12 @@ await app.register(security({
 
 // ─── Routes ───
 
+// Note: TypeBox string formats (e.g. { format: 'email' }) require registering
+// the format in TypeBox's FormatRegistry first — a plain pattern keeps this
+// template self-contained and working out of the box.
 const CreateUserSchema = Type.Object({
   name: Type.String(),
-  email: Type.String({ format: 'email' }),
+  email: Type.String({ pattern: '^[^@\\\\s]+@[^@\\\\s]+\\\\.[^@\\\\s]+$' }),
 });
 
 const users: Array<{ id: number; name: string; email: string }> = [];
@@ -92,5 +95,43 @@ app.get('/users/:id', (req, reply) => {
 });
 
 serve(app);
+`,
+  ".gitignore": `node_modules/
+dist/
+*.tsbuildinfo
+.env
+`,
+  "README.md": `# {{name}}
+
+A REST API built with [CelsianJS](https://github.com/CelsianJs/celsian) and TypeBox schema validation.
+
+## Quick Start
+
+\`\`\`bash
+npm install
+npm run dev
+\`\`\`
+
+The server starts at http://localhost:3000.
+
+## Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | \`/users\` | List all users |
+| POST | \`/users\` | Create a user (\`{ "name": "...", "email": "..." }\`) |
+| GET | \`/users/:id\` | Get a user by ID |
+
+\`\`\`bash
+curl -X POST http://localhost:3000/users \\
+  -H 'content-type: application/json' \\
+  -d '{"name":"Ada","email":"ada@example.com"}'
+\`\`\`
+
+## Scripts
+
+- \`npm run dev\` — start the dev server with hot reload
+- \`npm run build\` — compile TypeScript to \`dist/\`
+- \`npm start\` — run the compiled server
 `,
 };

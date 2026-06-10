@@ -176,3 +176,52 @@ describe("CSRF middleware", () => {
     expect(token1?.length).toBe(64);
   });
 });
+
+describe("CSRF excludePaths prefix matching (CORE-02)", () => {
+  async function setupRpcApp(excludePaths: string[]) {
+    const app = createApp();
+    await app.register(csrf({ excludePaths }), { encapsulate: false });
+    app.post("/_rpc", (_req, reply) => reply.json({ root: true }));
+    app.post("/_rpc/math.multiply", (_req, reply) => reply.json({ result: 42 }));
+    app.post("/_rpcx", (_req, reply) => reply.json({ lookalike: true }));
+    app.post("/webhooks/stripe", (_req, reply) => reply.json({ hook: true }));
+    return app;
+  }
+
+  it("excludes sub-paths of an excluded entry (segment prefix)", async () => {
+    const app = await setupRpcApp(["/_rpc"]);
+    const res = await app.inject({ method: "POST", url: "/_rpc/math.multiply" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ result: 42 });
+  });
+
+  it("still excludes the exact path itself", async () => {
+    const app = await setupRpcApp(["/_rpc"]);
+    const res = await app.inject({ method: "POST", url: "/_rpc" });
+    expect(res.status).toBe(200);
+  });
+
+  it("does NOT exclude lookalike prefixes (/_rpcx)", async () => {
+    const app = await setupRpcApp(["/_rpc"]);
+    const res = await app.inject({ method: "POST", url: "/_rpcx" });
+    expect(res.status).toBe(403);
+  });
+
+  it("supports explicit trailing /* entries", async () => {
+    const app = await setupRpcApp(["/webhooks/*"]);
+    const res = await app.inject({ method: "POST", url: "/webhooks/stripe" });
+    expect(res.status).toBe(200);
+  });
+
+  it("trailing /* entry does not match lookalike siblings", async () => {
+    const app = await setupRpcApp(["/_rpc/*"]);
+    const res = await app.inject({ method: "POST", url: "/_rpcx" });
+    expect(res.status).toBe(403);
+  });
+
+  it("non-excluded mutating paths are still protected", async () => {
+    const app = await setupRpcApp(["/_rpc"]);
+    const res = await app.inject({ method: "POST", url: "/webhooks/stripe" });
+    expect(res.status).toBe(403);
+  });
+});

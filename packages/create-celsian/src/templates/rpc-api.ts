@@ -97,4 +97,41 @@ serve(app);
 
 export type AppRouter = typeof appRouter;
 `,
+  ".gitignore": `node_modules/
+dist/
+*.tsbuildinfo
+.env
+`,
+  "README.md": `# {{name}}
+
+An RPC-first API built with [CelsianJS](https://github.com/CelsianJs/celsian) and \`@celsian/rpc\`.
+
+## Quick Start
+
+\`\`\`bash
+npm install
+npm run dev
+\`\`\`
+
+The server starts at http://localhost:3000. All procedures are served under \`/_rpc/*\`.
+
+## Procedures
+
+| Kind | Path | Input |
+|------|------|-------|
+| query | \`/_rpc/greeting.hello\` | \`{ "name": "..." }\` |
+| query | \`/_rpc/math.add\` | \`{ "a": 1, "b": 2 }\` |
+
+\`\`\`bash
+curl 'http://localhost:3000/_rpc/math.add?input=%7B%22a%22%3A1%2C%22b%22%3A2%7D'
+\`\`\`
+
+The \`AppRouter\` type is exported from \`src/index.ts\` for end-to-end typed clients.
+
+## Scripts
+
+- \`npm run dev\` — start the dev server with hot reload
+- \`npm run build\` — compile TypeScript to \`dist/\`
+- \`npm start\` — run the compiled server
+`,
 };

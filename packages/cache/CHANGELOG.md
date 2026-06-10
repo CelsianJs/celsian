@@ -1,5 +1,7 @@
 # @celsian/cache
 
+## 0.5.1
+
 ## 0.3.19
 
 ### Patch Changes

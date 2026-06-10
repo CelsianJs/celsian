@@ -1,144 +1,96 @@
-# Sprint Plan — CelsianJS Hardening
-
-Generated: 2026-03-27
-Based on: Critical product review (4 research agents — codebase, security, competitive, engineering)
+# Sprint Plan — CelsianJS 0.5.2 Hardening
+Generated: 2026-06-09
+Based on: WhatStack/CELSIAN-TRIPLE-AUDIT-2026-06-09.md (smoke C+/B−, gold 39/50, product 7/10)
 
 ## Sprint Goal
-
-Fix all security vulnerabilities, eliminate @celsian/server duplication, resolve all 13 QA bugs, reduce memory footprint, and raise the product score from 3.5/10 to 7+/10.
+Ship a 0.5.2 where the serverless+hot-server promise is true **without asterisks** and a new user's first 10 minutes contain zero crashes: fix both CRITICALs, all code HIGHs, the doc samples that crash as written, and the release-trust gaps.
 
 ## Success Criteria
+- [ ] Both CRITICALs fixed (host binding, `celsian routes`)
+- [ ] Lambda cookie + binary fidelity fixed; WS runtime honesty enforced
+- [ ] Rate-limit XFF bypass fixed
+- [ ] Every documented code sample runs as written
+- [ ] Scaffold templates work first-try (rest-api validation, CSRF vs RPC, first POST)
+- [ ] `pnpm build && pnpm test && pnpm typecheck && pnpm lint` green
+- [ ] Changesets added for every published-package change (patch bumps → 0.5.2)
 
-- [ ] All 4 CRITICAL security issues resolved
-- [ ] All 7 HIGH security issues resolved
-- [ ] All 13 QA-reported bugs fixed
-- [ ] @celsian/server eliminated (consolidated into @celsian/core)
-- [ ] Memory RSS reduced from 94MB toward <50MB
-- [ ] Silent error swallowing replaced with logging
-- [ ] All tests pass (806+ tests, 0 failures, 0 errors)
-- [ ] No hardcoded secrets in examples
+## Dev Tracks (worktrees under /tmp/celsian-sprint/, branches sprint/0.5.2-*)
 
-## Dev Tracks
+### Track 1: core — packages/core + packages/celsian umbrella
+- CORE-01 (P0): Host binding — `config.ts` default host `0.0.0.0` when NODE_ENV=production (keep `localhost` in dev), honor `process.env.HOST`, log the actually-bound address in serve.ts
+- CORE-02 (P1): CSRF `excludePaths` prefix matching (`plugins/csrf.ts`)
+- CORE-03 (P1): `_routeWithSchema` must use `opts.handler`; throw at registration if missing (`app.ts`)
+- CORE-04 (P1): Serverless-safety warnings (enqueue-without-worker, cron-without-scheduler) emit via console.warn even with noop logger (`app.ts`)
+- CORE-05 (P1): CORS adds `Vary: Origin` whenever allowed origin ≠ literal `*` (`plugins/cors.ts`)
+- CORE-06 (P1): Pass/enforce bodyLimit for custom content-type parsers (`body-parser.ts`)
+- CORE-07 (P1): WS — console.warn when `ws` import fails on Node; warn when `app.ws()` routes exist under serveBun/serveDeno (no upgrade wiring) (`serve.ts`, `websocket.ts`)
+- CORE-08 (P2): `serve()` resolves only after listen callback; `onReady` reports OS-assigned port (port:0) (`serve.ts`)
+- CORE-09 (P2): `reply.send(Uint8Array|ArrayBuffer)` sends bytes with application/octet-stream, not JSON.stringify (`reply.ts`)
+- CORE-10 (P2): Cron tick dedupe — guard against double-fire within same boundary minute (`cron.ts`)
+- CORE-11 (P2): Node serve: explicit `server.requestTimeout`/`headersTimeout` (`serve.ts` / adapter helpers in core)
+- CORE-12 (P2): Umbrella `packages/celsian/src/index.ts`: re-export core plugins missing (csrf, etag, analytics exports) — only what umbrella's deps already cover
+- CORE-13: Tests for every fix above
 
-### Track 1: Security Hardening — Dev Agent 1
+### Track 2: adapters — packages/adapter-lambda, adapter-vercel, adapter-cloudflare, adapter-bun (README only)
+- ADP-01 (P0): Lambda reads `event.cookies` (APIGW v2) into the Request cookie header
+- ADP-02 (P0): Lambda binary bodies stay bytes (Buffer → BodyInit), never `.toString('utf-8')`
+- ADP-03 (P1): Lambda v1 (REST API) + ALB event support (detect shape; map method/path/headers/query/body)
+- ADP-04 (P1): adapter-vercel: move `node:crypto` import into lazy/dynamic import inside cron handler so `createVercelEdgeHandler` bundles on platform=neutral
+- ADP-05 (P1): adapter-cloudflare: export a `createScheduledHandler(app)` (or include `scheduled` in handler object) bridging CF Cron Triggers to app.cron jobs
+- ADP-06 (P2): adapter-bun README: document that WS upgrades bypass route hooks (auth must be done in ws open handler)
+- ADP-07: Tests (realistic APIGW v1/v2/ALB events incl. cookies + binary; vercel edge import without node builtins; CF scheduled)
 
-**Scope:** Fix all CRITICAL + HIGH security vulnerabilities across the codebase.
+### Track 3: secpkgs — packages/rate-limit, packages/rpc, packages/jwt
+- SEC-01 (P0): rate-limit: key strategy rightmost-untrusted XFF (`trustedProxyHops` option, default 1), never leftmost; cap distinct keys in MemoryRateLimitStore (LRU/max-keys)
+- SEC-02 (P1): rate-limit: invalid/NaN `window` throws at registration (fail closed, like the trustProxy guard)
+- SEC-03 (P1): rpc: sanitize non-HttpError messages in production (mirror core error-handler)
+- SEC-04 (P1): rpc README: fix `app.all` sample → `app.get` + `app.post`
+- SEC-05 (P2): jwt: console.warn when secret < 32 bytes
+- SEC-06: Tests for all
 
-**Files touched:**
-- `packages/adapter-node/src/index.ts` (path traversal)
-- `packages/core/src/serve.ts` (WebSocket origin + auth)
-- `packages/core/src/hooks.ts` (async error logging)
-- `packages/core/src/cron.ts` (cron error logging)
-- `packages/core/src/cookie.ts` (secure defaults)
-- `packages/core/src/plugins/csrf.ts` (NEW)
-- `packages/rate-limit/src/index.ts` (trustProxy)
-- `packages/jwt/src/index.ts` (if timing fix needed here too)
-- `examples/showcase/src/index.ts` (hardcoded secrets)
+### Track 4: cli — packages/cli, packages/create-celsian
+- CLI-01 (P0): `routes` command: replace tsx --eval CJS loader with temp .mts module (fix top-level-await crash); surface real loader errors
+- CLI-02 (P1): `celsian create` delegates to create-celsian templates (shared code or spawn) — same templates, current version; no more 0.3.18 pin
+- CLI-03 (P1): create-celsian: refuse non-empty target dir without `--force`
+- CLI-04 (P1): rest-api template: fix `format: 'email'` (pattern or format registration)
+- CLI-05 (P1): full template: CSRF excludePaths covers `/_rpc/*` (works with CORE-02 prefix matching; template should also work standalone)
+- CLI-06 (P1): templates: add .gitignore + README to basic/rest-api/rpc-api; validate project name (npm name rules)
+- CLI-07 (P1): full template: load `.env` (dev script `node --env-file=.env` / tsx equivalent) or remove the cp instruction; document CSRF flow + add token-minting recipe (dev `/auth/token` route or README curl recipe)
+- CLI-08 (P2): deploy command: generated wrangler.toml includes `nodejs_compat` + current compatibility_date; auto-add adapter dep to package.json (or print exact install command); fix `--target` vs `--platform` header comment
+- CLI-09: Tests (scaffold each template to tmp, install workspace deps where feasible, assert files + tsc clean; routes command integration test)
 
-**Tasks:**
-- [ ] TASK-01 (P0): Fix adapter-node path traversal — add resolve() + startsWith() containment at index.ts:174
-- [ ] TASK-02 (P0): Fix WebSocket origin validation + run auth hooks before upgrade at serve.ts:180-202
-- [ ] TASK-03 (P0): Remove hardcoded JWT secret and SHA-256 password hash from examples/showcase/src/index.ts:82,96,110
-- [ ] TASK-04 (P1): Fix rate limiter — require trustProxy for X-Forwarded-For at rate-limit/src/index.ts:61-65
-- [ ] TASK-05 (P1): Create CSRF middleware plugin at core/src/plugins/csrf.ts
-- [ ] TASK-06 (P1): Fix silent async error swallowing — hooks.ts:74-86, cron.ts:100-105
-- [ ] TASK-07 (P1): Default cookie options to httpOnly + secure + sameSite at cookie.ts:36-51
-- [ ] TASK-08: Write security regression tests for all fixes (adapter-node, WS, CSRF, rate-limit, cookies)
+### Track 5: docs — README.md, docs/*, SECURITY.md, LICENSE, CHANGELOG.md, site/index.html, per-pkg stub READMEs, root cleanup
+- DOC-01 (P1): ESM requirement callout (README Quick Start + quickstart.md manual setup: `"type": "module"`)
+- DOC-02 (P1): Fix ALL rate-limit samples (add `trustProxy: true` + note) — README, docs/plugins.md, docs/hooks.md
+- DOC-03 (P1): plugins.md scoped-registration table: correct rate-limit guidance (`encapsulate: false`)
+- DOC-04 (P1): migration-from-fastify.md: fix 5 errors (createLambdaHandler/createVercelHandler names; preParsing/preValidation/preSerialization exist; inject() returns Web Response — status + await json(); `reply.status(422).json(...)` not second-arg; `req.parsedBody` not `request.body`)
+- DOC-05 (P1): SECURITY.md: GitHub private vulnerability reporting (no dead email), supported versions 0.5.x
+- DOC-06 (P1): README: contributing snippet `pnpm build` before `pnpm test`; examples/saas-demo bootstrap note (root pnpm install)
+- DOC-07 (P1): README: single consistent benchmark section (one claim + matching table), adapter table lists all 8, document `ws` dependency for WebSockets, CSRF mention near scaffold first-POST
+- DOC-08 (P2): LICENSE © CelsianJS; site/index.html footer version → 0.5.x; per-package stub READMEs (adapters, queue-redis, ws-redis, create-celsian) get a usage example each
+- DOC-09 (P2): Relocate internal dev markdown (AUDIT-2026-06-07.md, NEXT-SESSION.md, QA-REPORT.md, PRODUCT-REVIEW.md, RELEASE-PLAN.md, MILESTONES.md, FEATURE_PARITY.md, PERFORMANCE-ROADMAP.md, SECURITY_AUDIT.md, realism-audit/, qa-test-app.ts) → docs/internal/ (git mv); root keeps README/CHANGELOG/CONTRIBUTING/SECURITY/LICENSE/SPRINT-PLAN.md
+- DOC-10 (P2): CHANGELOG.md: add 0.5.1 entry; brief backfill stubs for 0.3.x/0.4.0 pointing at GitHub releases
+- DOC-11 (P2): docs/errors.md: map error `code` strings (HttpError codes) to cause + fix
 
-### Track 2: Kill @celsian/server + Fix QA Bugs — Dev Agent 2
+### Track 6: infra — .github/workflows, root package.json, biome/husky/vscode, benchmarks deps
+- INF-01 (P1): release.yml: `NPM_CONFIG_PROVENANCE: true` env on publish step
+- INF-02 (P1): test.yml: `concurrency: cancel-in-progress`; add test-bun + test-deno to `ci-passed` needs (fix the 1-2 Bun stack-trace test diffs or scope Bun job to passing suites — must be blocking and green)
+- INF-03 (P1): workerd smoke job: minimal worker built from adapter-cloudflare run via `wrangler dev --local` or miniflare/vitest-pool-workers, curl assert
+- INF-04 (P2): size-limit: root devDep + `.size-limit.json` for @celsian/core + adapters, CI step
+- INF-05 (P2): husky + lint-staged (`biome check --write` staged), `.vscode/extensions.json` (Biome)
+- INF-06 (P2): bump benchmarks workspace deps (express/fastify/autocannon) to clear `pnpm audit --prod`
+- INF-07 (P2): root package.json: align private root version note (0.3.18 → 0.5.2) — cosmetic
 
-**Scope:** Eliminate server package duplication. Migrate unique features to core. Fix all 13 QA bugs.
+## Intentionally Skipped (this sprint)
+- WS upgrades through hook lifecycle on all adapters (architectural; needs design)
+- Lambda response streaming; tRPC-style RPC codegen CLI
+- Marketing-site deploy + whatfw.com cross-link (needs domain/Vercel decisions)
+- npm OIDC trusted publishing (npm org settings — manual)
+- Deleting packages/platform + edge-router (Kirby decision — they're private/unpublished)
 
-**Files touched:**
-- `packages/server/` (entire package — DELETE after migration)
-- `packages/core/src/app.ts` (bug fixes + migrated features)
-- `packages/core/src/sse.ts` (NEW — migrated from server)
-- `packages/core/src/router.ts` (BUG-7, BUG-8, BUG-11)
-- `packages/core/src/request.ts` (BUG-13)
-- `packages/core/src/plugins/cors.ts` (BUG-12)
-- `packages/core/src/reply.ts` (error leakage fix)
-- `packages/rpc/src/router.ts` (BUG-9)
-- `packages/schema/src/adapters/typebox.ts` (BUG-2)
-- `pnpm-workspace.yaml`, `tsconfig.json` (remove server refs)
-
-**Tasks:**
-- [ ] TASK-09 (P0): Fix BUG-1 — verify ESM serve() uses dynamic import (may already be fixed)
-- [ ] TASK-10 (P0): Fix BUG-2 — TypeBox adapter ESM crash at schema/src/adapters/typebox.ts:13
-- [ ] TASK-11 (P1): Fix BUG-3 — Multiple Set-Cookie headers lost at core/src/serve.ts:237-239
-- [ ] TASK-12 (P1): Fix BUG-5/6 — onSend hook headers lost + CORS broken at core/src/app.ts:329-333
-- [ ] TASK-13 (P1): Fix BUG-9 — RPC POST body consumed at rpc/src/router.ts:99
-- [ ] TASK-14 (P2): Fix BUG-4 — Plugin decorate() not on app instance at core/src/app.ts:110-113
-- [ ] TASK-15 (P3): Fix BUG-7/8 — 404 vs 405 + HEAD fallback at core/src/router.ts:88
-- [ ] TASK-16 (P3): Fix BUG-10 — Malformed JSON returns 200 at core/src/app.ts:378-388
-- [ ] TASK-17 (P3): Fix BUG-11 — Path params not URL-decoded at core/src/router.ts:129
-- [ ] TASK-18 (P3): Fix BUG-12 — CORS preflight leaks at core/src/plugins/cors.ts:48-76
-- [ ] TASK-19 (P3): Fix BUG-13 — Duplicate query params at core/src/request.ts:10-13
-- [ ] TASK-20: Migrate SSE from server to core (core/src/sse.ts)
-- [ ] TASK-21: Migrate any unique server middleware to core plugins
-- [ ] TASK-22: Port security hardening from core to server (CRLF, proto pollution, body limit, error leakage) — needed BEFORE deletion so tests pass during migration
-- [ ] TASK-23: Remove @celsian/server package — delete directory, update workspace/tsconfig
-- [ ] TASK-24: Write regression tests for all 13 bug fixes
-
-### Track 3: Memory + Build + Docs — Dev Agent 3
-
-**Scope:** Memory optimization, build system fixes, documentation updates, flaky tests.
-
-**Files touched:**
-- `packages/core/src/request.ts` (allocation optimization)
-- `packages/core/src/app.ts` (request lifecycle optimization)
-- `packages/core/src/task.ts` (MemoryQueue eviction)
-- `tsconfig.json` (missing package refs)
-- `packages/cache/test/bench.test.ts` (flaky test)
-- `examples/crud-api/test/api.test.ts` (EADDRINUSE)
-- `README.md`, `SECURITY_AUDIT.md`, `QA-REPORT.md`
-- All `packages/*/package.json` (version bump to 0.2.0)
-
-**Tasks:**
-- [ ] TASK-25: Add MemoryQueue job eviction at core/src/task.ts (max 1000 completed jobs)
-- [ ] TASK-26: Optimize per-request allocations — frozen empty query, lazy init, reduce closures
-- [ ] TASK-27: Add missing packages to tsconfig.json references (9 packages missing)
-- [ ] TASK-28: Fix EADDRINUSE in examples/crud-api/test/api.test.ts (proper teardown)
-- [ ] TASK-29: Fix flaky bench test at packages/cache/test/bench.test.ts:242 (timing threshold)
-- [ ] TASK-30: Update README.md — remove @celsian/server refs, add CSRF plugin, update security status
-- [ ] TASK-31: Update SECURITY_AUDIT.md — mark all new fixes
-- [ ] TASK-32: Update QA-REPORT.md — mark all 13 bugs RESOLVED
-- [ ] TASK-33: Bump all packages to 0.2.0
-- [ ] TASK-34: Run full test suite — target 0 failures, 0 errors, 0 flaky
-
-## File Conflict Analysis
-
-| File | Track 1 | Track 2 | Track 3 | Conflict? |
-|------|---------|---------|---------|-----------|
-| adapter-node/src/index.ts | YES | no | no | None |
-| core/src/serve.ts | YES (WS) | no | no | None |
-| core/src/hooks.ts | YES | no | no | None |
-| core/src/cron.ts | YES | no | no | None |
-| core/src/cookie.ts | YES | no | no | None |
-| core/src/app.ts | no | YES (bugs) | no | None |
-| core/src/router.ts | no | YES (bugs) | no | None |
-| core/src/request.ts | no | YES (BUG-13) | YES (alloc) | MINOR — Track 3 touches different lines |
-| core/src/task.ts | no | no | YES | None |
-| rate-limit/src/index.ts | YES | no | no | None |
-| server/* | no | YES (delete) | no | None |
-| tsconfig.json | no | no | YES | None |
-| README.md | no | no | YES | None |
-
-**One minor overlap** on core/src/request.ts — Track 2 fixes BUG-13 (duplicate query params), Track 3 optimizes allocations. These touch different code sections so merge should be clean.
-
-## Intentionally Skipping
-
-- **Route-string type inference** (competitive gap vs Hono/Elysia) — requires major architecture change, not a bug fix. Separate initiative.
-- **`@celsian/api` empty package** — just delete it during Track 2 cleanup. Trivial.
-- **Template engine support** — feature request, not a quality issue.
-- **The `server/src/tasks.ts` silent error catch** — gets deleted with @celsian/server.
-
-## Task Summary
-
-| Priority | Count | Tracks |
-|----------|-------|--------|
-| P0 (CRITICAL) | 4 | Track 1: 3, Track 2: 1 |
-| P1 (HIGH) | 8 | Track 1: 4, Track 2: 4 |
-| P2 (MEDIUM) | 1 | Track 2: 1 |
-| P3 (LOW) | 5 | Track 2: 5 |
-| Infrastructure | 16 | Track 1: 1, Track 2: 5, Track 3: 10 |
-| **Total** | **34** | |
+## Manual Actions for Kirby (outward-facing, not done by sprint)
+1. Merge PR #36 (or close it in favor of the sprint branch PR) and push tags / create 0.5.1+0.5.2 GitHub releases
+2. `gh repo edit` description: fix "590 tests" → 1400+
+3. npm publish 0.5.2 through CI (after merge), verify provenance attestations appear
+4. Decide fate of deprecated adapter-bun/deno 1.0.0 publishes (unpublish window?)
+5. Set up npm OIDC trusted publishing; site deployment + ecosystem cross-links

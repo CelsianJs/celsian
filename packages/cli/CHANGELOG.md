@@ -1,5 +1,13 @@
 # @celsian/cli
 
+## 0.5.1
+
+### Patch Changes
+
+- Updated dependencies [0c69589]
+  - @celsian/core@0.5.1
+  - @celsian/schema@0.5.1
+
 ## 0.4.0
 
 ### Minor Changes

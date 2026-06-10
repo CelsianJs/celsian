@@ -158,3 +158,72 @@ describe("CORS Plugin", () => {
     expect(response.headers.get("access-control-allow-origin")).toBe("http://allowed.com");
   });
 });
+
+describe("CORS Vary: Origin (CORE-05)", () => {
+  it("sets Vary: Origin on actual responses when origin is a specific string", async () => {
+    const app = createApp();
+    await app.register(cors({ origin: "http://allowed.com" }));
+    app.get("/api/data", (_req, reply) => reply.json({ ok: true }));
+
+    const res = await app.inject({ url: "/api/data", headers: { origin: "http://allowed.com" } });
+    expect(res.headers.get("vary")).toContain("Origin");
+    expect(res.headers.get("access-control-allow-origin")).toBe("http://allowed.com");
+  });
+
+  it("sets Vary: Origin on preflight responses for non-wildcard origins", async () => {
+    const app = createApp();
+    await app.register(cors({ origin: ["http://a.com", "http://b.com"] }));
+    app.get("/api/data", (_req, reply) => reply.json({ ok: true }));
+
+    const res = await app.inject({
+      method: "OPTIONS",
+      url: "/api/data",
+      headers: { origin: "http://a.com" },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get("vary")).toContain("Origin");
+  });
+
+  it("sets Vary: Origin even when the request origin is disallowed (cache safety)", async () => {
+    const app = createApp();
+    await app.register(cors({ origin: "http://allowed.com" }));
+    app.get("/api/data", (_req, reply) => reply.json({ ok: true }));
+
+    const actual = await app.inject({ url: "/api/data", headers: { origin: "http://evil.com" } });
+    expect(actual.headers.get("vary")).toContain("Origin");
+    expect(actual.headers.get("access-control-allow-origin")).toBeNull();
+
+    const preflight = await app.inject({
+      method: "OPTIONS",
+      url: "/api/data",
+      headers: { origin: "http://evil.com" },
+    });
+    expect(preflight.headers.get("vary")).toContain("Origin");
+  });
+
+  it("sets Vary: Origin for function-based origins", async () => {
+    const app = createApp();
+    await app.register(cors({ origin: (o) => o.endsWith(".trusted.com") }));
+    app.get("/api/data", (_req, reply) => reply.json({ ok: true }));
+
+    const res = await app.inject({ url: "/api/data", headers: { origin: "http://x.trusted.com" } });
+    expect(res.headers.get("vary")).toContain("Origin");
+    expect(res.headers.get("access-control-allow-origin")).toBe("http://x.trusted.com");
+  });
+
+  it("does NOT set Vary: Origin for the literal wildcard origin", async () => {
+    const app = createApp();
+    await app.register(cors()); // origin: "*"
+    app.get("/api/data", (_req, reply) => reply.json({ ok: true }));
+
+    const actual = await app.inject({ url: "/api/data", headers: { origin: "http://anyone.com" } });
+    expect(actual.headers.get("vary")).toBeNull();
+
+    const preflight = await app.inject({
+      method: "OPTIONS",
+      url: "/api/data",
+      headers: { origin: "http://anyone.com" },
+    });
+    expect(preflight.headers.get("vary")).toBeNull();
+  });
+});

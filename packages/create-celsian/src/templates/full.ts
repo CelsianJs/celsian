@@ -1,5 +1,22 @@
 import { CELSIAN_VERSION, DEPS, DEV_DEPS } from "../versions.js";
 
+// Shipped both as `.env.example` (committed) and `.env` (gitignored) so the
+// dev/start scripts' --env-file=.env works immediately after scaffolding.
+const ENV_FILE = `# Server
+PORT=3000
+HOST=0.0.0.0
+CORS_ORIGIN=http://localhost:3000
+
+# Auth
+JWT_SECRET=change-me-to-a-real-secret-at-least-32-chars
+
+# Database (placeholder — swap for your real DB URL)
+DATABASE_URL=file:./data.db
+
+# Environment
+NODE_ENV=development
+`;
+
 export const fullTemplate: Record<string, string> = {
   "package.json": JSON.stringify(
     {
@@ -7,9 +24,10 @@ export const fullTemplate: Record<string, string> = {
       version: "0.1.0",
       type: "module",
       scripts: {
-        dev: "npx tsx --watch src/index.ts",
+        // tsx >=4.16 forwards --env-file to Node, so PORT/JWT_SECRET from .env are loaded
+        dev: "npx tsx --env-file=.env --watch src/index.ts",
         build: "tsc",
-        start: "node dist/index.js",
+        start: "node --env-file=.env dist/index.js",
         test: "npx vitest run",
         lint: "npx tsc --noEmit",
       },
@@ -56,20 +74,11 @@ export const fullTemplate: Record<string, string> = {
     2,
   ),
 
-  ".env.example": `# Server
-PORT=3000
-HOST=0.0.0.0
-CORS_ORIGIN=http://localhost:3000
+  ".env.example": ENV_FILE,
 
-# Auth
-JWT_SECRET=change-me-to-a-real-secret-at-least-32-chars
-
-# Database (placeholder — swap for your real DB URL)
-DATABASE_URL=file:./data.db
-
-# Environment
-NODE_ENV=development
-`,
+  // Scaffolded directly (and gitignored) so `npm run dev` works out of the box —
+  // both the dev and start scripts load it via --env-file=.env.
+  ".env": ENV_FILE,
 
   ".gitignore": `node_modules/
 dist/
@@ -157,10 +166,18 @@ import type { PluginFunction, HookHandler } from '@celsian/core';
 
 const JWT_SECRET = process.env.JWT_SECRET ?? 'dev-secret-change-me';
 
-// Refuse to start in production with the default dev secret
-if (process.env.NODE_ENV === 'production' && JWT_SECRET === 'dev-secret-change-me') {
+// Known insecure placeholder values shipped with the scaffold — refuse to
+// start in production with any of them (covers both the code default and the
+// value written into the generated .env / .env.example).
+const INSECURE_SECRETS = new Set([
+  'dev-secret-change-me',
+  'change-me-to-a-real-secret-at-least-32-chars',
+]);
+
+// Refuse to start in production with a known scaffold placeholder secret
+if (process.env.NODE_ENV === 'production' && INSECURE_SECRETS.has(JWT_SECRET)) {
   throw new Error(
-    '[celsian] FATAL: JWT_SECRET is set to the default dev value. ' +
+    '[celsian] FATAL: JWT_SECRET is still set to a scaffold placeholder value. ' +
     'Set a strong, unique JWT_SECRET environment variable before running in production. ' +
     'Generate one with: node -e "console.log(require(\\'crypto\\').randomBytes(32).toString(\\'base64\\'))"'
   );
@@ -222,11 +239,25 @@ export function securityPlugins(): PluginFunction[] {
       referrerPolicy: 'strict-origin-when-cross-origin',
     }),
 
-    // CSRF protection (double-submit cookie)
+    // CSRF protection (double-submit cookie).
+    //
+    // IMPORTANT: @celsian/core <=0.5.1 matches excludePaths EXACTLY (no prefix
+    // matching), so every RPC procedure endpoint is listed individually below.
+    // The '/_rpc/*' entry is kept for newer core versions that support prefix
+    // patterns. When you add a new mutation procedure, add its '/_rpc/<ns>.<name>'
+    // path here — or send the x-csrf-token header from your client (see README).
     csrf({
       cookieName: '_csrf',
       headerName: 'x-csrf-token',
-      excludePaths: ['/health', '/ready', '/_rpc'],
+      excludePaths: [
+        '/health',
+        '/ready',
+        '/_rpc/*',
+        '/_rpc/greeting.hello',
+        '/_rpc/math.add',
+        '/_rpc/math.multiply',
+        '/_rpc/system.ping',
+      ],
     }),
 
     // Rate limiting — 100 requests per 60 seconds
@@ -397,6 +428,46 @@ export default function rpcRoutes(): PluginFunction {
 }
 `,
 
+  // ─── src/routes/auth.ts ───
+  "src/routes/auth.ts": `// Auth routes — dev-only token minting
+// GET /auth/token returns a JWT for the seeded demo user so you can try the
+// protected endpoints (PUT/DELETE /users/:id) without building a login flow.
+// The route is NOT registered when NODE_ENV=production.
+
+import '@celsian/jwt'; // type augmentation for app.jwt
+import type { CelsianApp, PluginFunction } from '@celsian/core';
+import { db } from '../plugins/database.js';
+
+/**
+ * Pass the ROOT app (the one the jwt plugin decorated): \`app.jwt\` is not
+ * visible on the encapsulated plugin context this route registers under.
+ */
+export default function authRoutes(root: CelsianApp): PluginFunction {
+  return function auth(app) {
+    if (process.env.NODE_ENV === 'production') return;
+
+    app.get('/auth/token', async (_req, reply) => {
+      const demoUser = Array.from(db.users.values())[0];
+      if (!demoUser) {
+        return reply.status(500).json({ error: 'No seeded user found' });
+      }
+      const token = await root.jwt.sign(
+        { sub: demoUser.id, email: demoUser.email },
+        { expiresIn: '1h' },
+      );
+      return reply.json({
+        token,
+        user: { id: demoUser.id, email: demoUser.email },
+        usage:
+          'curl -X DELETE http://localhost:3000/users/' +
+          demoUser.id +
+          ' -H "Authorization: Bearer <token>" -H "x-csrf-token: <csrf>" --cookie "_csrf=<csrf>"',
+      });
+    });
+  };
+}
+`,
+
   // ─── src/tasks/cleanup.ts ───
   "src/tasks/cleanup.ts": `// Background task: clean up expired sessions
 // Registered with app.task() and runs when enqueued or on a schedule
@@ -464,6 +535,7 @@ import './plugins/database.js';
 import healthRoutes from './routes/health.js';
 import userRoutes from './routes/users.js';
 import rpcRoutes from './routes/rpc.js';
+import authRoutes from './routes/auth.js';
 
 // Tasks
 import { cleanupTask } from './tasks/cleanup.js';
@@ -497,6 +569,7 @@ await app.register(openapi({
 await app.register(healthRoutes());
 await app.register(userRoutes());
 await app.register(rpcRoutes());
+await app.register(authRoutes(app)); // dev-only /auth/token (skipped in production)
 
 // ─── Background Tasks ───
 
@@ -532,6 +605,7 @@ import '../src/plugins/database.js';
 import healthRoutes from '../src/routes/health.js';
 import userRoutes from '../src/routes/users.js';
 import rpcRoutes from '../src/routes/rpc.js';
+import { securityPlugins } from '../src/plugins/security.js';
 
 function createTestApp() {
   const app = createApp();
@@ -644,6 +718,23 @@ describe('RPC', () => {
     const body = await res.json();
     expect(body.result.result).toBe(42);
   });
+
+  it('RPC mutations succeed with the full security stack (CSRF excludes /_rpc)', async () => {
+    // Regression guard: the CSRF plugin must not 403 RPC mutations.
+    const app = createApp();
+    for (const plugin of securityPlugins()) {
+      await app.register(plugin, { encapsulate: false });
+    }
+    await app.register(rpcRoutes());
+    const res = await app.inject({
+      method: 'POST',
+      url: '/_rpc/math.multiply',
+      payload: { a: 2, b: 3 },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.result.result).toBe(6);
+  });
 });
 `,
 
@@ -693,10 +784,10 @@ A full-stack API built with [CelsianJS](https://github.com/CelsianJs/celsian) �
 # Install dependencies
 npm install
 
-# Copy environment variables
-cp .env.example .env
+# Review environment variables (a .env was created from .env.example for you)
+# Set a strong JWT_SECRET before deploying anywhere.
 
-# Start development server (with hot reload)
+# Start development server (with hot reload — loads .env automatically)
 npm run dev
 \`\`\`
 
@@ -712,6 +803,7 @@ src/
     health.ts           # GET /health — uptime and status
     users.ts            # Full CRUD: GET/POST/PUT/DELETE /users
     rpc.ts              # Type-safe RPC at /_rpc/*
+    auth.ts             # Dev-only GET /auth/token (demo JWT minting)
   plugins/
     auth.ts             # JWT authentication (sign, verify, guard)
     database.ts         # In-memory database (replace with real DB)
@@ -725,17 +817,76 @@ test/
 
 ## API Endpoints
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | \`/health\` | No | Server health check |
-| GET | \`/users\` | No | List all users |
-| POST | \`/users\` | No | Create a user |
-| GET | \`/users/:id\` | No | Get a user by ID |
-| PUT | \`/users/:id\` | Yes | Update a user |
-| DELETE | \`/users/:id\` | Yes | Delete a user |
-| GET/POST | \`/_rpc/*\` | No | RPC procedures |
-| GET | \`/docs\` | No | Swagger UI |
-| GET | \`/docs/openapi.json\` | No | OpenAPI 3.1 spec |
+| Method | Path | Auth | CSRF | Description |
+|--------|------|------|------|-------------|
+| GET | \`/health\` | No | — | Server health check |
+| GET | \`/auth/token\` | No | — | Mint a demo JWT (dev only) |
+| GET | \`/users\` | No | — | List all users |
+| POST | \`/users\` | No | Yes | Create a user |
+| GET | \`/users/:id\` | No | — | Get a user by ID |
+| PUT | \`/users/:id\` | Yes | Yes | Update a user |
+| DELETE | \`/users/:id\` | Yes | Yes | Delete a user |
+| GET/POST | \`/_rpc/*\` | No | Excluded | RPC procedures |
+| GET | \`/docs\` | No | — | Swagger UI |
+| GET | \`/docs/openapi.json\` | No | — | OpenAPI 3.1 spec |
+
+### CSRF: why your first POST returns 403
+
+This template enables **double-submit cookie** CSRF protection. Every mutating
+request (POST/PUT/PATCH/DELETE) must send the CSRF token **twice** — as the
+\`_csrf\` cookie and as the \`x-csrf-token\` header — and the values must match.
+A plain \`curl -X POST /users\` has neither, so it gets \`403 CSRF token mismatch\`.
+
+The flow:
+
+1. Make a GET request first — the server sets the \`_csrf\` cookie.
+   (Use a non-excluded route like \`/users\`: CSRF-excluded paths such as
+   \`/health\` skip the plugin entirely and never set the cookie.)
+2. Echo that cookie value back in the \`x-csrf-token\` header on mutations.
+
+\`\`\`bash
+# 1. Get a CSRF token (a non-excluded GET sets the _csrf cookie)
+curl -s -c cookies.txt http://localhost:3000/users > /dev/null
+CSRF=$(awk '$6 == "_csrf" { print $7 }' cookies.txt)
+
+# 2. Send it back as BOTH cookie and header on mutating requests
+curl -X POST http://localhost:3000/users \\
+  -b cookies.txt -H "x-csrf-token: $CSRF" \\
+  -H 'content-type: application/json' \\
+  -d '{"name":"Ada","email":"ada@example.com"}'
+\`\`\`
+
+Browser clients: read \`document.cookie\`'s \`_csrf\` value (it is intentionally
+not HttpOnly) and send it as the \`x-csrf-token\` header.
+
+RPC endpoints under \`/_rpc/\` are excluded from CSRF checks (see
+\`src/plugins/security.ts\`) — note that core <=0.5.1 matches exclusions
+exactly, so each procedure path is listed there; add yours when you create
+new mutation procedures.
+
+### Auth: calling the JWT-protected routes
+
+\`PUT /users/:id\` and \`DELETE /users/:id\` require a Bearer token. In dev, mint
+one for the seeded demo user via the dev-only \`/auth/token\` route:
+
+\`\`\`bash
+# 1. Get a token (dev only — not registered when NODE_ENV=production)
+TOKEN=$(curl -s http://localhost:3000/auth/token | node -pe 'JSON.parse(require("fs").readFileSync(0)).token')
+
+# 2. CSRF token as above
+curl -s -c cookies.txt http://localhost:3000/users > /dev/null
+CSRF=$(awk '$6 == "_csrf" { print $7 }' cookies.txt)
+
+# 3. Call a protected route with Bearer auth + CSRF
+curl -X PUT http://localhost:3000/users/1 \\
+  -H "Authorization: Bearer $TOKEN" \\
+  -b cookies.txt -H "x-csrf-token: $CSRF" \\
+  -H 'content-type: application/json' \\
+  -d '{"name":"Renamed User"}'
+\`\`\`
+
+For production, replace \`/auth/token\` with a real login flow that verifies
+credentials and signs a token via \`app.jwt.sign({ sub: user.id, email: user.email })\`.
 
 ## Adding a New Route
 

@@ -1,6 +1,11 @@
 import { cors, createApp } from "@celsian/core";
 import { describe, expect, it } from "vitest";
-import { type CloudflareEnv, createCloudflareHandler, type ExecutionContext } from "../src/index.js";
+import {
+  type CloudflareEnv,
+  createCloudflareHandler,
+  type ExecutionContext,
+  type ScheduledController,
+} from "../src/index.js";
 
 function createMockEnv(bindings: Record<string, unknown> = {}): CloudflareEnv {
   return bindings;
@@ -187,5 +192,104 @@ describe("@celsian/adapter-cloudflare", () => {
     expect(response.status).toBe(204);
     expect(response.headers.get("access-control-allow-origin")).toBe("*");
     expect(response.headers.get("access-control-allow-methods")).toBeTruthy();
+  });
+});
+
+describe("@celsian/adapter-cloudflare (scheduled / Cron Triggers)", () => {
+  function createController(cron: string): ScheduledController {
+    return { cron, scheduledTime: Date.now(), noRetry: () => {} };
+  }
+
+  it("should expose a scheduled handler alongside fetch", () => {
+    const app = createApp();
+    const handler = createCloudflareHandler(app);
+    expect(typeof handler.fetch).toBe("function");
+    expect(typeof handler.scheduled).toBe("function");
+  });
+
+  it("should keep object-spread backward compatibility", () => {
+    const app = createApp();
+    const spread = { ...createCloudflareHandler(app) };
+    expect(typeof spread.fetch).toBe("function");
+    expect(typeof spread.scheduled).toBe("function");
+  });
+
+  it("should fire a registered cron job from a Cron Trigger", async () => {
+    const app = createApp();
+    let ran = 0;
+    app.cron("cleanup", "0 3 * * *", async () => {
+      ran++;
+    });
+
+    const handler = createCloudflareHandler(app);
+    await handler.scheduled(createController("0 3 * * *"), createMockEnv(), createMockCtx());
+
+    expect(ran).toBe(1);
+  });
+
+  it("should only run jobs matching the trigger's cron expression", async () => {
+    const app = createApp();
+    const runs: string[] = [];
+    app.cron("hourly", "0 * * * *", () => {
+      runs.push("hourly");
+    });
+    app.cron("nightly", "0 3 * * *", () => {
+      runs.push("nightly");
+    });
+
+    const handler = createCloudflareHandler(app);
+    await handler.scheduled(createController("0 3 * * *"), createMockEnv(), createMockCtx());
+
+    expect(runs).toEqual(["nightly"]);
+  });
+
+  it("should match cron expressions ignoring extra whitespace", async () => {
+    const app = createApp();
+    let ran = 0;
+    app.cron("spaced", "*/5 * * * *", () => {
+      ran++;
+    });
+
+    const handler = createCloudflareHandler(app);
+    await handler.scheduled(createController("  */5  * * *  * "), createMockEnv(), createMockCtx());
+
+    expect(ran).toBe(1);
+  });
+
+  it("should run all jobs when the trigger matches no specific schedule", async () => {
+    const app = createApp();
+    const runs: string[] = [];
+    app.cron("a", "0 1 * * *", () => {
+      runs.push("a");
+    });
+    app.cron("b", "0 2 * * *", () => {
+      runs.push("b");
+    });
+
+    const handler = createCloudflareHandler(app);
+    // Single wrangler trigger driving all app.cron jobs
+    await handler.scheduled(createController("* * * * *"), createMockEnv(), createMockCtx());
+
+    expect(runs.sort()).toEqual(["a", "b"]);
+  });
+
+  it("should not throw when no cron jobs are registered", async () => {
+    const app = createApp();
+    const handler = createCloudflareHandler(app);
+    await expect(
+      handler.scheduled(createController("* * * * *"), createMockEnv(), createMockCtx()),
+    ).resolves.toBeUndefined();
+  });
+
+  it("should surface cron job failures", async () => {
+    const app = createApp();
+    app.cron("boom", "0 3 * * *", () => {
+      throw new Error("boom");
+    });
+
+    const handler = createCloudflareHandler(app);
+    await expect(handler.scheduled(createController("0 3 * * *"), createMockEnv(), createMockCtx())).rejects.toThrow(
+      /cron job\(s\) failed/,
+    );
   });
 });

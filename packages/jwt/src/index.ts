@@ -34,6 +34,27 @@ interface ResolvedJWTConfig {
   algorithms: string[];
 }
 
+/** Minimum recommended HMAC secret length in bytes (RFC 7518 §3.2: HS256 keys must be >= 256 bits). */
+const MIN_HMAC_SECRET_BYTES = 32;
+
+/**
+ * Warn (without throwing — non-breaking) when an HS* secret is shorter than
+ * 32 bytes. Short HMAC secrets can be brute-forced offline from any captured
+ * token. Deliberately uses console.warn rather than the app logger: the
+ * default Celsian logger is a silent no-op, and a security warning must not
+ * be swallowed.
+ */
+function warnIfWeakHmacSecret(secretKey: Uint8Array, algorithms: string[]): void {
+  if (secretKey.byteLength < MIN_HMAC_SECRET_BYTES && algorithms.some((alg) => alg.startsWith("HS"))) {
+    console.warn(
+      `[@celsian/jwt] The configured HS* secret is only ${secretKey.byteLength} bytes. ` +
+        `HMAC secrets should be at least ${MIN_HMAC_SECRET_BYTES} bytes (256 bits) of random data — ` +
+        "short secrets can be brute-forced offline from a captured token. Generate one with: " +
+        `node -e "console.log(crypto.randomBytes(${MIN_HMAC_SECRET_BYTES}).toString('hex'))"`,
+    );
+  }
+}
+
 // Per-app config storage — avoids module-scope leakage while supporting createJWTGuard() without args.
 // Keyed by the PluginContext (app) the JWT plugin was registered on, so each app's secret/algorithms
 // stay isolated even when multiple CelsianApp instances exist in the same process.
@@ -60,6 +81,7 @@ export interface JWTNamespace {
 export function jwt(options: JWTOptions): PluginFunction {
   const algorithms = options.algorithms ?? ["HS256"];
   const secretKey = new TextEncoder().encode(options.secret);
+  warnIfWeakHmacSecret(secretKey, algorithms);
 
   return function jwtPlugin(app) {
     const resolved: ResolvedJWTConfig = { secretKey, algorithms };
@@ -123,6 +145,7 @@ export function createJWTGuard(options?: JWTOptions): HookHandler {
   if (options) {
     const algorithms = options.algorithms ?? ["HS256"];
     const secretKey = new TextEncoder().encode(options.secret);
+    warnIfWeakHmacSecret(secretKey, algorithms);
 
     const guard: HookHandler<void | Response> = async (request: CelsianRequest, reply: CelsianReply) => {
       const auth = request.headers.get("authorization");

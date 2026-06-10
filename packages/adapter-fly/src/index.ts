@@ -47,7 +47,7 @@ export interface DeployAdapter {
 /**
  * Create a Fly.io deployment adapter.
  *
- * Usage in then.config.ts:
+ * Usage in celsian.config.ts:
  * ```ts
  * import { flyAdapter } from '@celsian/adapter-fly';
  *

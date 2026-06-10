@@ -94,3 +94,52 @@ describe("createReply", () => {
     expect(response.status).toBe(201);
   });
 });
+
+describe("binary send (CORE-09)", () => {
+  it("sends Uint8Array as raw bytes with application/octet-stream", async () => {
+    const reply = createReply();
+    const bytes = new Uint8Array([137, 80, 78, 71]);
+    const response = reply.send(bytes);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/octet-stream");
+    const body = new Uint8Array(await response.arrayBuffer());
+    expect(Array.from(body)).toEqual([137, 80, 78, 71]);
+  });
+
+  it("sends Node Buffer (a Uint8Array subclass) as raw bytes", async () => {
+    const reply = createReply();
+    const buf = Buffer.from([1, 2, 3]);
+    const response = reply.send(buf);
+
+    expect(response.headers.get("content-type")).toBe("application/octet-stream");
+    const body = new Uint8Array(await response.arrayBuffer());
+    expect(Array.from(body)).toEqual([1, 2, 3]);
+  });
+
+  it("sends ArrayBuffer as raw bytes", async () => {
+    const reply = createReply();
+    const ab = new Uint8Array([9, 8, 7]).buffer;
+    const response = reply.send(ab);
+
+    expect(response.headers.get("content-type")).toBe("application/octet-stream");
+    const body = new Uint8Array(await response.arrayBuffer());
+    expect(Array.from(body)).toEqual([9, 8, 7]);
+  });
+
+  it("respects an explicitly set content-type for binary sends", async () => {
+    const reply = createReply();
+    const response = reply.header("content-type", "image/png").send(new Uint8Array([137, 80]));
+
+    expect(response.headers.get("content-type")).toBe("image/png");
+    const body = new Uint8Array(await response.arrayBuffer());
+    expect(Array.from(body)).toEqual([137, 80]);
+  });
+
+  it("still JSON-stringifies plain objects", async () => {
+    const reply = createReply();
+    const response = reply.send({ a: 1 });
+    expect(response.headers.get("content-type")).toBe("application/json; charset=utf-8");
+    expect(await response.json()).toEqual({ a: 1 });
+  });
+});

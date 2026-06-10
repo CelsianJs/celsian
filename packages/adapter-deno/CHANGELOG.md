@@ -1,5 +1,12 @@
 # @celsian/adapter-deno
 
+## 0.5.1
+
+### Patch Changes
+
+- Updated dependencies [0c69589]
+  - @celsian/core@0.5.1
+
 ## 1.0.0
 
 ### Minor Changes

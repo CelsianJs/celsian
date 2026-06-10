@@ -6,8 +6,16 @@ on:
   pull_request:
     branches: [main]
 
+# Cancel superseded runs for the same branch/PR — without this, stale runs
+# can sit queued/running indefinitely (one run previously sat for 25 hours).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # Skip husky's prepare-time hook install in CI (no commits happen here).
+  HUSKY: 0
 
 jobs:
   test:
@@ -28,6 +36,12 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+
+      - name: Bundle size budget (size-limit)
+        # Budgets live in .size-limit.mjs (~20% above measured). Run once.
+        if: matrix.node-version == 22
+        run: pnpm size
+
       - run: pnpm test -- --coverage --coverage.reporter=text --coverage.reporter=json-summary
 
       - name: Check coverage threshold
@@ -110,9 +124,13 @@ jobs:
       - run: pnpm build
 
       - name: Run core tests with Bun
-        # Non-blocking: minor Bun/Node stack trace differences cause 1-2 test failures.
-        # This is informational until Bun compat is fully resolved.
-        continue-on-error: true
+        # Blocking. The lone historical failure was NOT a Bun incompatibility:
+        # vitest.config.ts sets NODE_ENV=development for the Node test runs,
+        # but `bun test` doesn't read vitest config, so the dev-mode stack
+        # assertion in errors.test.ts failed under Bun. Mirroring the env here
+        # makes the runs equivalent — verified locally: 483/483 pass on Bun.
+        env:
+          NODE_ENV: development
         run: cd packages/core && bun test
 
   # Deno smoke test — verifies the Deno adapter type-checks under Deno
@@ -143,11 +161,41 @@ jobs:
         working-directory: packages/adapter-deno
         run: deno run -A deno-smoke.ts
 
+  # workerd smoke test — boots the built @celsian/adapter-cloudflare in the
+  # real workerd runtime via `wrangler dev` and asserts a 200 response.
+  test-workerd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # The smoke script runs wrangler via `npx --yes wrangler@4`; cache the
+      # npm/npx download so repeat runs don't re-fetch workerd (~60 MB).
+      - name: Cache npx wrangler
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npx-wrangler-4-${{ runner.os }}
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: Smoke-test the Cloudflare adapter on workerd
+        # Boots scripts/workerd-smoke-worker.mjs (real built dist of core +
+        # adapter-cloudflare) on workerd and asserts GET /health -> 200.
+        run: node scripts/workerd-smoke.mjs
+
   # Final gate — all required checks must pass before this reports success.
   # Use this as the single required status check in branch protection.
   ci-passed:
     if: always()
-    needs: [test, lint]
+    needs: [test, lint, test-bun, test-deno, test-workerd]
     runs-on: ubuntu-latest
     steps:
       - name: Check all jobs passed
@@ -158,6 +206,18 @@ jobs:
           fi
           if [[ "${{ needs.lint.result }}" != "success" ]]; then
             echo "❌ lint failed"
+            exit 1
+          fi
+          if [[ "${{ needs.test-bun.result }}" != "success" ]]; then
+            echo "❌ test-bun failed"
+            exit 1
+          fi
+          if [[ "${{ needs.test-deno.result }}" != "success" ]]; then
+            echo "❌ test-deno failed"
+            exit 1
+          fi
+          if [[ "${{ needs.test-workerd.result }}" != "success" ]]; then
+            echo "❌ test-workerd failed"
             exit 1
           fi
           echo "✅ All CI checks passed"

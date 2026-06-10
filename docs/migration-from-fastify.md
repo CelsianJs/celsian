@@ -110,16 +110,18 @@ Celsian uses `decorate()` at the app level. Decorations are scoped by the encaps
 
 Both frameworks use a hook-based lifecycle. The mapping:
 
-| Fastify Hook      | Celsian Hook   | Purpose                                    |
-|-------------------|----------------|--------------------------------------------|
-| `onRequest`       | `onRequest`    | First hook after request received           |
-| `preParsing`      | _(none)_       | Before body parsing                         |
-| `preValidation`   | _(none)_       | Before schema validation                    |
-| `preHandler`      | `preHandler`   | After validation, before handler            |
-| `preSerialization`| _(none)_       | Before response serialization               |
-| `onSend`          | `onSend`       | Before response is sent (can modify)        |
-| `onResponse`      | `onResponse`   | After response sent (fire-and-forget)       |
-| `onError`         | `onError`      | When an error occurs                        |
+| Fastify Hook      | Celsian Hook        | Purpose                                    |
+|-------------------|---------------------|--------------------------------------------|
+| `onRequest`       | `onRequest`         | First hook after request received           |
+| `preParsing`      | `preParsing`        | Before body parsing                         |
+| `preValidation`   | `preValidation`     | Before schema validation                    |
+| `preHandler`      | `preHandler`        | After validation, before handler            |
+| `preSerialization`| `preSerialization`  | Before response serialization               |
+| `onSend`          | `onSend`            | Before response is sent (can modify)        |
+| `onResponse`      | `onResponse`        | After response sent (fire-and-forget)       |
+| `onError`         | `onError`           | When an error occurs                        |
+
+Celsian implements the same 8-hook lifecycle as Fastify; every hook name maps one-to-one.
 
 **Fastify:**
 
@@ -197,7 +199,9 @@ app.post("/users", {
     }),
   },
 }, async (req) => {
-  return createUser(req.body); // body is typed as { name: string; email: string }
+  // Validated body is on req.parsedBody (typed as { name: string; email: string }).
+  // The raw, unparsed Web Request body stream is req.body.
+  return createUser(req.parsedBody);
 });
 ```
 
@@ -224,7 +228,9 @@ fastify.setErrorHandler((error, request, reply) => {
 ```typescript
 app.setErrorHandler((error, request, reply) => {
   if (error instanceof ValidationError) {
-    return reply.json({ errors: error.issues }, 422);
+    // Set the status with .status(); reply.json() takes only the body —
+    // a second argument is silently ignored.
+    return reply.status(422).json({ errors: error.issues });
   }
   return reply.internalServerError();
 });
@@ -269,11 +275,13 @@ const response = await app.inject({
   headers: { authorization: "Bearer token123" },
 });
 
-expect(response.statusCode).toBe(200);
-expect(response.json()).toEqual({ id: 1, name: "Alice" });
+// Celsian's inject() resolves to a standard Web Response:
+// use response.status (a number) and await response.json().
+expect(response.status).toBe(200);
+expect(await response.json()).toEqual({ id: 1, name: "Alice" });
 ```
 
-Both use a fake HTTP injection approach -- no real server needed for unit tests.
+Both use a fake HTTP injection approach -- no real server needed for unit tests. The key difference: Fastify returns a custom response object (`statusCode`, synchronous `.json()`), while Celsian returns a Web `Response` (`status`, `await .json()`).
 
 ## JWT Authentication
 
@@ -334,12 +342,13 @@ await serve(app, { port: 3000 });
 export default { fetch: app.fetch };
 
 // AWS Lambda
-import { lambdaHandler } from "@celsian/adapter-lambda";
-export const handler = lambdaHandler(app);
+import { createLambdaHandler } from "@celsian/adapter-lambda";
+export const handler = createLambdaHandler(app);
 
 // Vercel Edge
-import { vercelHandler } from "@celsian/adapter-vercel";
-export default vercelHandler(app);
+import { createVercelEdgeHandler } from "@celsian/adapter-vercel";
+export default createVercelEdgeHandler(app);
+// (Vercel Serverless functions use createVercelHandler.)
 ```
 
 Celsian is built on Web Standard APIs (`Request`/`Response`), so `app.fetch` works anywhere the Fetch API is available.
@@ -371,7 +380,7 @@ Being honest about trade-offs:
 5. Replace `@fastify/cors` with `app.register(cors())`
 6. Replace `@fastify/helmet` with `app.register(security())`
 7. Replace `@fastify/rate-limit` with `@celsian/rate-limit`
-8. Replace `reply.code(n).send(data)` with `reply.json(data, n)` or return data directly
+8. Replace `reply.code(n).send(data)` with `reply.status(n).json(data)` or return data directly
 9. Update error handling to use `HttpError` / `ValidationError`
 10. Update test imports -- `inject()` API is the same
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { procedure } from "../src/procedure.js";
 import { RPCHandler, router } from "../src/router.js";
 import { encode } from "../src/wire.js";
@@ -142,17 +142,22 @@ describe("RPCHandler", () => {
   });
 
   it("should handle errors in handlers", async () => {
-    const routes = router({
-      fail: procedure.query(async () => {
-        throw new Error("Boom");
-      }),
-    });
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const routes = router({
+        fail: procedure.query(async () => {
+          throw new Error("Boom");
+        }),
+      });
 
-    const handler = new RPCHandler(routes);
-    const response = await handler.handle(new Request("http://localhost/_rpc/fail"));
-    expect(response.status).toBe(500);
-    const body = await response.json();
-    expect(body.error.message).toBe("Boom");
+      const handler = new RPCHandler(routes);
+      const response = await handler.handle(new Request("http://localhost/_rpc/fail"));
+      expect(response.status).toBe(500);
+      const body = await response.json();
+      expect(body.error.message).toBe("Boom");
+    } finally {
+      consoleSpy.mockRestore();
+    }
   });
 
   it("should validate input with schema", async () => {
@@ -198,5 +203,78 @@ describe("RPCHandler", () => {
     expect(invalid.status).toBe(400);
     const body = await invalid.json();
     expect(body.error.code).toBe("VALIDATION_ERROR");
+  });
+});
+
+describe("RPCHandler production error sanitization", () => {
+  it("sanitizes unexpected (5xx) error details in production and logs server-side", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const routes = router({
+        fail: procedure.query(async () => {
+          throw new Error("db password hunter2 at /srv/app/db.ts:42");
+        }),
+      });
+
+      const handler = new RPCHandler(routes);
+      const response = await handler.handle(new Request("http://localhost/_rpc/fail"));
+      expect(response.status).toBe(500);
+      const body = await response.json();
+      // Internals must NOT leak to clients in production.
+      expect(body.error.message).toBe("Internal error");
+      expect(body.error.code).toBe("INTERNAL_ERROR");
+      expect(JSON.stringify(body)).not.toContain("hunter2");
+      // Full detail is always logged server-side.
+      expect(consoleSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      consoleSpy.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("passes through intentional HTTP-style errors (statusCode < 500) in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    try {
+      const routes = router({
+        forbidden: procedure.query(async () => {
+          const err = new Error("You shall not pass") as Error & { statusCode: number; code: string };
+          err.statusCode = 403;
+          err.code = "FORBIDDEN";
+          throw err;
+        }),
+      });
+
+      const handler = new RPCHandler(routes);
+      const response = await handler.handle(new Request("http://localhost/_rpc/forbidden"));
+      expect(response.status).toBe(403);
+      const body = await response.json();
+      expect(body.error.message).toBe("You shall not pass");
+      expect(body.error.code).toBe("FORBIDDEN");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("keeps full error details in development (non-production)", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const routes = router({
+        fail: procedure.query(async () => {
+          const err = new Error("Detailed dev error") as Error & { code: string };
+          err.code = "CUSTOM_CODE";
+          throw err;
+        }),
+      });
+
+      const handler = new RPCHandler(routes);
+      const response = await handler.handle(new Request("http://localhost/_rpc/fail"));
+      expect(response.status).toBe(500);
+      const body = await response.json();
+      expect(body.error.message).toBe("Detailed dev error");
+      expect(body.error.code).toBe("CUSTOM_CODE");
+    } finally {
+      consoleSpy.mockRestore();
+    }
   });
 });

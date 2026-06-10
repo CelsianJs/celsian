@@ -1,6 +1,6 @@
 {
   "name": "celsian-monorepo",
-  "version": "0.3.18",
+  "version": "0.5.2",
   "private": true,
   "type": "module",
   "scripts": {
@@ -21,11 +21,28 @@
     "verify:registry": "node scripts/verify-registry-install.mjs",
     "assert:release-private": "node scripts/assert-release-private.mjs",
     "assert:public-metadata": "node scripts/assert-public-metadata.mjs",
-    "docs": "typedoc"
+    "docs": "typedoc",
+    "size": "size-limit",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*": "biome check --write --no-errors-on-unmatched --files-ignore-unknown=true"
+  },
+  "pnpm": {
+    "overrides": {
+      "qs@<6.15.2": "^6.15.2",
+      "path-to-regexp@>=8.0.0 <8.4.0": "^8.4.0",
+      "fast-uri@<3.1.2": "^3.1.2",
+      "hyperid@<4.0.0": "^4.0.0"
+    }
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.9",
     "@changesets/cli": "^2.30.0",
+    "@size-limit/preset-small-lib": "^12.1.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.7",
+    "size-limit": "^12.1.0",
     "@sinclair/typebox": "^0.34.0",
     "@types/autocannon": "^7.12.7",
     "@types/node": "^25.5.2",

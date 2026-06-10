@@ -4,7 +4,7 @@ export type { RPCClientOptions } from "./client.js";
 export { createRPCClient, RPCError } from "./client.js";
 export { generateOpenAPI } from "./openapi.js";
 export { createProcedure, procedure } from "./procedure.js";
-export { RPCHandler, router } from "./router.js";
+export { RPCHandler, type RPCMountTarget, router } from "./router.js";
 
 export type {
   ContextFactory,

@@ -24,32 +24,49 @@ export function defineConfig(config: CelsianConfig): CelsianConfig {
   return config;
 }
 
-const DEFAULT_CONFIG: CelsianConfig = {
-  server: {
-    port: 3000,
-    host: "localhost",
-    trustProxy: false,
-  },
-  schema: {
-    provider: "auto",
-  },
-};
+/**
+ * Resolve the default bind host.
+ *
+ * Honors `process.env.HOST` first. Otherwise binds `0.0.0.0` in production
+ * (containers — Docker/Fly/Railway — must accept external connections) and
+ * `localhost` in development (avoid exposing the dev server on the LAN).
+ */
+export function defaultHost(): string {
+  const envHost = typeof process !== "undefined" ? process.env?.HOST : undefined;
+  if (envHost) return envHost;
+  const nodeEnv = typeof process !== "undefined" ? process.env?.NODE_ENV : undefined;
+  return nodeEnv === "production" ? "0.0.0.0" : "localhost";
+}
+
+function buildDefaultConfig(): CelsianConfig {
+  return {
+    server: {
+      port: 3000,
+      host: defaultHost(),
+      trustProxy: false,
+    },
+    schema: {
+      provider: "auto",
+    },
+  };
+}
 
 export async function loadConfig(root: string = process.cwd()): Promise<CelsianConfig> {
   const configFiles = ["celsian.config.ts", "celsian.config.js", "celsian.config.mjs"];
+  const defaults = buildDefaultConfig();
 
   for (const file of configFiles) {
     const configPath = `${root}/${file}`;
     try {
       const mod = await import(configPath);
       const userConfig = mod.default || mod;
-      return mergeConfig(DEFAULT_CONFIG, userConfig);
+      return mergeConfig(defaults, userConfig);
     } catch {
       // File doesn't exist, try next
     }
   }
 
-  return { ...DEFAULT_CONFIG };
+  return defaults;
 }
 
 function mergeConfig(base: CelsianConfig, override: CelsianConfig): CelsianConfig {

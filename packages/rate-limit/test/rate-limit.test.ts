@@ -190,6 +190,56 @@ describe("MemoryRateLimitStore", () => {
     store.destroy();
   });
 
+  it("enforces the maxKeys cap (spoofed-key floods cannot grow the store unboundedly)", async () => {
+    const store = new MemoryRateLimitStore({ maxKeys: 3 });
+
+    await store.increment("k1", 60_000);
+    await store.increment("k2", 60_000);
+    await store.increment("k3", 60_000);
+    await store.increment("k2", 60_000); // k2 → count 2
+
+    // 4th distinct key exceeds the cap → the oldest entry (k1) is evicted.
+    await store.increment("k4", 60_000);
+
+    // A surviving key kept its count (k2 → 3; existing-key increments don't evict).
+    const r2 = await store.increment("k2", 60_000);
+    expect(r2.count).toBe(3);
+
+    // k1 was evicted: incrementing it starts a fresh bucket (count 1).
+    // (This insert itself evicts the then-oldest key — the cap holds at 3.)
+    const r1 = await store.increment("k1", 60_000);
+    expect(r1.count).toBe(1);
+
+    store.destroy();
+  });
+
+  it("evicts expired entries before live ones when at the maxKeys cap", async () => {
+    const store = new MemoryRateLimitStore({ maxKeys: 3 });
+
+    await store.increment("expired-key", 1); // 1ms window
+    await store.increment("live-a", 60_000);
+    await store.increment("live-b", 60_000);
+    await store.increment("live-b", 60_000); // live-b → count 2
+
+    await new Promise((r) => setTimeout(r, 10)); // let expired-key expire
+
+    // At cap: the expired entry is evicted, not the live ones.
+    await store.increment("new-key", 60_000);
+
+    const a = await store.increment("live-a", 60_000);
+    expect(a.count).toBe(2); // survived
+
+    const b = await store.increment("live-b", 60_000);
+    expect(b.count).toBe(3); // survived
+
+    store.destroy();
+  });
+
+  it("throws CelsianError for invalid maxKeys", () => {
+    expect(() => new MemoryRateLimitStore({ maxKeys: 0 })).toThrow(CelsianError);
+    expect(() => new MemoryRateLimitStore({ maxKeys: Number.NaN })).toThrow(CelsianError);
+  });
+
   it("should call unref on cleanup timer", () => {
     const unrefSpy = vi.fn();
     const originalSetInterval = globalThis.setInterval;
@@ -208,7 +258,7 @@ describe("MemoryRateLimitStore", () => {
 });
 
 describe("rate-limit XFF key generation", () => {
-  it("should use the leftmost (client) IP from X-Forwarded-For when trustProxy is true", async () => {
+  it("keys by the rightmost X-Forwarded-For entry (appended by the trusted proxy) by default", async () => {
     const app = createApp();
     await app.register(
       rateLimit({
@@ -221,32 +271,134 @@ describe("rate-limit XFF key generation", () => {
 
     app.get("/api", (_req, reply) => reply.json({ ok: true }));
 
-    // First two requests from the same client IP "10.0.0.1" should count
+    // With trustedProxyHops=1 (default), the LAST entry is what the single
+    // trusted proxy appended — the real client IP "10.0.0.1".
     const r1 = await app.inject({
       url: "/api",
-      headers: { "x-forwarded-for": "10.0.0.1, proxy1, proxy2" },
+      headers: { "x-forwarded-for": "spoofed-a, 10.0.0.1" },
     });
     expect(r1.status).toBe(200);
 
     const r2 = await app.inject({
       url: "/api",
-      headers: { "x-forwarded-for": "10.0.0.1, different-proxy, proxy3" },
+      headers: { "x-forwarded-for": "spoofed-b, 10.0.0.1" },
     });
     expect(r2.status).toBe(200);
 
-    // Third request from same client IP should be blocked
+    // Third request from same real client IP should be blocked
     const r3 = await app.inject({
       url: "/api",
-      headers: { "x-forwarded-for": "10.0.0.1, another-proxy, proxy4" },
+      headers: { "x-forwarded-for": "spoofed-c, 10.0.0.1" },
     });
     expect(r3.status).toBe(429);
 
-    // Different client IP should NOT be blocked
+    // Different real client IP should NOT be blocked
     const r4 = await app.inject({
       url: "/api",
-      headers: { "x-forwarded-for": "192.168.1.1, proxy1, proxy2" },
+      headers: { "x-forwarded-for": "spoofed-a, 192.168.1.1" },
     });
     expect(r4.status).toBe(200);
+  });
+
+  it("SECURITY regression: rotating leftmost XFF values cannot bypass the limit", async () => {
+    const app = createApp();
+    await app.register(
+      rateLimit({
+        max: 3,
+        window: 60_000,
+        trustProxy: true,
+        trustedProxyHops: 1,
+      }),
+      { encapsulate: false },
+    );
+
+    app.get("/api", (_req, reply) => reply.json({ ok: true }));
+
+    // Attacker sends a unique fake IP on the LEFT of every request, but the
+    // trusted proxy always appends the real client IP on the RIGHT. Before the
+    // fix, the leftmost value was keyed → every request got a fresh bucket and
+    // the limiter was fully bypassed.
+    const statuses: number[] = [];
+    for (let i = 0; i < 10; i++) {
+      const res = await app.inject({
+        url: "/api",
+        headers: { "x-forwarded-for": `1.2.3.${i}, fake-${i}, 203.0.113.7` },
+      });
+      statuses.push(res.status);
+    }
+
+    expect(statuses.filter((s) => s === 200).length).toBe(3);
+    expect(statuses.filter((s) => s === 429).length).toBe(7);
+  });
+
+  it("respects trustedProxyHops > 1 (keys N entries from the right)", async () => {
+    const app = createApp();
+    await app.register(
+      rateLimit({
+        max: 1,
+        window: 60_000,
+        trustProxy: true,
+        trustedProxyHops: 2,
+      }),
+      { encapsulate: false },
+    );
+
+    app.get("/api", (_req, reply) => reply.json({ ok: true }));
+
+    // Two trusted proxies: the client IP is the second entry from the right.
+    const r1 = await app.inject({
+      url: "/api",
+      headers: { "x-forwarded-for": "spoofed, 10.0.0.9, proxy-inner" },
+    });
+    expect(r1.status).toBe(200);
+
+    // Same client IP (second from right) → limited, even though the leftmost differs.
+    const r2 = await app.inject({
+      url: "/api",
+      headers: { "x-forwarded-for": "other-spoof, 10.0.0.9, proxy-inner" },
+    });
+    expect(r2.status).toBe(429);
+
+    // Different client IP (second from right) → separate bucket.
+    const r3 = await app.inject({
+      url: "/api",
+      headers: { "x-forwarded-for": "spoofed, 10.0.0.10, proxy-inner" },
+    });
+    expect(r3.status).toBe(200);
+  });
+
+  it("clamps to the leftmost entry when trustedProxyHops covers the whole list", async () => {
+    const app = createApp();
+    await app.register(
+      rateLimit({
+        max: 1,
+        window: 60_000,
+        trustProxy: true,
+        trustedProxyHops: 5,
+      }),
+      { encapsulate: false },
+    );
+
+    app.get("/api", (_req, reply) => reply.json({ ok: true }));
+
+    // Only 2 entries but 5 trusted hops: every entry was appended by a trusted
+    // proxy, so index clamps to 0 (the true client as seen by the outermost proxy).
+    const r1 = await app.inject({
+      url: "/api",
+      headers: { "x-forwarded-for": "10.0.0.1, proxy-inner" },
+    });
+    expect(r1.status).toBe(200);
+
+    const r2 = await app.inject({
+      url: "/api",
+      headers: { "x-forwarded-for": "10.0.0.1, proxy-inner" },
+    });
+    expect(r2.status).toBe(429);
+  });
+
+  it("throws CelsianError for invalid trustedProxyHops", () => {
+    expect(() => rateLimit({ max: 10, window: 60_000, trustProxy: true, trustedProxyHops: 0 })).toThrow(CelsianError);
+    expect(() => rateLimit({ max: 10, window: 60_000, trustProxy: true, trustedProxyHops: 1.5 })).toThrow(CelsianError);
   });
 
   it("fails closed: unidentified clients (trustProxy, no proxy headers) share one bucket", async () => {
@@ -272,6 +424,25 @@ describe("rate-limit XFF key generation", () => {
     // First 2 pass, the rest are limited (they all share the "anonymous" bucket).
     expect(statuses.filter((s) => s === 200).length).toBe(2);
     expect(statuses.filter((s) => s === 429).length).toBe(8);
+  });
+
+  it("fails closed: throws CelsianError when `window` is missing/NaN/non-positive", () => {
+    // A NaN/undefined window makes resetAt NaN → every request sees a "fresh"
+    // bucket and the limiter silently fails OPEN. Must throw at registration.
+    expect(() => rateLimit({ max: 10, window: undefined as unknown as number, keyGenerator: () => "k" })).toThrow(
+      CelsianError,
+    );
+    expect(() => rateLimit({ max: 10, window: Number.NaN, keyGenerator: () => "k" })).toThrow(CelsianError);
+    expect(() => rateLimit({ max: 10, window: 0, keyGenerator: () => "k" })).toThrow(CelsianError);
+    expect(() => rateLimit({ max: 10, window: -1, keyGenerator: () => "k" })).toThrow(CelsianError);
+  });
+
+  it("fails closed: throws CelsianError when `max` is missing/NaN/non-positive", () => {
+    expect(() => rateLimit({ max: undefined as unknown as number, window: 60_000, keyGenerator: () => "k" })).toThrow(
+      CelsianError,
+    );
+    expect(() => rateLimit({ max: Number.NaN, window: 60_000, keyGenerator: () => "k" })).toThrow(CelsianError);
+    expect(() => rateLimit({ max: 0, window: 60_000, keyGenerator: () => "k" })).toThrow(CelsianError);
   });
 
   it("should throw CelsianError when trustProxy is false and no keyGenerator provided", () => {

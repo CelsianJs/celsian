@@ -2,6 +2,7 @@
 
 import { type CookieOptions, serializeCookie } from "./cookie.js";
 import { CelsianError } from "./errors.js";
+import { fastResponse } from "./fast-response.js";
 import type { CelsianReply } from "./types.js";
 
 const MIME_TYPES: Record<string, string> = {
@@ -71,62 +72,48 @@ export function createReply(): CelsianReply {
       if (data instanceof Response) {
         return data;
       }
-      // No-body status codes (204, 304) — ignore data
-      if (statusCode === 204 || statusCode === 304) {
-        return new Response(null, {
-          status: statusCode,
-          headers: setCookies.length === 0 ? headers : buildHeaders(headers),
-        });
-      }
-      if (data === null || data === undefined) {
-        return new Response(null, {
-          status: statusCode,
-          headers: setCookies.length === 0 ? headers : buildHeaders(headers),
-        });
+      // No-body status codes (204, 304) or empty data — no content-type added
+      if (statusCode === 204 || statusCode === 304 || data === null || data === undefined) {
+        return fastResponse(null, statusCode, { ...headers }, setCookies);
       }
       if (typeof data === "string") {
-        const h = { "content-type": "text/plain; charset=utf-8", ...headers };
-        return new Response(data, {
-          status: statusCode,
-          headers: setCookies.length === 0 ? h : buildHeaders(h),
-        });
+        return fastResponse(data, statusCode, { "content-type": "text/plain; charset=utf-8", ...headers }, setCookies);
       }
-      const h = { "content-type": "application/json; charset=utf-8", ...headers };
-      return new Response(JSON.stringify(data), {
-        status: statusCode,
-        headers: setCookies.length === 0 ? h : buildHeaders(h),
-      });
+      // Binary payloads (Uint8Array covers Node Buffer) — send raw bytes, never
+      // JSON.stringify (which would produce {"0":137,...}). Default content-type
+      // is application/octet-stream; an explicitly set content-type header wins.
+      if (data instanceof Uint8Array) {
+        return fastResponse(data, statusCode, { "content-type": "application/octet-stream", ...headers }, setCookies);
+      }
+      if (data instanceof ArrayBuffer) {
+        return fastResponse(
+          new Uint8Array(data),
+          statusCode,
+          { "content-type": "application/octet-stream", ...headers },
+          setCookies,
+        );
+      }
+      return fastResponse(
+        JSON.stringify(data),
+        statusCode,
+        { "content-type": "application/json; charset=utf-8", ...headers },
+        setCookies,
+      );
     },
 
     html(content: string): Response {
       sent = true;
-      const h = { "content-type": "text/html; charset=utf-8", ...headers };
-      return new Response(content, {
-        status: statusCode,
-        headers: setCookies.length === 0 ? h : buildHeaders(h),
-      });
+      return fastResponse(content, statusCode, { "content-type": "text/html; charset=utf-8", ...headers }, setCookies);
     },
 
     json(data: unknown): Response {
       sent = true;
-      const body = JSON.stringify(data);
-      // Fast path: no cookies set — use plain object headers (avoids new Headers())
-      if (setCookies.length === 0) {
-        return new Response(body, {
-          status: statusCode,
-          headers: {
-            "content-type": "application/json; charset=utf-8",
-            ...headers,
-          },
-        });
-      }
-      return new Response(body, {
-        status: statusCode,
-        headers: buildHeaders({
-          "content-type": "application/json; charset=utf-8",
-          ...headers,
-        }),
-      });
+      return fastResponse(
+        JSON.stringify(data),
+        statusCode,
+        { "content-type": "application/json; charset=utf-8", ...headers },
+        setCookies,
+      );
     },
 
     stream(readable: ReadableStream): Response {

@@ -2,6 +2,7 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { CelsianApp } from "./app.js";
+import { getFastPayload } from "./fast-response.js";
 
 /** Options for `serve()` -- port, host, static files, graceful shutdown. */
 export interface ServeOptions {
@@ -16,6 +17,16 @@ export interface ServeOptions {
   onShutdown?: () => Promise<void> | void;
   /** Authenticate WebSocket upgrade requests. Return false or throw to reject. */
   onUpgrade?: (request: Request, pathname: string) => boolean | Promise<boolean>;
+  /**
+   * Node-only: socket-level timeout for receiving the entire request, in ms
+   * (`http.Server.requestTimeout`). Slowloris protection. Default: 60_000. Set 0 to disable.
+   */
+  requestTimeout?: number;
+  /**
+   * Node-only: socket-level timeout for receiving the complete request headers, in ms
+   * (`http.Server.headersTimeout`). Slowloris protection. Default: 30_000. Set 0 to disable.
+   */
+  headersTimeout?: number;
 }
 
 /** Handle returned by `serve()` for programmatic shutdown. */
@@ -38,7 +49,8 @@ export async function serve(app: CelsianApp, options: ServeOptions = {}): Promis
 
   // Load config file if present (options override config)
   let configPort = 3000;
-  let configHost = "0.0.0.0";
+  // Same default policy as loadConfig: HOST env, then 0.0.0.0 in production / localhost in dev
+  let configHost = process.env.HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "localhost");
   try {
     const { loadConfig } = await import("./config.js");
     const config = await loadConfig();
@@ -52,8 +64,9 @@ export async function serve(app: CelsianApp, options: ServeOptions = {}): Promis
   app.startWorker();
   app.startCron();
 
+  // Precedence (matches PORT): explicit option > env var > config file/default
   const port = options.port ?? parseInt(process.env.PORT || String(configPort), 10);
-  const host = options.host ?? configHost;
+  const host = options.host ?? (process.env.HOST || configHost);
 
   // Bun runtime detection
   if (typeof (globalThis as any).Bun !== "undefined") {
@@ -261,15 +274,53 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
 
       app.log.info("WebSocket upgrade handler enabled");
     } catch {
-      // 'ws' package not installed — WebSocket disabled for Node.js
+      // 'ws' package not installed — WebSocket routes would silently 404 otherwise
+      console.warn(
+        "[celsian] WebSocket routes are registered but the 'ws' package is not installed — " +
+          "WebSocket upgrades are disabled on Node.js. Install it with: npm install ws (or pnpm add ws).",
+      );
     }
   }
 
-  server.listen(port, host, () => {
-    app.log.info(`Server running at http://${host}:${port}`);
-    console.log(`[celsian] Server running at http://${host}:${port}`);
-    options.onReady?.({ port, host });
+  // Slowloris posture: cap how long a client may take to send headers / the full request.
+  // 0 disables the corresponding timeout (Node semantics).
+  server.requestTimeout = options.requestTimeout ?? 60_000;
+  server.headersTimeout = options.headersTimeout ?? 30_000;
+
+  // Resolve only after the server is actually listening (avoids ECONNREFUSED race),
+  // and report the REAL bound address/port (port 0 → OS-assigned).
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, host, () => {
+      server.removeListener("error", reject);
+      resolve();
+    });
   });
+
+  const addr = server.address();
+  const boundAddress = addr !== null && typeof addr === "object" ? addr.address : host;
+  const boundPort = addr !== null && typeof addr === "object" ? addr.port : port;
+  const boundFamily = addr !== null && typeof addr === "object" ? addr.family : "";
+  const displayHost = boundAddress.includes(":") ? `[${boundAddress}]` : boundAddress;
+  // When binding a hostname (e.g. "localhost"), show which family it resolved to.
+  const familyNote =
+    host !== boundAddress && boundFamily ? ` ("${host}" resolved to ${boundFamily} ${boundAddress})` : "";
+
+  app.log.info(`Server running at http://${displayHost}:${boundPort}${familyNote}`);
+  console.log(`[celsian] Server running at http://${displayHost}:${boundPort}${familyNote}`);
+
+  // Loopback binds are unreachable from outside a container — almost always a
+  // misconfiguration in production (Docker/Fly/Railway health checks fail).
+  const LOOPBACK = new Set(["127.0.0.1", "::1", "localhost"]);
+  if (process.env.NODE_ENV === "production" && (LOOPBACK.has(boundAddress) || LOOPBACK.has(host))) {
+    const note =
+      `[celsian] note: production server is bound to loopback (${boundAddress}) — ` +
+      "it will be unreachable from outside this machine/container. Set HOST=0.0.0.0 (or serve({ host: '0.0.0.0' })) to accept external traffic.";
+    app.log.warn(note);
+    console.warn(note);
+  }
+
+  options.onReady?.({ port: boundPort, host: boundAddress });
 
   return {
     close: () => handleShutdown(),
@@ -277,6 +328,7 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
 }
 
 function serveBun(app: CelsianApp, port: number, host: string, options: ServeOptions): ServeResult {
+  warnWSUnsupported(app, "Bun");
   const server = (globalThis as any).Bun.serve({
     port,
     hostname: host,
@@ -313,6 +365,7 @@ function serveBun(app: CelsianApp, port: number, host: string, options: ServeOpt
 }
 
 function serveDeno(app: CelsianApp, port: number, host: string, options: ServeOptions): ServeResult {
+  warnWSUnsupported(app, "Deno");
   const controller = new AbortController();
   let shuttingDown = false;
 
@@ -362,6 +415,20 @@ function serveDeno(app: CelsianApp, port: number, host: string, options: ServeOp
   };
 }
 
+/** Warn at startup when `.ws()` handlers are registered on a runtime without upgrade wiring. */
+function warnWSUnsupported(app: CelsianApp, runtime: string): void {
+  if (app.wsRegistry.hasAnyHandlers()) {
+    const hint =
+      runtime === "Bun"
+        ? " On Bun, serve WebSockets via the @celsian/adapter-bun handler (Bun.serve with native upgrades) instead of serve()."
+        : "";
+    console.warn(
+      `[celsian] WebSocket routes are not supported on ${runtime} via serve() yet — ` +
+        `registered .ws() handlers will not receive connections on this runtime.${hint}`,
+    );
+  }
+}
+
 // ─── Conversion Helpers ───
 
 /** Convert a Node.js IncomingMessage to a Web Standard Request. */
@@ -392,12 +459,23 @@ export function nodeToWebRequest(req: IncomingMessage, url: URL): Request {
  * full URL parsing. Falls back to full URL when the runtime requires it.
  */
 function nodeToWebRequestFast(req: IncomingMessage, rawPath: string, baseUrl: string): Request {
-  const headers = new Headers();
-  for (const [key, value] of Object.entries(req.headers)) {
-    if (typeof value === "string") {
-      headers.set(key, value);
-    } else if (Array.isArray(value)) {
-      for (const v of value) headers.append(key, v);
+  const raw = req.headers;
+  // Common case: every header value is a string (Node coalesces duplicates,
+  // leaving only set-cookie and a handful as arrays). Pass the plain record
+  // straight to the Request constructor so it builds Headers once, instead of
+  // building an intermediate Headers ourselves and having Request copy it again.
+  let headers: Headers | Record<string, string> = raw as unknown as Record<string, string>;
+  for (const k in raw) {
+    if (Array.isArray(raw[k])) {
+      // An array-valued header (e.g. set-cookie) — build Headers explicitly.
+      const h = new Headers();
+      for (const key in raw) {
+        const value = raw[key];
+        if (typeof value === "string") h.set(key, value);
+        else if (Array.isArray(value)) for (const v of value) h.append(key, v);
+      }
+      headers = h;
+      break;
     }
   }
 
@@ -416,6 +494,24 @@ function nodeToWebRequestFast(req: IncomingMessage, rawPath: string, baseUrl: st
 
 /** Write a Web Standard Response back to a Node.js ServerResponse, preserving Set-Cookie headers. */
 export async function writeWebResponse(res: ServerResponse, response: Response): Promise<void> {
+  // Fast path: responses built by reply.json()/send()/html() or the auto-serializer
+  // carry their already-serialized body + plain headers. Write them in a single
+  // writeHead()+end() — no ReadableStream reader, no async drain, no second socket
+  // write, and with an explicit Content-Length (avoids chunked encoding).
+  const fast = getFastPayload(response);
+  if (fast !== undefined) {
+    const body = fast.body;
+    const headers: Record<string, string | string[]> = { ...fast.headers };
+    if (body !== null) {
+      headers["content-length"] = String(typeof body === "string" ? Buffer.byteLength(body) : body.byteLength);
+    }
+    if (fast.cookies.length > 0) headers["set-cookie"] = fast.cookies;
+    res.writeHead(fast.status, headers);
+    if (body === null) res.end();
+    else res.end(body);
+    return;
+  }
+
   res.statusCode = response.status;
 
   for (const [key, value] of response.headers.entries()) {

@@ -1,5 +1,5 @@
 import { createApp } from "@celsian/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createJWTGuard, type JWTNamespace, jwt } from "../src/index.js";
 
 const SECRET = "test-secret-key-for-testing-only-min-32-chars";
@@ -296,5 +296,47 @@ describe("createJWTGuard (lazy, no-arg) binds to its owning app (no cross-app se
     // The defeat: app A must NOT accept a token signed for app B (was 200, must be 401).
     expect((await appA.inject({ url: "/protected", headers: { authorization: `Bearer ${tokenB}` } })).status).toBe(401);
     expect((await appB.inject({ url: "/protected", headers: { authorization: `Bearer ${tokenA}` } })).status).toBe(401);
+  });
+});
+
+describe("weak HMAC secret warning", () => {
+  it("warns via console.warn when an HS* secret is shorter than 32 bytes", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const app = createApp();
+      await app.register(jwt({ secret: "short" }), { encapsulate: false });
+
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(String(warnSpy.mock.calls[0]?.[0])).toContain("[@celsian/jwt]");
+      expect(String(warnSpy.mock.calls[0]?.[0])).toContain("5 bytes");
+
+      // Non-breaking: the plugin still works with the weak secret.
+      const jwtInstance = app.getDecoration("jwt") as JWTNamespace;
+      const token = await jwtInstance.sign({ sub: "user" });
+      expect((await jwtInstance.verify(token)).sub).toBe("user");
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("warns for short secrets passed directly to createJWTGuard()", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      createJWTGuard({ secret: "tiny" });
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("does not warn for secrets of 32 bytes or more", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const app = createApp();
+      await app.register(jwt({ secret: SECRET }), { encapsulate: false });
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });

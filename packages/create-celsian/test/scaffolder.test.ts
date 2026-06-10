@@ -1,8 +1,10 @@
 // create-celsian — Scaffolder template tests
 
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { ScaffoldError, scaffold, validateProjectName } from "../src/scaffold.js";
 import { basicTemplate } from "../src/templates/basic.js";
 import { fullTemplate } from "../src/templates/full.js";
 import { restApiTemplate } from "../src/templates/rest-api.js";
@@ -425,5 +427,154 @@ describe("path traversal protection", () => {
     for (const name of safeNames) {
       expect(name.includes("..")).toBe(false);
     }
+  });
+});
+
+// ─── scaffold() integration tests (real filesystem, tmp dir) ───
+
+describe("scaffold() filesystem behavior", () => {
+  let workDir: string;
+  let originalCwd: string;
+  const noop = () => {};
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    workDir = mkdtempSync(join(tmpdir(), "celsian-scaffold-test-"));
+    process.chdir(workDir);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    rmSync(workDir, { recursive: true, force: true });
+  });
+
+  it.each(["full", "basic", "rest-api", "rpc-api"])("scaffolds the %s template with expected files", (template) => {
+    const result = scaffold(`app-${template}`, template, { log: noop });
+    expect(result.projectName).toBe(`app-${template}`);
+    for (const file of ["package.json", "tsconfig.json", "src/index.ts", ".gitignore", "README.md"]) {
+      expect(existsSync(join(result.dir, file)), `${template} should ship ${file}`).toBe(true);
+    }
+    const pkg = JSON.parse(readFileSync(join(result.dir, "package.json"), "utf8"));
+    expect(pkg.name).toBe(`app-${template}`);
+  });
+
+  it("full template ships a ready-to-use .env matching .env.example", () => {
+    const result = scaffold("envcheck", "full", { log: noop });
+    expect(existsSync(join(result.dir, ".env"))).toBe(true);
+    expect(readFileSync(join(result.dir, ".env"), "utf8")).toBe(readFileSync(join(result.dir, ".env.example"), "utf8"));
+    const pkg = JSON.parse(readFileSync(join(result.dir, "package.json"), "utf8"));
+    expect(pkg.scripts.dev).toContain("--env-file=.env");
+    expect(pkg.scripts.start).toContain("--env-file=.env");
+  });
+
+  it("rejects an unknown template", () => {
+    expect(() => scaffold("my-app", "fullstack", { log: noop })).toThrow(ScaffoldError);
+    expect(() => scaffold("my-app", "fullstack", { log: noop })).toThrow(/Unknown template/);
+  });
+
+  it("rejects npm-invalid project names", () => {
+    for (const bad of ["Bad Name!", "UPPERCASE", "name with spaces", ".hidden", "_private", "name!"]) {
+      expect(() => scaffold(bad, "basic", { log: noop }), `should reject "${bad}"`).toThrow(ScaffoldError);
+    }
+  });
+
+  it("rejects path traversal names", () => {
+    expect(() => scaffold("../evil", "basic", { log: noop })).toThrow(ScaffoldError);
+  });
+
+  it("refuses to overwrite an existing non-empty directory without force", () => {
+    mkdirSync(join(workDir, "taken"));
+    writeFileSync(join(workDir, "taken", "precious.txt"), "do not lose me");
+    expect(() => scaffold("taken", "basic", { log: noop })).toThrow(/already exists and is not empty/);
+    // The existing file must be untouched
+    expect(readFileSync(join(workDir, "taken", "precious.txt"), "utf8")).toBe("do not lose me");
+  });
+
+  it("scaffolds into an existing non-empty directory with force: true", () => {
+    mkdirSync(join(workDir, "taken"));
+    writeFileSync(join(workDir, "taken", "precious.txt"), "kept");
+    const result = scaffold("taken", "basic", { force: true, log: noop });
+    expect(existsSync(join(result.dir, "package.json"))).toBe(true);
+    expect(readFileSync(join(result.dir, "precious.txt"), "utf8")).toBe("kept");
+  });
+
+  it("allows scaffolding into an existing EMPTY directory without force", () => {
+    mkdirSync(join(workDir, "empty-dir"));
+    const result = scaffold("empty-dir", "basic", { log: noop });
+    expect(existsSync(join(result.dir, "package.json"))).toBe(true);
+  });
+});
+
+describe("validateProjectName", () => {
+  it("accepts valid npm names", () => {
+    for (const good of ["my-app", "api-v2", "celsian-demo", "a", "app2", "my.app", "my_app"]) {
+      expect(validateProjectName(good), good).toBeNull();
+    }
+  });
+
+  it("rejects invalid npm names with a helpful message", () => {
+    expect(validateProjectName("Bad Name!")).toMatch(/lowercase/);
+    expect(validateProjectName("bad name")).toMatch(/may only contain/);
+    expect(validateProjectName("name!")).toMatch(/may only contain/);
+    expect(validateProjectName(".hidden")).toMatch(/may only contain/);
+    expect(validateProjectName("_private")).toMatch(/may only contain/);
+    expect(validateProjectName("")).toMatch(/empty/);
+    expect(validateProjectName("x".repeat(215))).toMatch(/214/);
+  });
+});
+
+// ─── Template content regression tests (0.5.2 fixes) ───
+
+describe("rest-api email validation (no unregistered TypeBox format)", () => {
+  it("uses a pattern instead of format: 'email'", () => {
+    // The schema itself must not use an unregistered TypeBox format
+    // (a code comment in the template may still mention it).
+    expect(restApiTemplate["src/index.ts"]).not.toMatch(/email: Type\.String\(\{ format/);
+    expect(restApiTemplate["src/index.ts"]).toMatch(/email: Type\.String\(\{ pattern/);
+  });
+
+  it("the scaffolded pattern matches valid emails and rejects junk", () => {
+    const match = restApiTemplate["src/index.ts"].match(/pattern: '([^']+)'/) ?? [];
+    expect(match[1]).toBeDefined();
+    // The template source holds a TS string literal — unescape \\ to get the runtime pattern
+    const pattern = (match[1] ?? "").replace(/\\\\/g, "\\");
+    const re = new RegExp(pattern);
+    expect(re.test("ada@example.com")).toBe(true);
+    expect(re.test("first.last@sub.domain.io")).toBe(true);
+    expect(re.test("not-an-email")).toBe(false);
+    expect(re.test("a b@example.com")).toBe(false);
+    expect(re.test("missing@tld")).toBe(false);
+  });
+});
+
+describe("full template CSRF excludes (0.5.1 exact-match semantics)", () => {
+  it("lists every scaffolded RPC procedure path individually", () => {
+    const security = fullTemplate["src/plugins/security.ts"];
+    for (const path of ["/_rpc/greeting.hello", "/_rpc/math.add", "/_rpc/math.multiply", "/_rpc/system.ping"]) {
+      expect(security).toContain(`'${path}'`);
+    }
+    // Forward-compat prefix entry for cores with pattern matching
+    expect(security).toContain("'/_rpc/*'");
+    // No longer relies on the broken bare '/_rpc' exact entry alone
+    expect(security).not.toMatch(/excludePaths: \['\/health', '\/ready', '\/_rpc'\]/);
+  });
+
+  it("scaffolded test asserts an RPC mutation succeeds through the security stack", () => {
+    expect(fullTemplate["test/api.test.ts"]).toContain("securityPlugins");
+    expect(fullTemplate["test/api.test.ts"]).toContain("RPC mutations succeed with the full security stack");
+  });
+
+  it("README documents the CSRF double-submit flow and a JWT recipe", () => {
+    const readme = fullTemplate["README.md"];
+    expect(readme).toContain("x-csrf-token");
+    expect(readme).toContain("_csrf");
+    expect(readme).toContain("/auth/token");
+    expect(readme).toContain("Authorization: Bearer");
+  });
+
+  it("ships the dev-only /auth/token route and registers it", () => {
+    expect(fullTemplate["src/routes/auth.ts"]).toContain("'/auth/token'");
+    expect(fullTemplate["src/routes/auth.ts"]).toContain("NODE_ENV");
+    expect(fullTemplate["src/index.ts"]).toContain("authRoutes(app)");
   });
 });

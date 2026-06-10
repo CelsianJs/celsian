@@ -19,7 +19,12 @@ export interface CSRFOptions {
   };
   /** Methods that require CSRF validation (default: POST, PUT, PATCH, DELETE) */
   protectedMethods?: string[];
-  /** Paths to exclude from CSRF checks (e.g., webhook endpoints) */
+  /**
+   * Paths to exclude from CSRF checks (e.g., webhook endpoints).
+   * Each entry matches exactly OR as a path-segment prefix:
+   * `'/_rpc'` excludes `/_rpc` and `/_rpc/math.multiply`, but NOT `/_rpcx`.
+   * A trailing `/*` is also supported explicitly: `'/_rpc/*'`.
+   */
   excludePaths?: string[];
 }
 
@@ -34,6 +39,26 @@ function generateToken(byteLength: number): string {
   return Array.from(bytes)
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
+}
+
+/**
+ * Check whether a pathname matches an exclude entry: exact match, or
+ * path-segment prefix (`/_rpc` matches `/_rpc/...` but not `/_rpcx`).
+ * Trailing `/*` is normalized to the same segment-prefix semantics.
+ */
+function isPathExcluded(pathname: string, excludePaths: string[]): boolean {
+  for (const entry of excludePaths) {
+    // Normalize: '/_rpc/*' → '/_rpc', '/_rpc/' → '/_rpc'
+    let base = entry;
+    if (base.endsWith("/*")) base = base.slice(0, -2);
+    if (base.endsWith("/") && base !== "/") base = base.slice(0, -1);
+    if (base === "" || base === "/") {
+      // Root entry excludes everything
+      return true;
+    }
+    if (pathname === base || pathname.startsWith(`${base}/`)) return true;
+  }
+  return false;
 }
 
 /**
@@ -57,7 +82,7 @@ export function csrf(options: CSRFOptions = {}): PluginFunction {
   const tokenLength = options.tokenLength ?? 32;
   const cookieOpts = options.cookie ?? {};
   const protectedMethods = new Set(options.protectedMethods ?? [...MUTATING_METHODS]);
-  const excludePaths = new Set(options.excludePaths ?? []);
+  const excludePaths = options.excludePaths ?? [];
 
   return function csrfPlugin(app) {
     const hook: HookHandler = (request: CelsianRequest, reply: CelsianReply) => {
@@ -65,8 +90,8 @@ export function csrf(options: CSRFOptions = {}): PluginFunction {
       const url = new URL(request.url);
       const pathname = url.pathname;
 
-      // Skip excluded paths
-      if (excludePaths.has(pathname)) return;
+      // Skip excluded paths (exact or path-segment prefix match)
+      if (excludePaths.length > 0 && isPathExcluded(pathname, excludePaths)) return;
 
       // On safe methods (GET, HEAD, OPTIONS), set the CSRF cookie if not present
       if (!protectedMethods.has(method)) {
