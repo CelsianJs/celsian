@@ -61,6 +61,7 @@ jobs:
       - run: pnpm build
 
       - uses: changesets/action@v1
+        id: changesets
         with:
           publish: pnpm release
           title: "chore: version packages"
@@ -76,3 +77,15 @@ jobs:
           # npm_config_* environment variable, so set it here. Requires the
           # `id-token: write` permission above — keep both together.
           NPM_CONFIG_PROVENANCE: true
+
+      - name: Verify npm registry packages
+        if: steps.changesets.outputs.published == 'true'
+        run: pnpm verify:registry
+
+      - name: Upload registry smoke artifact
+        if: ${{ always() && steps.changesets.outputs.published == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: celsian-registry-smoke
+          path: artifacts/registry-smoke.json
+          if-no-files-found: error
