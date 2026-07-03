@@ -15,7 +15,7 @@
     "@celsian/schema": "workspace:*"
   },
   "devDependencies": {
-    "tsx": "^4.21.0",
+    "tsx": "^4.23.0",
     "vitest": "^3.0.0",
     "zod": "^3.23.0"
   }
