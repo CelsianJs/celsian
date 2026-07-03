@@ -21,8 +21,8 @@ importers:
         specifier: ^2.31.0
         version: 2.31.0(@types/node@25.5.2)
       '@sinclair/typebox':
-        specifier: ^0.34.0
-        version: 0.34.48
+        specifier: ^0.34.49
+        version: 0.34.49
       '@size-limit/preset-small-lib':
         specifier: ^12.1.0
         version: 12.1.0(size-limit@12.1.0)
@@ -128,8 +128,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/schema
       '@sinclair/typebox':
-        specifier: ^0.34.0
-        version: 0.34.48
+        specifier: ^0.34.49
+        version: 0.34.49
     devDependencies:
       esbuild:
         specifier: ^0.28.1
@@ -153,8 +153,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/schema
       '@sinclair/typebox':
-        specifier: ^0.34.0
-        version: 0.34.48
+        specifier: ^0.34.49
+        version: 0.34.49
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20260424.1
@@ -210,8 +210,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/schema
       '@sinclair/typebox':
-        specifier: ^0.34.0
-        version: 0.34.48
+        specifier: ^0.34.49
+        version: 0.34.49
       celsian:
         specifier: workspace:*
         version: link:../../packages/celsian
@@ -244,8 +244,8 @@ importers:
   examples/rest-api:
     dependencies:
       '@sinclair/typebox':
-        specifier: ^0.34.0
-        version: 0.34.48
+        specifier: ^0.34.49
+        version: 0.34.49
       celsian:
         specifier: workspace:*
         version: link:../../packages/celsian
@@ -256,8 +256,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/rpc
       '@sinclair/typebox':
-        specifier: ^0.34.0
-        version: 0.34.48
+        specifier: ^0.34.49
+        version: 0.34.49
       celsian:
         specifier: workspace:*
         version: link:../../packages/celsian
@@ -1471,6 +1471,9 @@ packages:
 
   '@sinclair/typebox@0.34.48':
     resolution: {integrity: sha512-kKJTNuK3AQOrgjjotVxMrCn1sUJwM76wMszfq1kdU4uYVJjvEWuFQ6HgvLt4Xz3fSmZlTOxJ/Ie13KnIcWQXFA==}
+
+  '@sinclair/typebox@0.34.49':
+    resolution: {integrity: sha512-brySQQs7Jtn0joV8Xh9ZV/hZb9Ozb0pmazDIASBkYKCjXrXU3mpcFahmK/z4YDhGkQvP9mWJbVyahdtU5wQA+A==}
 
   '@size-limit/esbuild@12.1.0':
     resolution: {integrity: sha512-Um6MVrX+05kIxI4+zk0ZByG9dA/Th1f+sfGc571D95BnCPc90/pl2+2OdsQuOyoWEbeAMqfcTKo0v07i+E65Vw==}
@@ -3845,6 +3848,8 @@ snapshots:
   '@shikijs/vscode-textmate@10.0.2': {}
 
   '@sinclair/typebox@0.34.48': {}
+
+  '@sinclair/typebox@0.34.49': {}
 
   '@size-limit/esbuild@12.1.0(size-limit@12.1.0)':
     dependencies:
