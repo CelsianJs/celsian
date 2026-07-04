@@ -11,7 +11,7 @@
     "lint:fix": "biome check --write .",
     "typecheck": "tsc --noEmit",
     "changeset": "changeset",
-    "release": "changeset publish --provenance",
+    "release": "changeset publish",
     "bench": "pnpm --filter celsian-benchmarks exec tsx run.ts",
     "test:bench": "CELSIAN_INCLUDE_BENCH=1 vitest run packages/cache/test/bench.test.ts",
     "verify:publish": "pnpm assert:release-private && pnpm assert:public-metadata && scripts/verify-publish.sh",
