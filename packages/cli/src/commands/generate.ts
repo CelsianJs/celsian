@@ -55,21 +55,42 @@ export function generateRpc(name: string): void {
 
   writeFileSync(
     filePath,
-    `import { procedure } from '@celsian/rpc';
+    `import type { PluginFunction } from '@celsian/core';
+import { procedure, RPCHandler, router } from '@celsian/rpc';
 
-export const ${name} = {
-  list: procedure.query(async () => {
-    return [];
-  }),
+// RPC procedures for the "${name}" namespace. Add \`.input(schema)\` (Zod,
+// TypeBox, or Valibot) before \`.query\`/\`.mutation\` to validate and type \`input\`
+// — without a schema, \`input\` is \`unknown\`.
+export const ${name}Router = router({
+  ${name}: {
+    list: procedure.query(async () => {
+      return [] as Array<{ id: string }>;
+    }),
 
-  getById: procedure.query(async ({ input }) => {
-    return { id: input };
-  }),
+    getById: procedure
+      // .input(z.object({ id: z.string() }))
+      .query(async ({ input }) => {
+        return { item: input };
+      }),
 
-  create: procedure.mutation(async ({ input }) => {
-    return { created: true, data: input };
-  }),
+    create: procedure
+      // .input(z.object({ name: z.string() }))
+      .mutation(async ({ input }) => {
+        return { created: true, data: input };
+      }),
+  },
+});
+
+// Register on your Celsian app. In src/index.ts:
+//   import ${name}Rpc from './routes/${name}.js';
+//   await app.register(${name}Rpc);
+// Procedures are served under \`/_rpc/*\` — GET for queries, POST for mutations
+// (e.g. GET /_rpc/${name}.list).
+const ${name}Rpc: PluginFunction = async (app) => {
+  new RPCHandler(${name}Router).mount(app);
 };
+
+export default ${name}Rpc;
 `,
   );
 

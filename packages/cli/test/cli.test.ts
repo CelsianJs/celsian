@@ -1,9 +1,10 @@
 // @celsian/cli — CLI command tests
 
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BuildOptions } from "../src/commands/build.js";
+import { devCommand } from "../src/commands/dev.js";
 import { generateRoute, generateRpc } from "../src/commands/generate.js";
 import { getVersion, printBanner } from "../src/utils/banner.js";
 import { logger } from "../src/utils/logger.js";
@@ -185,6 +186,74 @@ describe("generateRpc", () => {
       expect(content).toContain("create:");
     } finally {
       process.chdir(originalCwd);
+    }
+  });
+
+  it("generated RPC file is a mountable, working starting point (router + RPCHandler + mount)", () => {
+    // Regression: the old template exported a bare object with no router()/
+    // RPCHandler wiring and no way to reach an endpoint, and destructured `input`
+    // without an .input() schema (so input was always undefined).
+    const originalCwd = process.cwd();
+    process.chdir(TMP_DIR);
+    try {
+      generateRpc("billing");
+      const content = readFileSync(join(TMP_DIR, "src", "routes", "billing.ts"), "utf8");
+      // Wired end-to-end, not a dead-end object.
+      expect(content).toContain("router({");
+      expect(content).toContain("new RPCHandler(billingRouter)");
+      expect(content).toContain(".mount(app)");
+      // Registerable as a plugin, matching the generateRoute convention.
+      expect(content).toContain("PluginFunction");
+      expect(content).toContain("export default billingRpc");
+      // Points users at .input() instead of silently reading an undefined input.
+      expect(content).toContain(".input(");
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+});
+
+describe("dev command entry-file guard", () => {
+  const DEV_TMP = join(import.meta.dirname, ".tmp-dev-test");
+
+  beforeEach(() => {
+    rmSync(DEV_TMP, { recursive: true, force: true });
+    mkdirSync(DEV_TMP, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(DEV_TMP, { recursive: true, force: true });
+  });
+
+  it("errors clearly and does not spawn when the entry file is missing", async () => {
+    // Regression: dev previously spawned `npx tsx <missing>` and surfaced a raw
+    // "Cannot find module" stack trace instead of an actionable message.
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    const infoSpy = vi.spyOn(logger, "info").mockImplementation(() => {});
+    const originalCwd = process.cwd();
+    process.chdir(DEV_TMP);
+    try {
+      await devCommand({ entry: "src/index.ts" });
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Entry file not found"));
+      // Must bail BEFORE the "Starting dev server" spawn path.
+      expect(infoSpy).not.toHaveBeenCalledWith(expect.stringContaining("Starting dev server"));
+    } finally {
+      process.chdir(originalCwd);
+      errorSpy.mockRestore();
+      infoSpy.mockRestore();
+    }
+  });
+
+  it("honors a custom --entry path in the guard", async () => {
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    const originalCwd = process.cwd();
+    process.chdir(DEV_TMP);
+    try {
+      await devCommand({ entry: "server.ts" });
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("server.ts"));
+    } finally {
+      process.chdir(originalCwd);
+      errorSpy.mockRestore();
     }
   });
 });
