@@ -1,7 +1,7 @@
 // @celsian/cli — celsian dev command
 
 import { type ChildProcess, spawn } from "node:child_process";
-import { watch } from "node:fs";
+import { existsSync, watch } from "node:fs";
 import { resolve } from "node:path";
 import { logger } from "../utils/logger.js";
 
@@ -15,6 +15,15 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
   const entry = options.entry ?? "src/index.ts";
   const cwd = process.cwd();
   const entryPath = resolve(cwd, entry);
+
+  // Fail with a clear, actionable message before spawning tsx — otherwise a
+  // missing entry (wrong directory, or a project using `server.ts`) surfaces as
+  // a raw "Cannot find module" stack trace from tsx. Mirrors `celsian routes`.
+  if (!existsSync(entryPath)) {
+    logger.error(`Entry file not found: ${entry}`);
+    logger.dim("Usage: celsian dev [--entry <file>] (default: src/index.ts)");
+    return;
+  }
 
   logger.info(`Starting dev server: ${entry}`);
 

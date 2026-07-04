@@ -2,7 +2,7 @@
 
 export { CelsianApp, createApp } from "./app.js";
 export type { CelsianConfig } from "./config.js";
-export { defineConfig, loadConfig } from "./config.js";
+export { ConfigLoadError, defineConfig, loadConfig } from "./config.js";
 export { EncapsulationContext } from "./context.js";
 export type { CookieOptions } from "./cookie.js";
 export { parseCookies, serializeCookie } from "./cookie.js";

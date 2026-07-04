@@ -56,8 +56,14 @@ export async function serve(app: CelsianApp, options: ServeOptions = {}): Promis
     const config = await loadConfig();
     configPort = config.server?.port ?? configPort;
     configHost = config.server?.host ?? configHost;
-  } catch {
-    // Config loading failed — use defaults
+  } catch (err) {
+    // A genuinely broken celsian.config.* (syntax/runtime error, or a missing
+    // import it depends on) must surface — silently binding defaults hides the
+    // user's settings. loadConfig only throws ConfigLoadError for real failures;
+    // an absent config file returns defaults without throwing.
+    const { ConfigLoadError } = await import("./config.js");
+    if (err instanceof ConfigLoadError) throw err;
+    // Any other unexpected failure (e.g. importing config.js itself): keep defaults.
   }
 
   // Start task worker and cron scheduler
