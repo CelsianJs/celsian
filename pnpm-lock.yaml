@@ -413,9 +413,18 @@ importers:
         specifier: workspace:*
         version: link:../schema
     devDependencies:
+      '@sinclair/typebox':
+        specifier: ^0.34.49
+        version: 0.34.49
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
+      valibot:
+        specifier: ^1.2.0
+        version: 1.2.0(typescript@6.0.3)
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
 
   packages/create-celsian: {}
 
@@ -468,15 +477,15 @@ importers:
         version: link:../schema
 
   packages/schema:
-    dependencies:
+    devDependencies:
       '@sinclair/typebox':
-        specifier: '>=0.30.0'
-        version: 0.34.48
+        specifier: ^0.34.49
+        version: 0.34.49
       valibot:
-        specifier: '>=0.30.0'
+        specifier: ^1.2.0
         version: 1.2.0(typescript@6.0.3)
       zod:
-        specifier: '>=3.0.0'
+        specifier: ^4.3.6
         version: 4.3.6
 
   packages/ws-redis:
@@ -1363,9 +1372,6 @@ packages:
 
   '@shikijs/vscode-textmate@10.0.2':
     resolution: {integrity: sha512-83yeghZ2xxin3Nj8z1NMd/NCuca+gsYXswywDy5bHvwlWL8tpTQmzGeUuHd9FC3E/SBEMvzJRwWEOz5gGes9Qg==}
-
-  '@sinclair/typebox@0.34.48':
-    resolution: {integrity: sha512-kKJTNuK3AQOrgjjotVxMrCn1sUJwM76wMszfq1kdU4uYVJjvEWuFQ6HgvLt4Xz3fSmZlTOxJ/Ie13KnIcWQXFA==}
 
   '@sinclair/typebox@0.34.49':
     resolution: {integrity: sha512-brySQQs7Jtn0joV8Xh9ZV/hZb9Ozb0pmazDIASBkYKCjXrXU3mpcFahmK/z4YDhGkQvP9mWJbVyahdtU5wQA+A==}
@@ -3616,8 +3622,6 @@ snapshots:
       '@types/hast': 3.0.4
 
   '@shikijs/vscode-textmate@10.0.2': {}
-
-  '@sinclair/typebox@0.34.48': {}
 
   '@sinclair/typebox@0.34.49': {}
 
