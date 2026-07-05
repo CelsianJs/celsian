@@ -3,7 +3,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, join, resolve } from "node:path";
-import type { CelsianApp } from "@celsian/core";
+import { type CelsianApp, CelsianError } from "@celsian/core";
 
 // Inline types — will be imported from @celsian/build when ThenJS ships
 type RouteManifest = Record<string, { kind: string; method: string; path: string }>;
@@ -36,13 +36,26 @@ export interface ThenAdapter {
 const nodeAdapter: ThenAdapter = {
   name: "node",
 
-  async buildEnd({ serverEntry, clientDir, staticDir }) {
-    // Generate a standalone server entry that:
-    // 1. Imports the server bundle
-    // 2. Sets up static file serving
-    // 3. Starts node:http server
+  async buildEnd(_options) {
+    // The ThenJS build integration (`@celsian/build`) that would consume this
+    // hook and write the generated entry to disk does not exist yet. This method
+    // previously built the entry string, wrote NOTHING, and logged "Generated
+    // server entry" — pretending to succeed while producing no output. Fail loud
+    // instead so a caller is never misled into thinking a server entry was
+    // emitted. The working, supported way to run a CelsianApp on Node today is
+    // the runtime `serve(app, options)` export below.
+    throw new CelsianError(
+      "@celsian/adapter-node buildEnd() is not implemented: the ThenJS build pipeline it depends on has not shipped yet, " +
+        "so it cannot generate or write a server entry. To run your app on Node.js, use the runtime `serve(app, options)` export instead.",
+    );
+  },
 
-    const _entryCode = `
+  entryTemplate: "node-server",
+};
+
+// The standalone server-entry template the future build integration will emit.
+// Kept as documentation of the intended output shape until `@celsian/build` ships.
+const _NODE_SERVER_ENTRY_TEMPLATE = `
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { join, extname } from 'node:path';
@@ -153,12 +166,9 @@ server.listen(PORT, HOST, () => {
 });
 `;
 
-    // In a real implementation, write this to disk
-    console.log("[celsian:adapter-node] Generated server entry");
-  },
-
-  entryTemplate: "node-server",
-};
+// Referenced so the template is retained (and type-checked as a string) without a
+// biome "unused" warning, until the build integration consumes it.
+void _NODE_SERVER_ENTRY_TEMPLATE;
 
 export default nodeAdapter;
 

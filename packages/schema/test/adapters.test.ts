@@ -142,4 +142,33 @@ describe("fromValibot", () => {
     const result = schema.validate("test");
     expect(result.success).toBe(false);
   });
+
+  describe("with the real valibot package (Standard Schema `~standard`)", () => {
+    // Modern valibot (>=0.31, incl. the 1.x installed here) schemas expose NEITHER
+    // `_parse` NOR `safeParse` — validation only works through the Standard Schema
+    // `~standard.validate()` contract. detect.ts routes these schemas to fromValibot
+    // specifically because `~standard` is present, so the adapter must handle it.
+    it("should validate successfully with a real valibot object schema", async () => {
+      const v = await import("valibot");
+      const valibotSchema = v.object({ name: v.string() });
+
+      const schema = fromValibot<{ name: string }>(valibotSchema);
+      const result = schema.validate({ name: "Alice" });
+
+      expect(result.success).toBe(true);
+      expect(result.data).toEqual({ name: "Alice" });
+    });
+
+    it("should return issues for invalid input against a real valibot schema", async () => {
+      const v = await import("valibot");
+      const valibotSchema = v.object({ name: v.string() });
+
+      const schema = fromValibot<{ name: string }>(valibotSchema);
+      const result = schema.validate({ name: 5 });
+
+      expect(result.success).toBe(false);
+      expect(result.issues?.length).toBeGreaterThan(0);
+      expect(result.issues?.[0]?.message).toMatch(/string/i);
+    });
+  });
 });

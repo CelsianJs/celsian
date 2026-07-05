@@ -1,9 +1,9 @@
 // @celsian/edge-router -- Security tests for SSRF, ReDoS, validation, and XFF
 
 import { describe, expect, it } from "vitest";
-import { compileRoute, compileRoutes } from "../src/match.js";
+import { compileRoute } from "../src/match.js";
 import { isInternalUrl, proxyRequest } from "../src/proxy.js";
-import type { CompiledRoute, RouteEntry } from "../src/types.js";
+import type { RouteEntry } from "../src/types.js";
 import { handleUpdateRoutes } from "../src/update-routes.js";
 
 // ── SSRF: isInternalUrl ────────────────────────────────────────

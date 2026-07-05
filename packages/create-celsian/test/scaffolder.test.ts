@@ -220,7 +220,7 @@ describe("template name substitution", () => {
   });
 
   it("all templates use {{name}} in package.json", () => {
-    for (const [templateName, template] of Object.entries({
+    for (const [_templateName, template] of Object.entries({
       basic: basicTemplate,
       "rest-api": restApiTemplate,
       "rpc-api": rpcApiTemplate,
@@ -366,7 +366,7 @@ describe("scaffold to filesystem", () => {
   });
 
   it("generated tsconfig.json is valid JSON for all templates", () => {
-    for (const [name, template] of Object.entries({
+    for (const [_name, template] of Object.entries({
       basic: basicTemplate,
       "rest-api": restApiTemplate,
       "rpc-api": rpcApiTemplate,
@@ -391,8 +391,8 @@ describe("invalid template handling", () => {
       "rpc-api": rpcApiTemplate,
     };
 
-    expect(templates["nonexistent"]).toBeUndefined();
-    expect(templates["invalid"]).toBeUndefined();
+    expect(templates.nonexistent).toBeUndefined();
+    expect(templates.invalid).toBeUndefined();
   });
 
   it("all four expected templates are available", () => {
