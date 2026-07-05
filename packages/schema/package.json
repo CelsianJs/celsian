@@ -33,6 +33,11 @@
       "optional": true
     }
   },
+  "devDependencies": {
+    "@sinclair/typebox": "^0.34.49",
+    "valibot": "^1.2.0",
+    "zod": "^4.3.6"
+  },
   "license": "MIT",
   "publishConfig": {
     "access": "public"

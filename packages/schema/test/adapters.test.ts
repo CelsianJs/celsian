@@ -62,6 +62,31 @@ describe("fromZod", () => {
     const schema = fromZod(zodLike);
     expect(schema.toJsonSchema()).toEqual({ type: "string", minLength: 1 });
   });
+
+  describe("with the real zod package", () => {
+    it("should validate successfully with a real zod object schema", async () => {
+      const { z } = await import("zod");
+      const zodSchema = z.object({ name: z.string() });
+
+      const schema = fromZod<{ name: string }>(zodSchema);
+      const result = schema.validate({ name: "Alice" });
+
+      expect(result.success).toBe(true);
+      expect(result.data).toEqual({ name: "Alice" });
+    });
+
+    it("should return issues for invalid input against a real zod schema", async () => {
+      const { z } = await import("zod");
+      const zodSchema = z.object({ name: z.string() });
+
+      const schema = fromZod<{ name: string }>(zodSchema);
+      const result = schema.validate({ name: 5 });
+
+      expect(result.success).toBe(false);
+      expect(result.issues?.length).toBeGreaterThan(0);
+      expect(result.issues?.[0]?.path).toEqual(["name"]);
+    });
+  });
 });
 
 describe("fromTypeBox", () => {
@@ -91,6 +116,31 @@ describe("fromTypeBox", () => {
     // Either way, validate() is exercised
     expect(result).toBeDefined();
     expect(typeof result.success).toBe("boolean");
+  });
+
+  describe("with the real TypeBox package", () => {
+    it("should validate successfully with a real TypeBox object schema", async () => {
+      const { Type } = await import("@sinclair/typebox");
+      const typeboxSchema = Type.Object({ name: Type.String() });
+
+      const schema = fromTypeBox<{ name: string }>(typeboxSchema);
+      const result = schema.validate({ name: "Alice" });
+
+      expect(result.success).toBe(true);
+      expect(result.data).toEqual({ name: "Alice" });
+    });
+
+    it("should return issues for invalid input against a real TypeBox schema", async () => {
+      const { Type } = await import("@sinclair/typebox");
+      const typeboxSchema = Type.Object({ name: Type.String() });
+
+      const schema = fromTypeBox<{ name: string }>(typeboxSchema);
+      const result = schema.validate({ name: 5 });
+
+      expect(result.success).toBe(false);
+      expect(result.issues?.length).toBeGreaterThan(0);
+      expect(result.issues?.[0]?.path).toEqual(["name"]);
+    });
   });
 });
 

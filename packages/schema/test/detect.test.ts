@@ -102,3 +102,40 @@ describe("fromSchema (modern / hardened detection)", () => {
     expect(schema.toJsonSchema()).toEqual(typeboxSchema);
   });
 });
+
+describe("fromSchema (real schema libraries)", () => {
+  // Regression coverage for PR #48: the suite previously only ever exercised
+  // hand-rolled "-like" fakes here, which is exactly how fromValibot() being
+  // silently broken for all modern valibot (>=0.31) went undetected. These
+  // tests route real, unmodified schema objects from the real npm packages
+  // (devDependencies, not mocks) through the public auto-detect entry point.
+  it("should detect and validate a real zod schema", async () => {
+    const { z } = await import("zod");
+    const schema = fromSchema(z.object({ name: z.string() }));
+
+    expect(schema.validate({ name: "Alice" })).toEqual({ success: true, data: { name: "Alice" } });
+    const invalid = schema.validate({ name: 5 });
+    expect(invalid.success).toBe(false);
+    expect(invalid.issues?.[0]?.path).toEqual(["name"]);
+  });
+
+  it("should detect and validate a real TypeBox schema", async () => {
+    const { Type } = await import("@sinclair/typebox");
+    const schema = fromSchema(Type.Object({ name: Type.String() }));
+
+    expect(schema.validate({ name: "Alice" })).toEqual({ success: true, data: { name: "Alice" } });
+    const invalid = schema.validate({ name: 5 });
+    expect(invalid.success).toBe(false);
+    expect(invalid.issues?.length).toBeGreaterThan(0);
+  });
+
+  it("should detect and validate a real (modern, Standard-Schema-only) valibot schema", async () => {
+    const v = await import("valibot");
+    const schema = fromSchema(v.object({ name: v.string() }));
+
+    expect(schema.validate({ name: "Alice" })).toEqual({ success: true, data: { name: "Alice" } });
+    const invalid = schema.validate({ name: 5 });
+    expect(invalid.success).toBe(false);
+    expect(invalid.issues?.length).toBeGreaterThan(0);
+  });
+});
