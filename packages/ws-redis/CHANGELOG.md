@@ -1,5 +1,11 @@
 # @celsian/ws-redis
 
+## 0.5.4
+
+### Patch Changes
+
+- @celsian/core@0.5.4
+
 ## 0.5.3
 
 ### Patch Changes

@@ -1,5 +1,15 @@
 # celsian
 
+## 0.5.4
+
+### Patch Changes
+
+- Updated dependencies [74898eb]
+  - @celsian/schema@0.5.4
+  - @celsian/cli@0.5.4
+  - @celsian/core@0.5.4
+  - @celsian/rpc@0.5.4
+
 ## 0.5.3
 
 ### Patch Changes
