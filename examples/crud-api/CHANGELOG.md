@@ -1,5 +1,11 @@
 # celsian-crud-api-example
 
+## 1.0.7
+
+### Patch Changes
+
+- @celsian/core@0.5.4
+
 ## 1.0.6
 
 ### Patch Changes
