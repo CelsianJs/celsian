@@ -1,7 +1,7 @@
 // @celsian/core — Request timeout tests
 
 import { describe, expect, it } from "vitest";
-import { CelsianApp, createApp } from "../src/app.js";
+import { createApp } from "../src/app.js";
 
 describe("Request Timeout", () => {
   it("should return 504 when handler exceeds timeout", async () => {

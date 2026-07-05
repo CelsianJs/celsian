@@ -90,7 +90,7 @@ describe("Upload Plugin", () => {
   it("should enforce file size limit with 413", async () => {
     const app = createApp();
     await app.register(upload({ maxFileSize: 10 }), { encapsulate: false }); // 10 bytes max
-    app.post("/upload", (req, reply) => {
+    app.post("/upload", (_req, reply) => {
       return reply.json({ ok: true });
     });
 
@@ -114,7 +114,7 @@ describe("Upload Plugin", () => {
   it("should enforce max files limit with 413", async () => {
     const app = createApp();
     await app.register(upload({ maxFiles: 2 }), { encapsulate: false });
-    app.post("/upload", (req, reply) => {
+    app.post("/upload", (_req, reply) => {
       return reply.json({ ok: true });
     });
 
@@ -135,7 +135,7 @@ describe("Upload Plugin", () => {
   it("should enforce mime type restriction with 415", async () => {
     const app = createApp();
     await app.register(upload({ allowedMimeTypes: ["image/png", "image/jpeg"] }), { encapsulate: false });
-    app.post("/upload", (req, reply) => {
+    app.post("/upload", (_req, reply) => {
       return reply.json({ ok: true });
     });
 

@@ -1,8 +1,8 @@
 // @celsian/core — Graceful shutdown tests for CronScheduler and TaskWorker
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
-import { CronScheduler, parseCronExpression, shouldRun } from "../src/cron.js";
+import { CronScheduler } from "../src/cron.js";
 import { createLogger } from "../src/logger.js";
 import { MemoryQueue } from "../src/queue.js";
 import { TaskRegistry, TaskWorker } from "../src/task.js";
@@ -314,10 +314,10 @@ describe("App-level shutdown integration", () => {
 
   it("app start/stop cron lifecycle works end-to-end", () => {
     const app = createApp();
-    let called = false;
+    let _called = false;
 
     app.cron("shutdown-cron", "* * * * *", () => {
-      called = true;
+      _called = true;
     });
 
     app.startCron();

@@ -1,7 +1,7 @@
 // SaaS Backend in One File — CelsianJS Demo
 // Demonstrates: JWT auth, CRUD, background tasks, cron, SSE, OpenAPI, Zod validation
 
-import { cors, createApp, createSSEHub, HttpError, openapi, serve } from "@celsian/core";
+import { cors, createApp, createSSEHub, openapi, serve } from "@celsian/core";
 import { createJWTGuard, jwt } from "@celsian/jwt";
 import { z } from "zod";
 

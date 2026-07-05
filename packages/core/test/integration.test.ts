@@ -1,41 +1,10 @@
 // @celsian/core -- Real HTTP integration tests (actual server + network requests)
 
 import { createServer } from "node:http";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { HttpError } from "../src/errors.js";
 import { serve } from "../src/serve.js";
-
-/**
- * Helper: start a real Celsian HTTP server on a random port.
- * Returns the base URL and a close function.
- */
-async function startServer(app: ReturnType<typeof createApp>) {
-  let resolvePort: (port: number) => void;
-  const portPromise = new Promise<number>((r) => {
-    resolvePort = r;
-  });
-
-  const result = await serve(app, {
-    port: 0,
-    host: "127.0.0.1",
-    onReady({ port, host }) {
-      // When port: 0 is used, the onReady callback receives 0.
-      // We need to get the actual port from the underlying server.
-    },
-  });
-
-  // serve() with port 0 on Node uses http.createServer + server.listen(0).
-  // The onReady callback fires with the requested port (0), not the actual one.
-  // We use a small workaround: start another temporary server to find a free port,
-  // then we need the actual bound port. Since serve() doesn't expose the underlying
-  // server, we'll use a different approach: bind to port 0 and read the address.
-
-  // Actually, let's use a simpler approach: start a raw HTTP server to get a free port,
-  // close it, then use that port for serve(). There's a tiny race window but
-  // it's fine for tests.
-  return null as any; // placeholder -- we'll use a different approach below
-}
 
 /**
  * Helper: find a free port and start a Celsian server on it.
@@ -207,7 +176,7 @@ describe("HTTP Integration Tests", { timeout: 30_000 }, () => {
   // ─── Multiple concurrent requests ───
 
   it("should handle multiple concurrent requests", async () => {
-    const requests = Array.from({ length: 20 }, (_, i) =>
+    const requests = Array.from({ length: 20 }, (_, _i) =>
       fetch(`${baseUrl}/json`).then(async (res) => ({
         status: res.status,
         body: await res.json(),
@@ -246,7 +215,8 @@ describe("HTTP Integration Tests", { timeout: 30_000 }, () => {
     expect(setCookieHeader).toContain("session=abc123");
 
     // Extract the cookie value to send in the next request
-    const cookieValue = setCookieHeader!.split(";")[0]!; // "session=abc123"
+    if (!setCookieHeader) throw new Error("expected a set-cookie header");
+    const cookieValue = setCookieHeader.split(";")[0] ?? ""; // "session=abc123"
 
     // Second request: send the cookie back
     const readRes = await fetch(`${baseUrl}/read-cookie`, {

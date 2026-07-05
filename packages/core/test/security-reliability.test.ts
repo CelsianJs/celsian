@@ -1,6 +1,6 @@
 // @celsian/core — Security and reliability improvement tests
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { CronScheduler } from "../src/cron.js";
 import { CelsianError } from "../src/errors.js";
 import { runHooksFireAndForget } from "../src/hooks.js";
