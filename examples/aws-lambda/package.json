@@ -16,7 +16,7 @@
     "@celsian/core": "workspace:*",
     "@celsian/adapter-lambda": "workspace:*",
     "@celsian/schema": "workspace:*",
-    "@sinclair/typebox": "^0.34.49"
+    "@sinclair/typebox": "^0.34.50"
   },
   "devDependencies": {
     "esbuild": "^0.28.1"

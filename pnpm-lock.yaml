@@ -21,8 +21,8 @@ importers:
         specifier: ^2.31.0
         version: 2.31.0(@types/node@26.1.0)
       '@sinclair/typebox':
-        specifier: ^0.34.49
-        version: 0.34.49
+        specifier: ^0.34.50
+        version: 0.34.50
       '@size-limit/preset-small-lib':
         specifier: ^12.1.0
         version: 12.1.0(size-limit@12.1.0)
@@ -128,8 +128,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/schema
       '@sinclair/typebox':
-        specifier: ^0.34.49
-        version: 0.34.49
+        specifier: ^0.34.50
+        version: 0.34.50
     devDependencies:
       esbuild:
         specifier: ^0.28.1
@@ -153,8 +153,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/schema
       '@sinclair/typebox':
-        specifier: ^0.34.49
-        version: 0.34.49
+        specifier: ^0.34.50
+        version: 0.34.50
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20260424.1
@@ -210,8 +210,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/schema
       '@sinclair/typebox':
-        specifier: ^0.34.49
-        version: 0.34.49
+        specifier: ^0.34.50
+        version: 0.34.50
       celsian:
         specifier: workspace:*
         version: link:../../packages/celsian
@@ -244,8 +244,8 @@ importers:
   examples/rest-api:
     dependencies:
       '@sinclair/typebox':
-        specifier: ^0.34.49
-        version: 0.34.49
+        specifier: ^0.34.50
+        version: 0.34.50
       celsian:
         specifier: workspace:*
         version: link:../../packages/celsian
@@ -256,8 +256,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/rpc
       '@sinclair/typebox':
-        specifier: ^0.34.49
-        version: 0.34.49
+        specifier: ^0.34.50
+        version: 0.34.50
       celsian:
         specifier: workspace:*
         version: link:../../packages/celsian
@@ -414,8 +414,8 @@ importers:
         version: link:../schema
     devDependencies:
       '@sinclair/typebox':
-        specifier: ^0.34.49
-        version: 0.34.49
+        specifier: ^0.34.50
+        version: 0.34.50
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
@@ -479,8 +479,8 @@ importers:
   packages/schema:
     devDependencies:
       '@sinclair/typebox':
-        specifier: ^0.34.49
-        version: 0.34.49
+        specifier: ^0.34.50
+        version: 0.34.50
       valibot:
         specifier: ^1.2.0
         version: 1.2.0(typescript@6.0.3)
@@ -1373,8 +1373,8 @@ packages:
   '@shikijs/vscode-textmate@10.0.2':
     resolution: {integrity: sha512-83yeghZ2xxin3Nj8z1NMd/NCuca+gsYXswywDy5bHvwlWL8tpTQmzGeUuHd9FC3E/SBEMvzJRwWEOz5gGes9Qg==}
 
-  '@sinclair/typebox@0.34.49':
-    resolution: {integrity: sha512-brySQQs7Jtn0joV8Xh9ZV/hZb9Ozb0pmazDIASBkYKCjXrXU3mpcFahmK/z4YDhGkQvP9mWJbVyahdtU5wQA+A==}
+  '@sinclair/typebox@0.34.50':
+    resolution: {integrity: sha512-ydBWw0G6WFwWHzh9RK4B5c690UkreOG0llq0r+DaI7LgKgxigf8mhHzIPI3S0850g1BPkq/zpuCfrq4QFgUlTQ==}
 
   '@sindresorhus/is@7.2.0':
     resolution: {integrity: sha512-P1Cz1dWaFfR4IR+U13mqqiGsLFf1KbayybWwdd2vfctdV6hDpUkgCY0nKOLLTMSoRd/jJNjtbqzf13K8DCCXQw==}
@@ -3623,7 +3623,7 @@ snapshots:
 
   '@shikijs/vscode-textmate@10.0.2': {}
 
-  '@sinclair/typebox@0.34.49': {}
+  '@sinclair/typebox@0.34.50': {}
 
   '@sindresorhus/is@7.2.0': {}
 
