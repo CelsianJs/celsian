@@ -61,7 +61,7 @@
     "@sinclair/typebox": "^0.34.49",
     "@types/ws": "^8.18.1",
     "valibot": "^1.2.0",
-    "zod": "^4.3.6"
+    "zod": "^4.4.3"
   },
   "publishConfig": {
     "access": "public"
