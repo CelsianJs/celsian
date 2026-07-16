@@ -41,7 +41,7 @@
     "@changesets/cli": "^2.31.0",
     "@size-limit/preset-small-lib": "^12.1.0",
     "husky": "^9.1.7",
-    "lint-staged": "^17.0.7",
+    "lint-staged": "^17.0.8",
     "size-limit": "^12.1.0",
     "@sinclair/typebox": "^0.34.49",
     "@types/autocannon": "^7.12.7",
