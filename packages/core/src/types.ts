@@ -345,7 +345,8 @@ export interface PluginContext {
   addHook(name: HookName, handler: HookHandler | OnErrorHandler): void;
 
   decorate(name: string, value: unknown): void;
-  decorateRequest(name: string, value: unknown): void;
+  /** Decorate requests in this plugin scope, or every request in the current app with `scope: "app"`. */
+  decorateRequest(name: PropertyKey, value: unknown, options?: { scope?: "plugin" | "app" }): void;
   decorateReply(name: string, value: unknown): void;
 
   /** Return all registered routes (collected from the router). */
