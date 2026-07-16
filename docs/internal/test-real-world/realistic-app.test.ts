@@ -568,7 +568,11 @@ describe("Compress + Cache", () => {
     const bigPayload = { data: "x".repeat(200) };
     app.get("/big", (_req, reply) => reply.json(bigPayload));
 
-    const cache = createResponseCache({ store: cacheStore, ttlMs: 5000 });
+    const cache = createResponseCache({
+      store: cacheStore,
+      ttlMs: 5000,
+      varyHeaders: ["accept-encoding"],
+    });
     const cachedHandler = cache.wrap(app.handle.bind(app));
 
     // First request with gzip

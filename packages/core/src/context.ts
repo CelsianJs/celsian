@@ -19,7 +19,7 @@ export class EncapsulationContext {
   readonly prefix: string;
   readonly hooks: HookStore;
   readonly decorations: Map<string, unknown>;
-  readonly requestDecorations: Map<string, unknown>;
+  readonly requestDecorations: Map<PropertyKey, unknown>;
   readonly replyDecorations: Map<string, unknown>;
   readonly router: Router;
   private children: EncapsulationContext[] = [];
@@ -213,8 +213,12 @@ export class EncapsulationContext {
         }
         ctx.decorations.set(name, value);
       },
-      decorateRequest(name: string, value: unknown) {
-        ctx.requestDecorations.set(name, value);
+      decorateRequest(name: PropertyKey, value: unknown, options?: { scope?: "plugin" | "app" }) {
+        let target: EncapsulationContext = ctx;
+        if (options?.scope === "app") {
+          while (target.parent) target = target.parent;
+        }
+        target.requestDecorations.set(name, value);
       },
       decorateReply(name: string, value: unknown) {
         ctx.replyDecorations.set(name, value);

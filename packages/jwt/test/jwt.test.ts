@@ -1,6 +1,6 @@
 import { createApp } from "@celsian/core";
 import { describe, expect, it, vi } from "vitest";
-import { createJWTGuard, type JWTNamespace, jwt } from "../src/index.js";
+import { createJWTGuard, type JWTNamespace, type JWTPayload, jwt } from "../src/index.js";
 
 const SECRET = "test-secret-key-for-testing-only-min-32-chars";
 
@@ -55,6 +55,17 @@ describe("@celsian/jwt", () => {
     const token = await jwtInstance.sign({ sub: "user456" });
     const payload = await jwtInstance.verify(token);
     expect(payload.sub).toBe("user456");
+
+    app.get("/protected", {
+      preHandler: createJWTGuard(),
+      handler: (req, reply) => reply.json({ sub: (req as { user?: JWTPayload }).user?.sub }),
+    });
+    const protectedResponse = await app.inject({
+      url: "/protected",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(protectedResponse.status).toBe(200);
+    expect(await protectedResponse.json()).toEqual({ sub: "user456" });
   });
 
   it("should reject tokens with wrong secret", async () => {
@@ -296,6 +307,73 @@ describe("createJWTGuard (lazy, no-arg) binds to its owning app (no cross-app se
     // The defeat: app A must NOT accept a token signed for app B (was 200, must be 401).
     expect((await appA.inject({ url: "/protected", headers: { authorization: `Bearer ${tokenB}` } })).status).toBe(401);
     expect((await appB.inject({ url: "/protected", headers: { authorization: `Bearer ${tokenA}` } })).status).toBe(401);
+  });
+
+  it("does not fall back to another app's config when the current request has no JWT decoration", async () => {
+    const configuredApp = createApp();
+    await configuredApp.register(jwt({ secret: "configured-app-secret-aaaaaaaaaaaaaaaa" }), { encapsulate: false });
+    const configuredJwt = configuredApp.getDecoration("jwt") as JWTNamespace;
+    const token = await configuredJwt.sign({ sub: "configured-user" });
+
+    const appWithoutJwt = createApp();
+    appWithoutJwt.route({
+      method: "GET",
+      url: "/protected",
+      preHandler: createJWTGuard(),
+      handler: (_req, reply) => reply.json({ ok: true }),
+    });
+
+    const response = await appWithoutJwt.inject({
+      url: "/protected",
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toMatchObject({
+      error: expect.stringContaining("JWT plugin has not been registered"),
+    });
+  });
+
+  it("keeps different secrets and algorithms isolated under concurrent requests", async () => {
+    const appA = createApp();
+    await appA.register(jwt({ secret: "secret-A-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", algorithms: ["HS256"] }), {
+      encapsulate: false,
+    });
+    const jwtA = appA.getDecoration("jwt") as JWTNamespace;
+
+    const appB = createApp();
+    await appB.register(jwt({ secret: "secret-B-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", algorithms: ["HS512"] }), {
+      encapsulate: false,
+    });
+    const jwtB = appB.getDecoration("jwt") as JWTNamespace;
+
+    for (const app of [appA, appB]) {
+      app.route({
+        method: "GET",
+        url: "/protected",
+        preHandler: createJWTGuard(),
+        handler: (req, reply) => reply.json({ sub: (req as { user?: { sub?: string } }).user?.sub }),
+      });
+    }
+
+    const tokenA = await jwtA.sign({ sub: "user-A" });
+    const tokenB = await jwtB.sign({ sub: "user-B" });
+    const responses = await Promise.all(
+      Array.from({ length: 12 }, async (_, index) => {
+        const app = index % 2 === 0 ? appA : appB;
+        const ownToken = index % 2 === 0 ? tokenA : tokenB;
+        const foreignToken = index % 2 === 0 ? tokenB : tokenA;
+        return Promise.all([
+          app.inject({ url: "/protected", headers: { authorization: `Bearer ${ownToken}` } }),
+          app.inject({ url: "/protected", headers: { authorization: `Bearer ${foreignToken}` } }),
+        ]);
+      }),
+    );
+
+    for (const [own, foreign] of responses) {
+      expect(own.status).toBe(200);
+      expect(foreign.status).toBe(401);
+    }
   });
 });
 

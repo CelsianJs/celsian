@@ -315,7 +315,7 @@ export class CelsianApp {
   }
 
   /** Add a named property to every incoming CelsianRequest. */
-  decorateRequest(name: string, value: unknown): void {
+  decorateRequest(name: PropertyKey, value: unknown): void {
     this.pluginContext.decorateRequest(name, value);
   }
 
@@ -665,7 +665,8 @@ export class CelsianApp {
     if (this.rootContext.requestDecorations.size > 0) {
       for (const [key, value] of this.rootContext.requestDecorations) {
         if (!(key in celsianRequest)) {
-          (celsianRequest as Record<string, unknown>)[key] = typeof value === "function" ? value() : value;
+          (celsianRequest as unknown as Record<PropertyKey, unknown>)[key] =
+            typeof value === "function" ? value() : value;
         }
       }
     }

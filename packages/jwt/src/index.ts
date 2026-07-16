@@ -9,8 +9,8 @@ import {
 } from "@celsian/core";
 import * as jose from "jose";
 
-/** Request property key under which each app's resolved JWT config is decorated. */
-const REQUEST_CONFIG_KEY = "_celsianJwtConfig";
+/** Non-enumerable-by-convention request key for each app's resolved JWT config. */
+const REQUEST_CONFIG_KEY = Symbol("@celsian/jwt/config");
 
 /** Options for the JWT plugin: shared secret and allowed algorithms. */
 export interface JWTOptions {
@@ -55,14 +55,6 @@ function warnIfWeakHmacSecret(secretKey: Uint8Array, algorithms: string[]): void
   }
 }
 
-// Per-app config storage — avoids module-scope leakage while supporting createJWTGuard() without args.
-// Keyed by the PluginContext (app) the JWT plugin was registered on, so each app's secret/algorithms
-// stay isolated even when multiple CelsianApp instances exist in the same process.
-const _appConfigs = new WeakMap<object, ResolvedJWTConfig>();
-// Tracks the most-recently-registered app so a no-arg createJWTGuard() can bind to it at CALL time
-// (i.e. when the guard is created and added as a hook), not at request time.
-let _lastRegisteredApp: WeakRef<object> | null = null;
-
 /** Sign and verify methods exposed on `app.jwt` after registering the plugin. */
 export interface JWTNamespace {
   sign(payload: JWTPayload, options?: { expiresIn?: string | number }): Promise<string>;
@@ -85,15 +77,13 @@ export function jwt(options: JWTOptions): PluginFunction {
 
   return function jwtPlugin(app) {
     const resolved: ResolvedJWTConfig = { secretKey, algorithms };
-    _appConfigs.set(app, resolved);
-    _lastRegisteredApp = new WeakRef(app);
 
     // Decorate every request handled by THIS app with its own JWT config. A no-arg
     // createJWTGuard() then resolves the config from the request at request time —
     // so the guard is always bound to the app actually handling the request,
     // regardless of plugin-registration vs guard-creation order. This is what makes
     // multi-app isolation correct (app A's requests carry A's secret, B's carry B's).
-    app.decorateRequest(REQUEST_CONFIG_KEY, resolved);
+    app.decorateRequest(REQUEST_CONFIG_KEY, resolved, { scope: "app" });
 
     const jwtInstance: JWTNamespace = {
       async sign(payload: JWTPayload, signOptions?: { expiresIn?: string | number }): Promise<string> {
@@ -170,13 +160,12 @@ export function createJWTGuard(options?: JWTOptions): HookHandler {
   // plugin decorates each of its app's requests with that app's config (see above), so
   // the guard always uses the secret/algorithms of the app actually handling the request.
   // This is correct regardless of register-vs-createJWTGuard ordering and prevents
-  // cross-app secret bleed when multiple CelsianApp instances share a process. We fall
-  // back to the most-recently-registered app's config only when the request carries no
-  // decoration (e.g. the guard is invoked outside a normal request flow).
+  // cross-app secret bleed when multiple CelsianApp instances share a process. There is
+  // deliberately no module-global fallback: an undecorated request must fail closed.
   const lazyGuard: HookHandler<void | Response> = async (request: CelsianRequest, reply: CelsianReply) => {
-    const fromRequest = (request as Record<string, unknown>)[REQUEST_CONFIG_KEY] as ResolvedJWTConfig | undefined;
-    const fallback = _lastRegisteredApp ? _appConfigs.get(_lastRegisteredApp.deref() ?? {}) : undefined;
-    const config = fromRequest ?? fallback;
+    const config = (request as unknown as Record<PropertyKey, unknown>)[REQUEST_CONFIG_KEY] as
+      | ResolvedJWTConfig
+      | undefined;
 
     if (!config) {
       throw new CelsianError(

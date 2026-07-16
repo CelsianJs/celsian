@@ -178,6 +178,26 @@ describe("CelsianApp", () => {
     expect(body.hasStartTime).toBe(true);
   });
 
+  it("should support app-scoped request decorations from an encapsulated plugin", async () => {
+    const app = createApp();
+    const hidden = Symbol("hidden");
+
+    await app.register(async (plugin) => {
+      plugin.decorateRequest(hidden, { tenant: "app-a" }, { scope: "app" });
+    });
+
+    app.get("/decorated", (req, reply) => {
+      const value = (req as unknown as Record<PropertyKey, unknown>)[hidden];
+      return reply.json({ value, enumerableKeys: Object.keys(req) });
+    });
+
+    const response = await app.handle(new Request("http://localhost/decorated"));
+    expect(await response.json()).toMatchObject({
+      value: { tenant: "app-a" },
+      enumerableKeys: expect.not.arrayContaining(["hidden"]),
+    });
+  });
+
   it("should expose fetch handler", async () => {
     const app = createApp();
     app.get("/test", (_req, reply) => reply.json({ ok: true }));
