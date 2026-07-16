@@ -1,5 +1,15 @@
 # celsian-showcase
 
+## 1.0.8
+
+### Patch Changes
+
+- Updated dependencies [d574a13]
+  - @celsian/cache@0.5.5
+  - @celsian/core@0.5.5
+  - @celsian/schema@0.5.5
+  - @celsian/rpc@0.5.5
+
 ## 1.0.7
 
 ### Patch Changes
