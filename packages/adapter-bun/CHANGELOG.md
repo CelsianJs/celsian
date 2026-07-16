@@ -1,5 +1,12 @@
 # @celsian/adapter-bun
 
+## 0.5.5
+
+### Patch Changes
+
+- Updated dependencies [d574a13]
+  - @celsian/core@0.5.5
+
 ## 0.5.4
 
 ### Patch Changes
