@@ -56,6 +56,14 @@
   "dependencies": {
     "@celsian/schema": "workspace:*"
   },
+  "peerDependencies": {
+    "ws": "^8.18.0"
+  },
+  "peerDependenciesMeta": {
+    "ws": {
+      "optional": true
+    }
+  },
   "license": "MIT",
   "devDependencies": {
     "@sinclair/typebox": "^0.34.49",

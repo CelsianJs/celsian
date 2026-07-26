@@ -65,6 +65,9 @@ importers:
       vitest:
         specifier: ^3.0.0
         version: 3.2.4(@types/node@26.1.0)(tsx@4.23.0)(yaml@2.9.0)
+      ws:
+        specifier: ^8.18.0
+        version: 8.21.0
       zod:
         specifier: ^3.23.0
         version: 3.25.76
@@ -412,6 +415,9 @@ importers:
       '@celsian/schema':
         specifier: workspace:*
         version: link:../schema
+      ws:
+        specifier: ^8.18.0
+        version: 8.21.0
     devDependencies:
       '@sinclair/typebox':
         specifier: ^0.34.49

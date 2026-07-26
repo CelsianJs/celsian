@@ -87,18 +87,45 @@ describe("serve (Node)", () => {
     }
   });
 
-  it("warns when WS handlers are registered but the 'ws' package is not installed (CORE-07)", async () => {
+  it("warns with the exact install command when the optional 'ws' peer is missing (CORE-07)", async () => {
+    // `ws` is installed in this repo (the WS upgrade suite needs a real client),
+    // so simulate the missing-peer case by making the runtime import fail.
+    vi.doMock("ws", () => {
+      throw new Error("Cannot find package 'ws'");
+    });
+
     const app = createApp();
     app.ws("/chat", { message: () => {} });
     app.get("/x", (_req, reply) => reply.json({ ok: true }));
 
     const { close } = await serve(app, { port: 0, host: "127.0.0.1" });
     try {
-      const wsWarnings = warnSpy.mock.calls
-        .map((c) => String(c[0]))
-        .filter((m) => m.includes("'ws' package is not installed"));
+      const wsWarnings = warnSpy.mock.calls.map((c) => String(c[0])).filter((m) => m.includes("'ws' is not installed"));
       expect(wsWarnings.length).toBe(1);
-      expect(wsWarnings[0]).toContain("install");
+      // The requirement must be actionable, not just reported.
+      expect(wsWarnings[0]).toContain("npm install ws");
+      expect(wsWarnings[0]).toContain("pnpm add ws");
+      expect(wsWarnings[0]).toContain("optional peer dependency");
+    } finally {
+      await close();
+      vi.doUnmock("ws");
+    }
+  });
+
+  it("enables the upgrade handler when 'ws' is installed (CORE-07)", async () => {
+    const app = createApp();
+    app.ws("/chat", { message: () => {} });
+
+    const infoLines: string[] = [];
+    vi.spyOn(app.log, "info").mockImplementation((msg: string) => {
+      infoLines.push(msg);
+    });
+
+    const { close } = await serve(app, { port: 0, host: "127.0.0.1" });
+    try {
+      expect(infoLines).toContain("WebSocket upgrade handler enabled");
+      const wsWarnings = warnSpy.mock.calls.map((c) => String(c[0])).filter((m) => m.includes("'ws' is not installed"));
+      expect(wsWarnings).toEqual([]);
     } finally {
       await close();
     }

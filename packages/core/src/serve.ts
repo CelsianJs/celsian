@@ -3,6 +3,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { CelsianApp } from "./app.js";
 import { getFastPayload } from "./fast-response.js";
+import { authorizeWSUpgrade, type WSAllowedOrigins, WSConnectionLimiter } from "./websocket.js";
 
 /** Options for `serve()` -- port, host, static files, graceful shutdown. */
 export interface ServeOptions {
@@ -17,6 +18,29 @@ export interface ServeOptions {
   onShutdown?: () => Promise<void> | void;
   /** Authenticate WebSocket upgrade requests. Return false or throw to reject. */
   onUpgrade?: (request: Request, pathname: string) => boolean | Promise<boolean>;
+  /**
+   * Origins permitted to open a WebSocket. Accepts an origin, a list, `"*"`, or a
+   * predicate. Default: same-origin only (the handshake's `Origin` must match `Host`).
+   * WebSocket handshakes bypass CORS, so this is the CSWSH defence.
+   */
+  allowedOrigins?: WSAllowedOrigins;
+  /**
+   * Permit WebSocket handshakes with no `Origin` header (non-browser clients).
+   * Default: `false`.
+   */
+  allowMissingOrigin?: boolean;
+  /** Skip the app's root `onRequest` hooks on WebSocket handshakes. Default: `false` (hooks run). */
+  skipUpgradeHooks?: boolean;
+  /** Max WebSocket message size in bytes (default: 1 MiB; `ws` itself defaults to 100 MB). */
+  maxPayload?: number;
+  /** Max concurrent WebSocket connections per client IP (default: 64; 0 disables). */
+  maxConnectionsPerIP?: number;
+  /**
+   * Install `unhandledRejection` / `uncaughtException` handlers that log through
+   * the app logger and shut down gracefully. Default: `true`. Set `false` to
+   * keep Node's default behaviour or install your own.
+   */
+  handleFatalErrors?: boolean;
   /**
    * Node-only: socket-level timeout for receiving the entire request, in ms
    * (`http.Server.requestTimeout`). Slowloris protection. Default: 60_000. Set 0 to disable.
@@ -86,6 +110,88 @@ export async function serve(app: CelsianApp, options: ServeOptions = {}): Promis
 
   // Default: Node.js
   return serveNode(app, port, host, options);
+}
+
+/**
+ * True when the app has a real structured (JSON) logger.
+ *
+ * Reads `usingNoopLogger`, which has no public accessor on `CelsianApp`. When the
+ * field is absent this returns false, preserving the human-readable console line.
+ */
+function hasStructuredLogger(app: CelsianApp): boolean {
+  return (app as unknown as { usingNoopLogger?: boolean }).usingNoopLogger === false;
+}
+
+/**
+ * Print the startup/notice line to stdout only when the structured logger is off.
+ * With `logger: true` this would otherwise inject a non-JSON line into a JSON stream.
+ */
+function announce(app: CelsianApp, message: string, level: "log" | "warn" = "log"): void {
+  if (hasStructuredLogger(app)) return;
+  if (level === "warn") console.warn(message);
+  else console.log(message);
+}
+
+/**
+ * Install `unhandledRejection` / `uncaughtException` handlers.
+ *
+ * Node's default on an unhandled rejection is to crash immediately, dropping
+ * in-flight requests. These handlers log the failure with full context, drain,
+ * and then exit non-zero — they never swallow the error, because a silently
+ * swallowed rejection leaves the process in an unknown state.
+ */
+function installFatalErrorHandlers(app: CelsianApp, options: ServeOptions, shutdown: () => Promise<void>): () => void {
+  const noop = () => {};
+  if (options.handleFatalErrors === false) return noop;
+  // Deno without the Node compatibility layer has no process.on.
+  if (typeof process === "undefined" || typeof process.on !== "function") return noop;
+
+  let handling = false;
+  const fatal = (kind: "unhandledRejection" | "uncaughtException", error: unknown) => {
+    if (handling) return;
+    handling = true;
+
+    const err = error instanceof Error ? error : new Error(String(error));
+    app.log.fatal(`${kind} — shutting down`, {
+      type: kind,
+      error: err.message,
+      stack: err.stack,
+    });
+    // Always surface to stderr: a fatal must never be invisible, even with a noop logger.
+    console.error(`[celsian] ${kind} — shutting down:`, err);
+
+    void shutdown()
+      .catch((shutdownErr) => {
+        console.error("[celsian] error during fatal shutdown:", shutdownErr);
+      })
+      .finally(() => {
+        process.exitCode = 1;
+        process.exit(1);
+      });
+  };
+
+  const onRejection = (reason: unknown) => fatal("unhandledRejection", reason);
+  const onException = (error: unknown) => fatal("uncaughtException", error);
+  process.on("unhandledRejection", onRejection);
+  process.on("uncaughtException", onException);
+
+  // Returned so shutdown can detach them — long-lived test processes (and any
+  // caller that starts several servers) would otherwise accumulate listeners.
+  return () => {
+    process.removeListener("unhandledRejection", onRejection);
+    process.removeListener("uncaughtException", onException);
+  };
+}
+
+/** Register SIGTERM/SIGINT shutdown listeners; returns a disposer that detaches them. */
+function installSignalHandlers(handleShutdown: () => void): () => void {
+  const onSignal = () => handleShutdown();
+  process.on("SIGTERM", onSignal);
+  process.on("SIGINT", onSignal);
+  return () => {
+    process.removeListener("SIGTERM", onSignal);
+    process.removeListener("SIGINT", onSignal);
+  };
 }
 
 /** Shared teardown: stop worker, cron, and run user cleanup hook. */
@@ -203,23 +309,35 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
     }
 
     await teardownApp(app, options);
+    detachSignals();
+    detachFatal();
   };
 
-  process.on("SIGTERM", () => handleShutdown());
-  process.on("SIGINT", () => handleShutdown());
+  const detachSignals = installSignalHandlers(handleShutdown);
+  const detachFatal = installFatalErrorHandlers(app, options, handleShutdown);
 
   if (options.signal) {
     options.signal.addEventListener("abort", () => handleShutdown());
   }
 
-  // WebSocket upgrade handling (requires 'ws' package)
+  // WebSocket upgrade handling (requires the optional peer dependency 'ws')
   if (app.wsRegistry.hasAnyHandlers()) {
     try {
-      const wsMod = await import("ws");
+      // Resolve the specifier indirectly so bundlers (esbuild/Vite/webpack) do
+      // not follow it. `ws` is an OPTIONAL peer dependency resolved at runtime
+      // on Node; a literal import() would drag its node: builtins into edge
+      // bundles of @celsian/core that never serve WebSockets.
+      const wsSpecifier = "ws";
+      const wsMod = (await import(/* @vite-ignore */ /* webpackIgnore: true */ wsSpecifier)) as {
+        WebSocketServer?: new (options: Record<string, unknown>) => any;
+        default?: { WebSocketServer?: new (options: Record<string, unknown>) => any };
+      };
       const { createWSConnection } = await import("./websocket.js");
       const { buildRequest } = await import("./request.js");
       const WSS = wsMod.WebSocketServer ?? (wsMod as any).default?.WebSocketServer;
-      const wss = new WSS({ noServer: true });
+      // `ws` defaults maxPayload to 100 MB — far too generous for a default.
+      const wss = new WSS({ noServer: true, maxPayload: options.maxPayload ?? 1024 * 1024 });
+      const limiter = new WSConnectionLimiter(options.maxConnectionsPerIP ?? 64);
 
       server.on("upgrade", async (req: IncomingMessage, socket: any, head: Buffer) => {
         const url = new URL(req.url ?? "/", `http://${host}:${port}`);
@@ -231,22 +349,43 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
           return;
         }
 
-        // Authenticate upgrade requests via onUpgrade callback
-        if (options.onUpgrade) {
-          try {
-            const webReq = nodeToWebRequest(req, url);
-            const allowed = await options.onUpgrade(webReq, pathname);
-            if (!allowed) {
-              socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
-              socket.destroy();
-              return;
-            }
-          } catch {
-            socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
-            socket.destroy();
-            return;
-          }
+        // Gate the handshake: Origin allow-list, onUpgrade callback, then the
+        // app's root onRequest hooks (auth guards, rate limiters). WebSocket
+        // handshakes are exempt from CORS, so without this a cross-site page can
+        // open an authenticated socket with the victim's cookies.
+        const webReq = nodeToWebRequest(req, url);
+        const decision = await authorizeWSUpgrade(app, webReq, pathname, {
+          allowedOrigins: options.allowedOrigins,
+          allowMissingOrigin: options.allowMissingOrigin,
+          onUpgrade: options.onUpgrade,
+          runRequestHooks: options.skipUpgradeHooks !== true,
+        });
+
+        if (!decision.allowed) {
+          app.log.warn("WebSocket upgrade rejected", {
+            path: pathname,
+            status: decision.status,
+            reason: decision.reason,
+          });
+          socket.write(`HTTP/1.1 ${decision.status} ${decision.status === 403 ? "Forbidden" : "Rejected"}\r\n\r\n`);
+          socket.destroy();
+          return;
         }
+
+        const clientIp: string = req.socket?.remoteAddress ?? "unknown";
+        if (!limiter.acquire(clientIp)) {
+          app.log.warn("WebSocket upgrade rejected: per-IP connection cap reached", { path: pathname, ip: clientIp });
+          socket.write("HTTP/1.1 429 Too Many Requests\r\n\r\n");
+          socket.destroy();
+          return;
+        }
+        let released = false;
+        const releaseSlot = () => {
+          if (released) return;
+          released = true;
+          limiter.release(clientIp);
+        };
+        socket.once("close", releaseSlot);
 
         wss.handleUpgrade(req, socket, head, (ws: any) => {
           const conn = createWSConnection({
@@ -256,8 +395,7 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
 
           app.wsRegistry.addConnection(pathname, conn);
 
-          // Build a CelsianRequest for the upgrade
-          const webReq = nodeToWebRequest(req, url);
+          // Build a CelsianRequest for the upgrade (reuses the gated Request)
           const celsianReq = buildRequest(webReq, url, {});
 
           handler.open?.(conn, celsianReq);
@@ -274,16 +412,22 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
           ws.on("close", (code: number, reason: Buffer) => {
             handler.close?.(conn, code, reason.toString());
             app.wsRegistry.removeConnection(pathname, conn);
+            releaseSlot();
           });
         });
       });
 
       app.log.info("WebSocket upgrade handler enabled");
     } catch {
-      // 'ws' package not installed — WebSocket routes would silently 404 otherwise
+      // 'ws' package not installed — WebSocket routes would silently 404 otherwise.
+      // It is declared as an OPTIONAL peer dependency of @celsian/core so the
+      // requirement is discoverable without adding a runtime dep to core.
       console.warn(
-        "[celsian] WebSocket routes are registered but the 'ws' package is not installed — " +
-          "WebSocket upgrades are disabled on Node.js. Install it with: npm install ws (or pnpm add ws).",
+        "[celsian] WebSocket routes are registered but the optional peer dependency 'ws' is not installed — " +
+          "WebSocket upgrades are disabled on Node.js. Install it with one of:\n" +
+          "  npm install ws\n" +
+          "  pnpm add ws\n" +
+          "  yarn add ws",
       );
     }
   }
@@ -313,7 +457,9 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
     host !== boundAddress && boundFamily ? ` ("${host}" resolved to ${boundFamily} ${boundAddress})` : "";
 
   app.log.info(`Server running at http://${displayHost}:${boundPort}${familyNote}`);
-  console.log(`[celsian] Server running at http://${displayHost}:${boundPort}${familyNote}`);
+  // Only echo the human-readable line when there is no structured logger, so a
+  // JSON log stream never gets a stray plain-text line on boot.
+  announce(app, `[celsian] Server running at http://${displayHost}:${boundPort}${familyNote}`);
 
   // Loopback binds are unreachable from outside a container — almost always a
   // misconfiguration in production (Docker/Fly/Railway health checks fail).
@@ -323,7 +469,7 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
       `[celsian] note: production server is bound to loopback (${boundAddress}) — ` +
       "it will be unreachable from outside this machine/container. Set HOST=0.0.0.0 (or serve({ host: '0.0.0.0' })) to accept external traffic.";
     app.log.warn(note);
-    console.warn(note);
+    announce(app, note, "warn");
   }
 
   options.onReady?.({ port: boundPort, host: boundAddress });
@@ -353,16 +499,19 @@ function serveBun(app: CelsianApp, port: number, host: string, options: ServeOpt
     server.stop();
 
     await teardownApp(app, options);
+    detachSignals();
+    detachFatal();
   };
 
-  process.on("SIGTERM", () => handleShutdown());
-  process.on("SIGINT", () => handleShutdown());
+  const detachSignals = installSignalHandlers(handleShutdown);
+  const detachFatal = installFatalErrorHandlers(app, options, handleShutdown);
 
   if (options.signal) {
     options.signal.addEventListener("abort", () => handleShutdown());
   }
 
-  console.log(`[celsian] Server running at http://${host}:${port}`);
+  app.log.info(`Server running at http://${host}:${port}`);
+  announce(app, `[celsian] Server running at http://${host}:${port}`);
   options.onReady?.({ port, host });
 
   return {
@@ -385,6 +534,7 @@ function serveDeno(app: CelsianApp, port: number, host: string, options: ServeOp
     controller.abort();
 
     await teardownApp(app, options);
+    detachFatal();
   };
 
   // Register signal listeners — wrap in try/catch since Deno permissions may not allow signal listening
@@ -399,6 +549,8 @@ function serveDeno(app: CelsianApp, port: number, host: string, options: ServeOp
     // Signal listening not permitted
   }
 
+  const detachFatal = installFatalErrorHandlers(app, options, handleShutdown);
+
   if (options.signal) {
     options.signal.addEventListener("abort", () => handleShutdown());
   }
@@ -409,7 +561,8 @@ function serveDeno(app: CelsianApp, port: number, host: string, options: ServeOp
       hostname: host,
       signal: controller.signal,
       onListen() {
-        console.log(`[celsian] Server running at http://${host}:${port}`);
+        app.log.info(`Server running at http://${host}:${port}`);
+        announce(app, `[celsian] Server running at http://${host}:${port}`);
         options.onReady?.({ port, host });
       },
     },
