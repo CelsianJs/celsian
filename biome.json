@@ -40,7 +40,10 @@
       "benchmarks/**/*.ts",
       "test-real-world/**/*.ts",
       "*.json",
-      "*.ts"
+      "*.ts",
+      "!**/.vercel",
+      "!**/.wrangler",
+      "!**/dist"
     ]
   }
 }

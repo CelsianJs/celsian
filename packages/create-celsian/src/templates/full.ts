@@ -871,16 +871,16 @@ test/
 
 | Method | Path | Auth | CSRF | Description |
 |--------|------|------|------|-------------|
-| GET | \`/health\` | No |, | Server health check |
-| GET | \`/auth/token\` | No |, | Mint a demo JWT (dev only) |
-| GET | \`/users\` | No |, | List all users |
+| GET | \`/health\` | No | No | Server health check |
+| GET | \`/auth/token\` | No | No | Mint a demo JWT (dev only) |
+| GET | \`/users\` | No | No | List all users |
 | POST | \`/users\` | No | Yes | Create a user |
-| GET | \`/users/:id\` | No |, | Get a user by ID |
+| GET | \`/users/:id\` | No | No | Get a user by ID |
 | PUT | \`/users/:id\` | Yes | Yes | Update a user |
 | DELETE | \`/users/:id\` | Yes | Yes | Delete a user |
 | GET/POST | \`/_rpc/*\` | No | Excluded | RPC procedures |
-| GET | \`/docs\` | No |, | Swagger UI |
-| GET | \`/docs/openapi.json\` | No |, | OpenAPI 3.1 spec |
+| GET | \`/docs\` | No | No | Swagger UI |
+| GET | \`/docs/openapi.json\` | No | No | OpenAPI 3.1 spec |
 
 ### CSRF: why your first POST returns 403
 
