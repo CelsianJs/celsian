@@ -1,6 +1,6 @@
 // @celsian/schema — Auto-detect schema library by duck-typing
 
-import { fromTypeBox } from "./adapters/typebox.js";
+import { fromTypeBox, type TypeBoxAdapterOptions } from "./adapters/typebox.js";
 import { fromValibot } from "./adapters/valibot.js";
 import { fromZod } from "./adapters/zod.js";
 import { SchemaError } from "./errors.js";
@@ -20,11 +20,39 @@ function hasMethod(value: Record<PropertyKey, unknown>, key: PropertyKey): boole
   return typeof value[key] === "function";
 }
 
-export function fromSchema<T>(schema: unknown): StandardSchema<T, T> {
+/**
+ * Describe an unsupported value concretely so the thrown error is actionable:
+ * the old message never said what it actually received. Mirrors the style of
+ * `@celsian/core`'s `assertPlugin`.
+ */
+function describeSchema(value: unknown): string {
+  if (value === null) return "null";
+  if (value === undefined) return "undefined";
+  if (Array.isArray(value)) return `an Array (length ${value.length})`;
+  if (typeof value === "function") return `a function (${(value as { name?: string }).name || "anonymous"})`;
+  if (typeof value !== "object") return `${typeof value} (${String(value)})`;
+
+  const keys = Object.keys(value as object);
+  const preview =
+    keys.length > 0 ? `keys: ${keys.slice(0, 8).join(", ")}${keys.length > 8 ? ", …" : ""}` : "no own keys";
+  const ctor = (value as object).constructor?.name;
+  const label = ctor && ctor !== "Object" ? `a ${ctor} object` : "an object";
+  return `${label} with ${preview}`;
+}
+
+function unsupportedSchemaError(schema: unknown): SchemaError {
+  return new SchemaError(
+    `Unsupported schema: received ${describeSchema(schema)}. ` +
+      "Expected a Zod schema (has safeParse + parse), a TypeBox schema (built with Type.*), " +
+      "a Valibot schema (has ~standard), or an object implementing Celsian's StandardSchema " +
+      "(validate + toJsonSchema). If you are passing a plain JSON Schema, it must be an object " +
+      'schema of the form { type: "object", properties: { … } }.',
+  );
+}
+
+export function fromSchema<T>(schema: unknown, options?: { typebox?: TypeBoxAdapterOptions }): StandardSchema<T, T> {
   if (!isRecord(schema)) {
-    throw new SchemaError(
-      "Unsupported schema library. Use Zod, TypeBox, Valibot, or a StandardSchema-compatible schema.",
-    );
+    throw unsupportedSchemaError(schema);
   }
 
   // Already a StandardSchema (our own adapter output / hand-rolled).
@@ -36,7 +64,7 @@ export function fromSchema<T>(schema: unknown): StandardSchema<T, T> {
   // TypeBox: identified precisely by the TypeBox Kind symbol stamped on every TypeBox schema.
   // Checked before the JSON-Schema back-compat heuristic so it can't be mis-routed.
   if (TYPEBOX_KIND in schema) {
-    return fromTypeBox<T>(schema);
+    return fromTypeBox<T>(schema, options?.typebox);
   }
 
   // Zod: has safeParse + parse (covers both legacy and modern Zod 3.24+, which also adds `~standard`).
@@ -57,10 +85,8 @@ export function fromSchema<T>(schema: unknown): StandardSchema<T, T> {
   // like `{ type: "x", properties: {} }` are no longer misdetected as TypeBox. Kept last so it
   // can't shadow more specific detection.
   if (schema.type === "object" && isRecord(schema.properties)) {
-    return fromTypeBox<T>(schema);
+    return fromTypeBox<T>(schema, options?.typebox);
   }
 
-  throw new SchemaError(
-    "Unsupported schema library. Use Zod, TypeBox, Valibot, or a StandardSchema-compatible schema.",
-  );
+  throw unsupportedSchemaError(schema);
 }

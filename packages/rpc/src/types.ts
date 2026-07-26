@@ -24,6 +24,17 @@ export interface ProcedureDefinition<TInput = unknown, TOutput = unknown> {
   outputSchema?: StandardSchema<TOutput>;
   handler: (opts: { input: TInput; ctx: RPCContext }) => Promise<TOutput>;
   middlewares: MiddlewareFunction[];
+  /**
+   * Opt in to `multipart/form-data` / `application/x-www-form-urlencoded`
+   * bodies for this procedure. Off by default: those are CORS *simple* content
+   * types, so a cross-origin `<form>` reaches them with cookies attached and no
+   * preflight. Requiring `application/json` forces a preflight, which is the
+   * property that makes the RPC surface non-CSRF-able by a plain HTML form.
+   *
+   * Only set this for procedures that genuinely accept file uploads, and rely
+   * on the handler's origin check (or an app-level CSRF token) for those.
+   */
+  allowFormData?: boolean;
 }
 
 /** RPC middleware -- receives context and a `next()` function for the chain. */
