@@ -87,6 +87,28 @@ A no-argument guard resolves the realm from the request and there is no
 process-global fallback, so an undecorated request fails closed rather than
 inheriting another app's secret.
 
+### The ambient guard fails closed with two or more realms
+
+A no-argument guard on a route INSIDE a realm's scope resolves that realm, which
+is why the pattern above keeps working. On a route OUTSIDE every realm's scope
+(a root route, say) there is nothing to resolve, and with several realms
+registered the guard would otherwise authenticate against whichever realm
+registered last. It now throws instead:
+
+```typescript
+await app.register(tenantA, { prefix: '/tenant-a' });
+await app.register(tenantB, { prefix: '/tenant-b' });
+
+// Throws: this route belongs to no realm and there are two to choose from.
+app.get('/root', { preHandler: createJWTGuard() }, handler);
+
+// Say which realm you mean:
+app.get('/root', { preHandler: tenantA.guard() }, handler);
+```
+
+With exactly one realm registered, the no-argument guard still resolves it
+anywhere on the app.
+
 ## Asymmetric keys
 
 Pass PEM (SPKI / PKCS#8) strings or JWK objects. `publicKey` alone gives a

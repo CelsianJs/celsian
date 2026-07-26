@@ -115,11 +115,11 @@ export async function serve(app: CelsianApp, options: ServeOptions = {}): Promis
 /**
  * True when the app has a real structured (JSON) logger.
  *
- * Reads `usingNoopLogger`, which has no public accessor on `CelsianApp`. When the
- * field is absent this returns false, preserving the human-readable console line.
+ * Uses the public `app.hasStructuredLogger()` accessor. An app-like object that
+ * does not implement it keeps the human-readable console line.
  */
 function hasStructuredLogger(app: CelsianApp): boolean {
-  return (app as unknown as { usingNoopLogger?: boolean }).usingNoopLogger === false;
+  return typeof app.hasStructuredLogger === "function" && app.hasStructuredLogger();
 }
 
 /**

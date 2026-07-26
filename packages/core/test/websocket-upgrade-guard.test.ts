@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
+import type { PluginFunction } from "../src/types.js";
 import { authorizeWSUpgrade, checkWSOrigin, WSConnectionLimiter } from "../src/websocket.js";
 
 function handshake(init: { origin?: string | null; host?: string; url?: string } = {}): Request {
@@ -201,6 +202,87 @@ describe("authorizeWSUpgrade, hooks run on the handshake", () => {
   it("tolerates an app object that exposes no hooks", async () => {
     const decision = await authorizeWSUpgrade({}, handshake({ origin: "https://victim.app" }), "/chat");
     expect(decision.allowed).toBe(true);
+  });
+});
+
+/**
+ * Regression: the hook-resolution rewrite left `rootContext.hooks.onRequest`
+ * holding ONLY `app.addHook` hooks, so every guard registered the documented way
+ * (`app.register(csrf())`, `app.register(rateLimit())`, an auth plugin) stopped
+ * gating handshakes while still gating HTTP. The upgrade path now resolves the
+ * root SCOPE, which includes un-prefixed plugin contexts.
+ */
+describe("authorizeWSUpgrade, plugin-registered hooks gate the handshake", () => {
+  const authPlugin: PluginFunction = (instance) => {
+    instance.addHook("onRequest", (req) => {
+      if (!req.headers.get("authorization")) return new Response("Unauthorized", { status: 401 });
+    });
+  };
+
+  it("rejects an upgrade that a plugin-registered onRequest hook rejects", async () => {
+    const app = createApp();
+    await app.register(authPlugin);
+    app.get("/x", () => ({ ok: true }));
+    app.ws("/chat", {});
+    await app.ready();
+
+    // The HTTP path has always rejected this. The handshake used to return 101.
+    const http = await app.inject({ url: "/x" });
+    expect(http.status).toBe(401);
+
+    const decision = await authorizeWSUpgrade(app, handshake({ origin: "https://victim.app" }), "/chat");
+    expect(decision.allowed).toBe(false);
+    expect(decision.status).toBe(401);
+  });
+
+  it("still allows a legitimate handshake through the plugin hook", async () => {
+    const app = createApp();
+    await app.register(authPlugin);
+    app.ws("/chat", {});
+    await app.ready();
+
+    const req = handshake({ origin: "https://victim.app" });
+    req.headers.set("authorization", "Bearer token");
+    expect((await authorizeWSUpgrade(app, req, "/chat")).allowed).toBe(true);
+  });
+
+  it("runs plugin hooks and addHook hooks together, in registration order", async () => {
+    const app = createApp();
+    const seen: string[] = [];
+    app.addHook("onRequest", () => {
+      seen.push("addHook");
+    });
+    await app.register((instance) => {
+      instance.addHook("onRequest", () => {
+        seen.push("plugin");
+      });
+    });
+    app.ws("/chat", {});
+    await app.ready();
+
+    const decision = await authorizeWSUpgrade(app, handshake({ origin: "https://victim.app" }), "/chat");
+    expect(decision.allowed).toBe(true);
+    expect(seen).toEqual(["addHook", "plugin"]);
+  });
+
+  it("does not run hooks scoped to a prefix, an upgrade is not inside that prefix", async () => {
+    const app = createApp();
+    let ran = 0;
+    await app.register(
+      (instance) => {
+        instance.addHook("onRequest", () => {
+          ran++;
+          return new Response("no", { status: 401 });
+        });
+      },
+      { prefix: "/admin" },
+    );
+    app.ws("/chat", {});
+    await app.ready();
+
+    const decision = await authorizeWSUpgrade(app, handshake({ origin: "https://victim.app" }), "/chat");
+    expect(decision.allowed).toBe(true);
+    expect(ran).toBe(0);
   });
 });
 

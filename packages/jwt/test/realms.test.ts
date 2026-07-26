@@ -144,3 +144,117 @@ describe("two JWT realms on one app", () => {
     ).toBe(200);
   });
 });
+
+/**
+ * The ambient-guard edge left over after the realm-isolation fix.
+ *
+ * Realm isolation INSIDE a prefix was correct, but a route outside every realm's
+ * context fell through to the app-wide compatibility fallback, which is
+ * last-writer-wins. Proven: on a root route, realm A's token got a 401 while
+ * realm B's got a 200 with B's subject. Authenticating against an arbitrary
+ * tenant is worse than not authenticating at all, so it now fails closed.
+ */
+describe("unbound createJWTGuard() outside every realm", () => {
+  async function buildRootGuardedApp(realmCount: 1 | 2) {
+    const realmA = jwt({ secret: SECRET_A });
+    const realmB = jwt({ secret: SECRET_B });
+    const app = createApp();
+
+    await app.register(
+      async (tenant) => {
+        await tenant.register(realmA, { encapsulate: false });
+        tenant.get("/me", (_req, reply) => reply.json({ realm: "A" }));
+      },
+      { prefix: "/a" },
+    );
+
+    if (realmCount === 2) {
+      await app.register(
+        async (tenant) => {
+          await tenant.register(realmB, { encapsulate: false });
+          tenant.get("/me", (_req, reply) => reply.json({ realm: "B" }));
+        },
+        { prefix: "/b" },
+      );
+    }
+
+    app.get("/root", { preHandler: createJWTGuard() }, (req, reply) =>
+      reply.json({ sub: (req as { user?: { sub?: string } }).user?.sub }),
+    );
+    await app.ready();
+
+    return { app, realmA, realmB };
+  }
+
+  it("refuses to authenticate against an arbitrary realm when two are registered", async () => {
+    const { app, realmA, realmB } = await buildRootGuardedApp(2);
+
+    // Before the fix this was 200 {"sub":"userB"}: the LAST-registered realm
+    // silently became the ambient one.
+    const withB = await app.inject({
+      url: "/root",
+      headers: { authorization: `Bearer ${await realmB.sign({ sub: "user-b" })}` },
+    });
+    expect(withB.status).not.toBe(200);
+
+    const withA = await app.inject({
+      url: "/root",
+      headers: { authorization: `Bearer ${await realmA.sign({ sub: "user-a" })}` },
+    });
+    expect(withA.status).not.toBe(200);
+  });
+
+  it("names the actionable fix in the error", async () => {
+    const { app, realmB } = await buildRootGuardedApp(2);
+    const messages: string[] = [];
+    app.setErrorHandler((error) => {
+      messages.push(error.message);
+      return new Response("handled", { status: 500 });
+    });
+
+    await app.inject({ url: "/root", headers: { authorization: `Bearer ${await realmB.sign({ sub: "user-b" })}` } });
+
+    expect(messages[0]).toMatch(/2 realms/);
+    expect(messages[0]).toMatch(/jwt\(\.\.\.\)\.guard\(\)/);
+    expect(messages[0]).toMatch(/createJWTGuard\(\{ secret \}\)/);
+  });
+
+  it("keeps the single-realm fallback working", async () => {
+    const { app, realmA } = await buildRootGuardedApp(1);
+
+    const ok = await app.inject({
+      url: "/root",
+      headers: { authorization: `Bearer ${await realmA.sign({ sub: "user-a" })}` },
+    });
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toEqual({ sub: "user-a" });
+  });
+
+  it("still resolves the right realm for routes INSIDE a realm's scope", async () => {
+    const realmA = jwt({ secret: SECRET_A });
+    const realmB = jwt({ secret: SECRET_B });
+    const app = createApp();
+
+    const mount = (realm: ReturnType<typeof jwt>, name: string, prefix: string) =>
+      app.register(
+        async (tenant) => {
+          await tenant.register(realm, { encapsulate: false });
+          tenant.addHook("preHandler", createJWTGuard());
+          tenant.get("/me", (req, reply) =>
+            reply.json({ realm: name, sub: (req as { user?: { sub?: string } }).user?.sub }),
+          );
+        },
+        { prefix },
+      );
+
+    await mount(realmA, "A", "/a");
+    await mount(realmB, "B", "/b");
+    await app.ready();
+
+    const tokenA = await realmA.sign({ sub: "user-a" });
+    const self = await app.inject({ url: "/a/me", headers: { authorization: `Bearer ${tokenA}` } });
+    expect(self.status).toBe(200);
+    expect(await self.json()).toEqual({ realm: "A", sub: "user-a" });
+    expect((await app.inject({ url: "/b/me", headers: { authorization: `Bearer ${tokenA}` } })).status).toBe(401);
+  });
+});

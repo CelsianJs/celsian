@@ -403,6 +403,13 @@ export class EncapsulationContext {
         target.requestDecorations.set(name, value);
         ctx.scopes.invalidate();
       },
+      getRequestDecoration(name: PropertyKey, options?: { scope?: "plugin" | "app" }): unknown {
+        let target: EncapsulationContext = ctx;
+        if (options?.scope === "app") {
+          while (target.parent) target = target.parent;
+        }
+        return target.requestDecorations.get(name);
+      },
       decorateReply(name: string, value: unknown) {
         ctx.replyDecorations.set(name, value);
         ctx.scopes.invalidate();

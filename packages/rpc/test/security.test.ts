@@ -92,6 +92,66 @@ describe("H-7: decode() must not perform a prototype assignment from client inpu
     );
     expect(await res.json()).toEqual({ result: { isAdmin: false, keys: ["name"] } });
   });
+
+  // An UNRECOGNISED __t tag used to `return obj` straight from JSON.parse,
+  // skipping the BLOCKED_KEYS rebuild entirely. That is a complete bypass of the
+  // scrub above: any payload could opt out of it by inventing a tag.
+  describe("an unknown __t tag is not an escape hatch", () => {
+    it("scrubs __proto__ under an unknown tag", () => {
+      const decoded = decode(JSON.parse('{"__t":"Bogus","v":"x","__proto__":{"isAdmin":true},"name":"bob"}')) as Record<
+        string,
+        unknown
+      >;
+
+      expect(Object.keys(decoded)).toEqual(["__t", "v", "name"]);
+      expect((decoded as { isAdmin?: boolean }).isAdmin).toBeUndefined();
+      expect(Object.getPrototypeOf(decoded)).toBe(Object.prototype);
+      // The proven downstream consequence: a plain spread inherited isAdmin.
+      expect((Object.assign({}, decoded) as { isAdmin?: boolean }).isAdmin).toBeUndefined();
+    });
+
+    it("scrubs constructor and prototype under an unknown tag", () => {
+      const decoded = decode(
+        JSON.parse(
+          '{"__t":"Bogus","v":"x","constructor":{"prototype":{"isAdmin":true}},"prototype":{"y":2},"ok":true}',
+        ),
+      ) as Record<string, unknown>;
+
+      expect(Object.keys(decoded)).toEqual(["__t", "v", "ok"]);
+      expect(({} as { isAdmin?: boolean }).isAdmin).toBeUndefined();
+    });
+
+    it("scrubs an unknown tag nested inside a normal object", () => {
+      const decoded = decode(JSON.parse('{"a":{"__t":"Bogus","v":1,"__proto__":{"isAdmin":true},"id":7}}')) as Record<
+        string,
+        Record<string, unknown>
+      >;
+      const leaf = decoded.a!;
+
+      expect((leaf as { isAdmin?: boolean }).isAdmin).toBeUndefined();
+      expect(Object.keys(leaf)).toEqual(["__t", "v", "id"]);
+    });
+
+    it("blocks it on the GET ?input= path too", async () => {
+      const handler = new RPCHandler(
+        router({
+          echo: procedure.query(async ({ input }) => ({
+            merged: Object.assign({}, input as object) as { isAdmin?: boolean },
+            keys: Object.keys(input as object),
+          })),
+        }),
+      );
+
+      const tagged = '{"__t":"Bogus","v":"x","__proto__":{"isAdmin":true},"name":"bob"}';
+      const url = `http://localhost/_rpc/echo?input=${encodeURIComponent(tagged)}`;
+      const body = await json<RpcResult<{ merged: { isAdmin?: boolean }; keys: string[] }>>(
+        await handler.handle(new Request(url)),
+      );
+
+      expect(body.result.keys).toEqual(["__t", "v", "name"]);
+      expect(body.result.merged.isAdmin).toBeUndefined();
+    });
+  });
 });
 
 describe("H-7 companion: decode() depth cap", () => {
@@ -176,6 +236,52 @@ describe("H-9: mutations must not be reachable by a cross-origin HTML form", () 
   it("rejects a POST with no content-type at all", async () => {
     const res = await makeHandler().handle(new Request("http://localhost/_rpc/del", { method: "POST" }));
     expect(res.status).toBe(415);
+  });
+
+  // The check was `contentType.includes("application/json")`, so a CORS-simple
+  // text/plain body smuggled JSON past it by hiding the needle in a parameter.
+  it("rejects text/plain that merely mentions application/json in a parameter", async () => {
+    const res = await makeHandler().handle(
+      new Request("http://localhost/_rpc/del", {
+        method: "POST",
+        headers: { "content-type": "text/plain; charset=application/json" },
+        body: "{}",
+      }),
+    );
+    expect(res.status).toBe(415);
+  });
+
+  it("rejects a type that merely ends with the JSON string, e.g. application/x-notjson", async () => {
+    const res = await makeHandler().handle(
+      new Request("http://localhost/_rpc/del", {
+        method: "POST",
+        headers: { "content-type": "application/jsonish" },
+        body: "{}",
+      }),
+    );
+    expect(res.status).toBe(415);
+  });
+
+  it("still accepts application/json with parameters and odd casing", async () => {
+    const res = await makeHandler().handle(
+      new Request("http://localhost/_rpc/del", {
+        method: "POST",
+        headers: { "content-type": "Application/JSON; charset=utf-8" },
+        body: "{}",
+      }),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it("still accepts a structured-suffix +json type", async () => {
+    const res = await makeHandler().handle(
+      new Request("http://localhost/_rpc/del", {
+        method: "POST",
+        headers: { "content-type": "application/merge-patch+json" },
+        body: "{}",
+      }),
+    );
+    expect(res.status).toBe(200);
   });
 
   it("still accepts form data on a procedure that opted in", async () => {

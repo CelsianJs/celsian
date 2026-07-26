@@ -15,9 +15,11 @@ export interface SendFileOptions {
   root?: string;
   /**
    * Follow symlinks that point outside `root` (default: false). With the
-   * default, both the root and the target are resolved with `realpath()` and
-   * the containment check is re-applied to the real paths, so a symlink planted
-   * inside the served directory (uploads, extracted archives) cannot escape.
+   * default, both the root and the target are resolved with `realpath()`, the
+   * containment check is re-applied to the real paths, and the file is then
+   * opened once with `O_NOFOLLOW`, so a symlink planted inside the served
+   * directory (uploads, extracted archives) cannot escape, and cannot be
+   * planted after the check either.
    */
   allowSymlinks?: boolean;
 }
@@ -93,6 +95,58 @@ async function resolveConfinedPath(filePath: string, options: SendFileOptions | 
     return { ok: false, status: 403 };
   }
   return { ok: true, path: realPath };
+}
+
+/** Result of reading a confined file: the bytes plus the path they came from. */
+type ConfinedRead = { ok: true; data: Uint8Array; path: string } | { ok: false; status: 403 | 404 };
+
+/** Errno of a Node fs rejection, when it carries one. */
+function errnoOf(err: unknown): string | undefined {
+  const code = (err as { code?: unknown } | null)?.code;
+  return typeof code === "string" ? code : undefined;
+}
+
+/**
+ * Resolve `filePath` inside its root and read it through a SINGLE open handle.
+ *
+ * Returning a path string from the containment check and then re-opening it by
+ * name is a TOCTOU race: an attacker who can write inside the served root
+ * (uploads, extracted archives, exactly what `allowSymlinks: false` defends
+ * against) swaps the leaf for a symlink in the window between `realpath()` and
+ * the read, and the read follows it out of the root. `O_NOFOLLOW` makes the
+ * kernel refuse a symlinked final component, so the check and the read can no
+ * longer disagree, and the handle is read directly rather than looked up twice.
+ */
+async function readConfinedFile(filePath: string, options: SendFileOptions | undefined): Promise<ConfinedRead> {
+  const resolved = await resolveConfinedPath(filePath, options);
+  if (!resolved.ok) return resolved;
+
+  const { open } = await import("node:fs/promises");
+  const { constants } = await import("node:fs");
+
+  // With allowSymlinks the caller has opted into following links, so O_NOFOLLOW
+  // would break the documented behaviour and is left off.
+  const flags = options?.allowSymlinks ? constants.O_RDONLY : constants.O_RDONLY | constants.O_NOFOLLOW;
+
+  let handle: Awaited<ReturnType<typeof open>>;
+  try {
+    handle = await open(resolved.path, flags);
+  } catch (err) {
+    const code = errnoOf(err);
+    // ELOOP (EMLINK on some BSDs) is O_NOFOLLOW refusing a symlinked leaf: the
+    // path was swapped after the check, treat it as the symlink rejection it is.
+    if (code === "ELOOP" || code === "EMLINK") return { ok: false, status: 403 };
+    return { ok: false, status: 404 };
+  }
+
+  try {
+    return { ok: true, data: await handle.readFile(), path: resolved.path };
+  } catch {
+    // Directories (EISDIR) and unreadable files are "nothing to serve".
+    return { ok: false, status: 404 };
+  } finally {
+    await handle.close().catch(() => {});
+  }
 }
 
 const MIME_TYPES: Record<string, string> = {
@@ -301,15 +355,13 @@ export function createReply(): CelsianReply {
       sent = true;
       try {
         // Lazy import, keeps reply.ts edge-compatible when sendFile isn't used
-        const { readFile, stat } = await import("node:fs/promises");
         const { extname } = await import("node:path");
 
-        const resolved = await resolveConfinedPath(filePath, options);
-        if (!resolved.ok) return fileErrorResponse(resolved.status, buildHeaders);
+        const file = await readConfinedFile(filePath, options);
+        if (!file.ok) return fileErrorResponse(file.status, buildHeaders);
 
-        await stat(resolved.path);
-        const data = await readFile(resolved.path);
-        const ext = extname(resolved.path).toLowerCase();
+        const data = file.data;
+        const ext = extname(file.path).toLowerCase();
         const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
         return new Response(data, {
           status: statusCode,
@@ -324,7 +376,6 @@ export function createReply(): CelsianReply {
       sent = true;
       try {
         // Lazy import, keeps reply.ts edge-compatible when download isn't used
-        const { readFile, stat } = await import("node:fs/promises");
         const { extname, basename } = await import("node:path");
 
         const opts: DownloadOptions =
@@ -332,14 +383,13 @@ export function createReply(): CelsianReply {
 
         // Confined exactly like sendFile: without a root, downloads are limited
         // to the process CWD. Serving outside it requires an explicit root.
-        const resolved = await resolveConfinedPath(filePath, opts);
-        if (!resolved.ok) return fileErrorResponse(resolved.status, buildHeaders);
+        const file = await readConfinedFile(filePath, opts);
+        if (!file.ok) return fileErrorResponse(file.status, buildHeaders);
 
-        await stat(resolved.path);
-        const data = await readFile(resolved.path);
-        const ext = extname(resolved.path).toLowerCase();
+        const data = file.data;
+        const ext = extname(file.path).toLowerCase();
         const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
-        const downloadName = opts.filename ?? basename(resolved.path);
+        const downloadName = opts.filename ?? basename(file.path);
         // Sanitize filename to prevent header injection via Content-Disposition
         const safeName = downloadName.replace(/["\r\n]/g, "");
         return new Response(data, {

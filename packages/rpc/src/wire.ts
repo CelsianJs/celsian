@@ -118,20 +118,32 @@ function decodeValue(value: unknown, depth: number): unknown {
           // Return the raw string representation instead.
           return v;
         default:
-          return obj;
+          // An UNRECOGNISED tag is not a licence to hand back the raw
+          // `JSON.parse` object. Returning `obj` here skipped the BLOCKED_KEYS
+          // rebuild entirely, so `{"__t":"Bogus","v":"x","__proto__":{...}}`
+          // reached the handler with a live `__proto__` own property and a
+          // downstream `Object.assign({}, input)` inherited attacker fields.
+          // Treat it as the plain object it is.
+          return rebuildPlainObject(obj, depth);
       }
     }
 
-    // Rebuild by explicit key copy, skipping BLOCKED_KEYS. Assigning a
-    // `__proto__` key here would fire the prototype setter (see BLOCKED_KEYS).
-    const result: Record<string, unknown> = {};
-    for (const k of Object.keys(obj)) {
-      if (BLOCKED_KEYS.has(k)) continue;
-      result[k] = decodeValue(obj[k], depth + 1);
-    }
-    return result;
+    return rebuildPlainObject(obj, depth);
   }
   return value;
+}
+
+/**
+ * Rebuild an object by explicit key copy, skipping BLOCKED_KEYS. Assigning a
+ * `__proto__` key here would fire the prototype setter (see BLOCKED_KEYS).
+ */
+function rebuildPlainObject(obj: Record<string, unknown>, depth: number): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const k of Object.keys(obj)) {
+    if (BLOCKED_KEYS.has(k)) continue;
+    result[k] = decodeValue(obj[k], depth + 1);
+  }
+  return result;
 }
 
 /**

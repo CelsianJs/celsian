@@ -347,6 +347,35 @@ export class CelsianApp {
     return this.rootContext.collectAllDecorations().get(name);
   }
 
+  /**
+   * The `onRequest` chain that applies to a connection upgrade (WebSocket).
+   *
+   * An upgrade never matches a route, so it is gated by the root scope: the
+   * app's own `addHook('onRequest', ...)` hooks PLUS every hook contributed by
+   * a plugin registered without a prefix (`csrf()`, `rateLimit()`, auth
+   * plugins). Reading `rootContext.hooks.onRequest` directly would see only the
+   * former, which silently ungated handshakes for the documented
+   * `app.register(plugin)` form.
+   *
+   * Hooks registered under a prefix are deliberately excluded: they are scoped
+   * to that prefix and an upgrade is not inside it.
+   */
+  getUpgradeHooks(): HookHandler[] {
+    if (this.scopes.dirty) this.scopes.flush();
+    return this.rootScope.onRequest;
+  }
+
+  /**
+   * True when the app was created with a real logger (`logger: true` or a
+   * logger object) rather than falling back to the silent no-op.
+   *
+   * `serve()` uses this to decide whether printing a human-readable startup line
+   * would corrupt a JSON log stream.
+   */
+  hasStructuredLogger(): boolean {
+    return !this.usingNoopLogger;
+  }
+
   /** Add a named property to every incoming CelsianRequest. */
   decorateRequest(name: PropertyKey, value: unknown): void {
     this.pluginContext.decorateRequest(name, value);

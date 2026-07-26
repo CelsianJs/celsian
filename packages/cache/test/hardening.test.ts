@@ -62,6 +62,25 @@ describe("cache key includes the Host (H-10)", () => {
     store.destroy();
   });
 
+  it("does not share one entry between http:// and https:// on the same host", async () => {
+    const store = new MemoryKVStore({ cleanupIntervalMs: 0 });
+    const cache = createResponseCache({ store });
+    // A handler may legitimately serve the two schemes differently (canonical
+    // links, secure-only content), and a plaintext request must never be able to
+    // seed the entry served over TLS.
+    const handler = (req: Request) => jsonResponse({ scheme: new URL(req.url).protocol });
+
+    const insecure = request("http://x.app/data");
+    const secure = request("https://x.app/data");
+
+    await cache.cached(insecure, () => handler(insecure));
+    const second = await cache.cached(secure, () => handler(secure));
+
+    expect(second.headers.get("x-cache")).toBe("MISS");
+    expect(await second.json()).toEqual({ scheme: "https:" });
+    store.destroy();
+  });
+
   it("invalidate() accepts the host-less key form", async () => {
     const store = new MemoryKVStore({ cleanupIntervalMs: 0 });
     const cache = createResponseCache({ store });
@@ -114,6 +133,17 @@ describe("cache poisoning via unkeyed request headers (H-11)", () => {
     "x-host",
     "x-original-url",
     "x-rewrite-url",
+    // Added after a re-audit proved each of these still poisoned. `forwarded`
+    // is the RFC 7239 STANDARD header and was the most important omission.
+    "forwarded",
+    "x-forwarded-scheme",
+    "x-forwarded-port",
+    "x-forwarded-prefix",
+    "x-forwarded-uri",
+    "x-forwarded-ssl",
+    "x-http-host-override",
+    "x-original-host",
+    "x-original-uri",
   ])("partitions eagerly on %s", async (header) => {
     const store = new MemoryKVStore({ cleanupIntervalMs: 0 });
     const cache = createResponseCache({ store });

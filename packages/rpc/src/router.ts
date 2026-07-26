@@ -95,6 +95,24 @@ export interface RPCHandlerOptions {
 /** Content types that are CORS-"simple" and therefore reachable by a cross-origin `<form>`. */
 const FORM_CONTENT_TYPES = ["multipart/form-data", "application/x-www-form-urlencoded"];
 
+/**
+ * The MIME "essence": type/subtype, lowercased, with parameters and whitespace
+ * stripped.
+ *
+ * A substring test is not a media-type test. `Content-Type: text/plain;
+ * charset=application/json` contains the string "application/json" but is a
+ * CORS-simple type a cross-origin form can send without a preflight, which is
+ * the exact property the JSON requirement exists to guarantee.
+ */
+function mimeEssence(contentType: string): string {
+  return (contentType.split(";", 1)[0] ?? "").trim().toLowerCase();
+}
+
+/** True for `application/json` and any structured-suffix `+json` type. */
+function isJsonEssence(essence: string): boolean {
+  return essence === "application/json" || essence.endsWith("+json");
+}
+
 function isProductionEnv(): boolean {
   return (
     typeof process !== "undefined" &&
@@ -234,7 +252,8 @@ export class RPCHandler {
     // Prefer pre-parsed body from CelsianApp (body stream already consumed)
     const preParsed = (request as unknown as Record<string, unknown>).parsedBody;
     const contentType = request.headers.get("content-type") ?? "";
-    const isForm = FORM_CONTENT_TYPES.some((type) => contentType.includes(type));
+    const essence = mimeEssence(contentType);
+    const isForm = FORM_CONTENT_TYPES.includes(essence);
 
     if (isForm) {
       if (!proc.allowFormData) {
@@ -249,7 +268,7 @@ export class RPCHandler {
 
     // text/plain is CORS-simple too, and an empty content-type would otherwise
     // reach a no-input mutation. Anything that is not JSON is refused.
-    if (!contentType.includes("application/json")) {
+    if (!isJsonEssence(essence)) {
       return this.errorResponse(
         415,
         "UNSUPPORTED_MEDIA_TYPE",

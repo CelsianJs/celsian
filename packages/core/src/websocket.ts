@@ -131,8 +131,9 @@ export interface WSUpgradeGuardOptions {
   /** Legacy per-upgrade authentication callback. Runs after the Origin check. */
   onUpgrade?: (request: Request, pathname: string) => boolean | Promise<boolean>;
   /**
-   * Run the app's root `onRequest` hooks (auth guards, rate limiters) on the
-   * handshake. Default: `true`.
+   * Run the app's root-scope `onRequest` hooks (auth guards, rate limiters) on
+   * the handshake. That scope covers both `app.addHook` hooks and hooks
+   * contributed by un-prefixed plugins. Default: `true`.
    */
   runRequestHooks?: boolean;
 }
@@ -208,22 +209,28 @@ export async function checkWSOrigin(request: Request, options: WSUpgradeGuardOpt
  * Minimal shape of the app needed to authorize an upgrade. Declared structurally
  * so `websocket.ts` never imports `app.ts` (which imports this module).
  *
- * NOTE: root `onRequest` hooks are read through `rootContext`, which has no
- * public accessor on `CelsianApp` today. If one is added, switch to it.
+ * `getUpgradeHooks()` is the public accessor on `CelsianApp`. It resolves the
+ * root scope through the encapsulation chain, so hooks contributed by
+ * `app.register(plugin)` are included. Reading `rootContext.hooks.onRequest`
+ * (as this module used to) saw only `app.addHook` hooks and left every
+ * plugin-registered guard off the handshake path.
  */
 export interface WSUpgradeApp {
-  rootContext?: { hooks?: { onRequest?: HookHandler[] } };
+  getUpgradeHooks?: () => HookHandler[];
 }
 
-/** Read the app's root `onRequest` hook chain, tolerating an app that exposes none. */
-function getRootOnRequestHooks(app: unknown): HookHandler[] {
-  const hooks = (app as WSUpgradeApp | undefined)?.rootContext?.hooks?.onRequest;
+/** Read the app's upgrade hook chain, tolerating an app that exposes none. */
+function getUpgradeHooks(app: unknown): HookHandler[] {
+  const accessor = (app as WSUpgradeApp | undefined)?.getUpgradeHooks;
+  if (typeof accessor !== "function") return [];
+  const hooks = accessor.call(app);
   return Array.isArray(hooks) ? hooks : [];
 }
 
 /**
  * Full upgrade gate: Origin check, then the `onUpgrade` callback, then the app's
- * root `onRequest` hooks so auth guards and rate limiters apply to handshakes.
+ * root-scope `onRequest` hooks so auth guards and rate limiters apply to
+ * handshakes however they were registered (`addHook` or `register`).
  *
  * A hook that returns a `Response` (or sends the reply) rejects the handshake
  * with that response's status.
@@ -252,7 +259,7 @@ export async function authorizeWSUpgrade(
 
   if (options.runRequestHooks === false) return UPGRADE_OK;
 
-  const hooks = getRootOnRequestHooks(app);
+  const hooks = getUpgradeHooks(app);
   if (hooks.length === 0) return UPGRADE_OK;
 
   let url: URL;

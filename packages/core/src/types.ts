@@ -373,6 +373,16 @@ export interface PluginContext {
   decorate(name: string, value: unknown): void;
   /** Decorate requests in this plugin scope, or every request in the current app with `scope: "app"`. */
   decorateRequest(name: PropertyKey, value: unknown, options?: { scope?: "plugin" | "app" }): void;
+  /**
+   * Read back a request decoration set on this plugin scope, or on the app root
+   * with `scope: "app"`. Returns `undefined` when it was never set.
+   *
+   * Needed by plugins that must be aware of their own prior registrations, e.g.
+   * a multi-realm auth plugin that has to refuse to guess which realm an
+   * unbound guard belongs to. Without a read there is no way to distinguish
+   * "one realm" from "several", and last-writer-wins fails OPEN.
+   */
+  getRequestDecoration(name: PropertyKey, options?: { scope?: "plugin" | "app" }): unknown;
   decorateReply(name: string, value: unknown): void;
 
   /** Return all registered routes (collected from the router). */

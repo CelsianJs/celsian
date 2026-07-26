@@ -30,24 +30,41 @@ const sessions = createSessionManager({ store: sessionStore });
 
 ### What is in the key
 
-The default key is `${method}:${host}:${pathname}${normalizedQuery}`.
+The default key is `${method}:${scheme}//${host}:${pathname}${normalizedQuery}`,
+e.g. `GET:https//app.example:/data`.
 
-- **Host** is part of the key. One process serving several domains shares a
-  store, so keying on the path alone served one tenant's body to another.
+- **Scheme and host** are part of the key. One process serving several domains
+  shares a store, so keying on the path alone served one tenant's body to
+  another, and omitting the scheme let `http://x.app/data` and
+  `https://x.app/data` share one entry.
 - **Query parameters are sorted**, so `?a=1&b=2` and `?b=2&a=1` share one entry.
 - **`Origin`** is partitioned eagerly, so a `Vary: Origin` response cannot
   replay one origin's body or CORS headers to another.
-- **Host-rewriting headers** are partitioned eagerly too: `X-Forwarded-Host`,
-  `X-Forwarded-Proto`, `X-Forwarded-Server`, `X-Host`, `X-Original-URL`,
-  `X-Rewrite-URL`.
+- **Host-rewriting headers** are partitioned eagerly too: `Forwarded`,
+  `X-Forwarded-Host`, `X-Forwarded-Proto`, `X-Forwarded-Scheme`,
+  `X-Forwarded-Port`, `X-Forwarded-Server`, `X-Forwarded-Prefix`,
+  `X-Forwarded-Uri`, `X-Forwarded-Ssl`, `X-Host`, `X-Http-Host-Override`,
+  `X-Original-Host`, `X-Original-URL`, `X-Original-Uri`, `X-Rewrite-URL`.
 
-### Unkeyed request headers are the poisoning surface
+### Cache poisoning and varyHeaders
 
+> **A denylist of host-rewrite headers cannot be complete, and this one is not.**
+> Reverse proxies, CDNs, and frameworks invent new host/scheme override headers
+> continually (`X-Forwarded-*`, `X-Original-*`, vendor-specific spellings), and
+> the cache cannot know which header your handler happens to read. The list
+> above closes the vectors we know about, it is a mitigation, not a boundary.
+>
 > **Any request header your handler reflects into a response MUST be listed in
-> `varyHeaders`.** Otherwise it is an unkeyed input: one unauthenticated request
-> can plant an attacker-chosen value in a response that is then served to every
-> anonymous visitor for the whole TTL. This is the canonical web-cache-poisoning
-> attack, and the eagerly-partitioned list above is not exhaustive.
+> `varyHeaders`.** That is the only complete defence, because only you know what
+> your handler reads. Otherwise the header is an unkeyed input: one
+> unauthenticated request can plant an attacker-chosen value (say a
+> `<script src>` built from `X-Forwarded-Host`) in a response that is then served
+> to every anonymous visitor for the whole TTL. This is the canonical
+> web-cache-poisoning attack.
+>
+> If your handler builds absolute URLs at all, prefer deriving them from
+> configuration rather than from request headers. A handler that never reflects a
+> request header cannot be poisoned through one.
 
 > **A shared cache is unsafe in front of a handler that personalizes on an
 > unkeyed header.** A response personalized on `X-Forwarded-For`, for example,

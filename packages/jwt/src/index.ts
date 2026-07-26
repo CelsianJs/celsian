@@ -28,6 +28,26 @@ const REQUEST_CONFIG_KEY = Symbol("@celsian/jwt/config");
  */
 const REQUEST_FALLBACK_KEY = Symbol("@celsian/jwt/config-fallback");
 
+/**
+ * Request key for the per-app realm census.
+ *
+ * The fallback above is last-writer-wins, so with two realms on one app an
+ * unbound `createJWTGuard()` silently authenticated every unscoped route against
+ * whichever realm registered LAST: tenant B's token was accepted on a root
+ * route while tenant A's was rejected. Counting registrations lets the guard
+ * keep the single-realm convenience and fail CLOSED the moment the answer
+ * becomes a guess.
+ *
+ * The counter lives on the app root (not in a module global) so separate
+ * `CelsianApp` instances in one process do not contaminate each other.
+ */
+const REQUEST_REALM_CENSUS_KEY = Symbol("@celsian/jwt/realm-census");
+
+/** Mutable per-app count of registered JWT realms. */
+interface RealmCensus {
+  count: number;
+}
+
 /** Default lifetime applied by `sign()` when no `expiresIn` is given. */
 const DEFAULT_EXPIRES_IN = "15m";
 
@@ -393,6 +413,13 @@ export function jwt(options: JWTOptions): JWTPlugin {
     // REQUEST_FALLBACK_KEY doc comment for why this is not the authority.
     app.decorateRequest(REQUEST_FALLBACK_KEY, config, { scope: "app" });
 
+    // Census the realms on this app so the unbound guard can tell "one realm,
+    // the fallback is unambiguous" from "several, refuse to guess".
+    const existing = app.getRequestDecoration(REQUEST_REALM_CENSUS_KEY, { scope: "app" }) as RealmCensus | undefined;
+    const census: RealmCensus = existing ?? { count: 0 };
+    census.count += 1;
+    app.decorateRequest(REQUEST_REALM_CENSUS_KEY, census, { scope: "app" });
+
     app.decorate("jwt", jwtInstance);
   }
 
@@ -433,9 +460,11 @@ function createGuardForConfig(resolve: (request: CelsianRequest) => ResolvedJWTC
  * Create a preHandler hook that verifies Bearer tokens and populates `request.user`.
  *
  * When called without arguments, the realm is resolved from the request at
- * request time. That is unambiguous only while the app runs a SINGLE realm,
- * with two or more, pass an explicit `{ secret }` here or use the realm-bound
- * `jwt(...).guard()`.
+ * request time. That is unambiguous only while the app runs a SINGLE realm.
+ * With two or more, a route inside a realm's scope still resolves that realm,
+ * but a route outside every realm's scope THROWS rather than authenticating
+ * against an arbitrary one. Pass an explicit `{ secret }` here, or use the
+ * realm-bound `jwt(...).guard()`, for those routes.
  *
  * @example
  * ```ts
@@ -459,15 +488,33 @@ export function createJWTGuard(options?: JWTOptions): HookHandler {
   // request must fail closed rather than inherit another app's secret.
   return createGuardForConfig((request) => {
     const bag = request as unknown as Record<PropertyKey, unknown>;
-    const config = (bag[REQUEST_CONFIG_KEY] ?? bag[REQUEST_FALLBACK_KEY]) as ResolvedJWTConfig | undefined;
+    const scoped = bag[REQUEST_CONFIG_KEY] as ResolvedJWTConfig | undefined;
+    if (scoped) return scoped;
 
-    if (!config) {
+    const census = bag[REQUEST_REALM_CENSUS_KEY] as RealmCensus | undefined;
+    const fallback = bag[REQUEST_FALLBACK_KEY] as ResolvedJWTConfig | undefined;
+
+    if (!fallback) {
       throw new CelsianError(
         "createJWTGuard() called without options, but the JWT plugin has not been registered. " +
           "Either pass { secret } to createJWTGuard() or register the JWT plugin first with app.register(jwt({ secret })).",
       );
     }
-    return config;
+
+    // Several realms on this app and a route outside all of their contexts:
+    // the fallback would pick whichever realm registered last, i.e. one tenant's
+    // secret would authenticate on a route that belongs to no tenant. Refuse.
+    if (census && census.count > 1) {
+      throw new CelsianError(
+        `createJWTGuard() was called without options on a route that is outside every JWT realm's scope, ` +
+          `but this app has ${census.count} realms registered. Refusing to guess which one applies. ` +
+          "Bind the guard explicitly: use the realm-bound jwt(...).guard(), or pass the realm's config as " +
+          "createJWTGuard({ secret }). To guard a route inside a realm, register that realm on the same " +
+          "prefix/scope as the route.",
+      );
+    }
+
+    return fallback;
   });
 }
 

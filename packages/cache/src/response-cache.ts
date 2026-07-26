@@ -64,15 +64,29 @@ const DEFAULT_OPTIONS = {
  * the whole TTL. They are partitioned EAGERLY (like `origin`) because the
  * response that would tell us to vary on them is not available at lookup time.
  *
- * This list is not exhaustive. Any request header your handler reflects into a
- * response MUST be listed in `varyHeaders`.
+ * A DENYLIST CANNOT BE COMPLETE. Reverse proxies, CDNs, and frameworks invent
+ * host-rewrite headers freely, and this cache cannot know which header your
+ * handler happens to read. Any request header your handler reflects into a
+ * response MUST be listed in `varyHeaders`. See the README section
+ * "Cache poisoning and varyHeaders".
  */
 const HOST_REWRITE_HEADERS = [
+  // RFC 7239, the standard header. Its `host=`/`proto=` parameters are the
+  // canonical form of everything below it.
+  "forwarded",
   "x-forwarded-host",
   "x-forwarded-proto",
+  "x-forwarded-scheme",
+  "x-forwarded-port",
   "x-forwarded-server",
+  "x-forwarded-prefix",
+  "x-forwarded-uri",
+  "x-forwarded-ssl",
   "x-host",
+  "x-http-host-override",
+  "x-original-host",
   "x-original-url",
+  "x-original-uri",
   "x-rewrite-url",
 ];
 
@@ -221,11 +235,18 @@ export function createResponseCache(options: ResponseCacheOptions) {
 
   function defaultKeyGenerator(request: Request): string {
     const url = new URL(request.url);
-    // The HOST is part of the key. One process serving several domains shares a
-    // single store, so keying on the path alone served tenant-a's body to
-    // tenant-b. This invalidates pre-upgrade entries, which is correct for a
-    // safety boundary (same rationale as the `|origin=` partition below).
-    return `${request.method}:${url.host}:${url.pathname}${normalizeSearch(url)}`;
+    // The SCHEME and HOST are part of the key. One process serving several
+    // domains shares a single store, so keying on the path alone served
+    // tenant-a's body to tenant-b, and omitting the scheme let
+    // `http://x.app/data` and `https://x.app/data` share one entry even though a
+    // handler can serve them differently (canonical links, secure-only content).
+    // This invalidates pre-upgrade entries, which is correct for a safety
+    // boundary (same rationale as the `|origin=` partition below).
+    // The scheme is joined to the host with `//` rather than `://` so the
+    // authority stays a SINGLE colon-delimited segment, which is what
+    // `invalidate()`'s host-less key form parses against.
+    const scheme = url.protocol.endsWith(":") ? url.protocol.slice(0, -1) : url.protocol;
+    return `${request.method}:${scheme}//${url.host}:${url.pathname}${normalizeSearch(url)}`;
   }
 
   function cacheKeyForRequest(request: Request): string {
@@ -441,9 +462,9 @@ export function createResponseCache(options: ResponseCacheOptions) {
   /**
    * Invalidate a specific cache key, across every partition of it.
    *
-   * Accepts either the full generated form (`GET:example.com:/data`) or the
-   * host-less `GET:/data`, so call sites written before the host became part of
-   * the key keep working.
+   * Accepts either the full generated form (`GET:https//example.com:/data`) or
+   * the host-less `GET:/data`, so call sites written before the scheme and host
+   * became part of the key keep working.
    */
   async function invalidate(key: string): Promise<boolean> {
     const keys = await store.keys();
