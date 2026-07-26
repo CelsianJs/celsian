@@ -57,9 +57,46 @@ describe("fromSchema (auto-detect)", () => {
   });
 
   it("should throw for unsupported schema types", () => {
-    expect(() => fromSchema(42)).toThrow("Unsupported schema library");
-    expect(() => fromSchema(null)).toThrow("Unsupported schema library");
-    expect(() => fromSchema({})).toThrow("Unsupported schema library");
+    expect(() => fromSchema(42)).toThrow("Unsupported schema");
+    expect(() => fromSchema(null)).toThrow("Unsupported schema");
+    expect(() => fromSchema({})).toThrow("Unsupported schema");
+  });
+});
+
+// The old message ("Unsupported schema library. Use Zod, TypeBox, Valibot, …")
+// never said what it actually received, so a user passing the wrong variable
+// had nothing to go on. Mirrors the actionable style of core's assertPlugin.
+describe("fromSchema unsupported-schema error is actionable", () => {
+  it("names the primitive it received", () => {
+    expect(() => fromSchema(42)).toThrow(/received number \(42\)/);
+    expect(() => fromSchema("z.string()")).toThrow(/received string \(z\.string\(\)\)/);
+    expect(() => fromSchema(null)).toThrow(/received null/);
+    expect(() => fromSchema(undefined)).toThrow(/received undefined/);
+  });
+
+  it("names arrays and functions rather than calling them objects", () => {
+    expect(() => fromSchema([1, 2, 3])).toThrow(/received an Array \(length 3\)/);
+    expect(() => fromSchema(function mySchema() {})).toThrow(/received a function \(mySchema\)/);
+  });
+
+  it("lists the keys of an object it could not classify", () => {
+    expect(() => fromSchema({ kind: "custom", check: 1 })).toThrow(/keys: kind, check/);
+    expect(() => fromSchema({})).toThrow(/no own keys/);
+  });
+
+  it("still explains which libraries are supported", () => {
+    const message = (() => {
+      try {
+        fromSchema(42);
+        return "";
+      } catch (e) {
+        return (e as Error).message;
+      }
+    })();
+    expect(message).toContain("safeParse");
+    expect(message).toContain("TypeBox");
+    expect(message).toContain("Valibot");
+    expect(message).toContain("StandardSchema");
   });
 });
 
@@ -86,7 +123,7 @@ describe("fromSchema (modern / hardened detection)", () => {
 
   it("should NOT misdetect a plain object {type:'x', properties:{}} as TypeBox", () => {
     const notASchema = { type: "x", properties: {} };
-    expect(() => fromSchema(notASchema)).toThrow("Unsupported schema library");
+    expect(() => fromSchema(notASchema)).toThrow("Unsupported schema");
   });
 
   it("should detect a TypeBox schema via the TypeBox Kind symbol", () => {

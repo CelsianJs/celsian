@@ -15,7 +15,25 @@ try {
   // @sinclair/typebox not installed — will error at validate time
 }
 
-export function fromTypeBox<T>(typeboxSchema: any): StandardSchema<T, T> {
+/** Options for {@link fromTypeBox}. */
+export interface TypeBoxAdapterOptions {
+  /**
+   * Strip properties the schema does not declare. Defaults to `true`.
+   *
+   * TypeBox's own default is to let unknown keys through, while Zod and Valibot
+   * strip them. Because Celsian presents all three as interchangeable behind
+   * `fromSchema()`, that divergence made a library swap silently change whether
+   * `db.user.update({ data: validated })` was a mass-assignment hole. Celsian
+   * therefore normalizes on the stripping behavior.
+   *
+   * Set to `false` to keep raw TypeBox semantics (unknown keys pass through).
+   */
+  stripUnknown?: boolean;
+}
+
+export function fromTypeBox<T>(typeboxSchema: any, options?: TypeBoxAdapterOptions): StandardSchema<T, T> {
+  const stripUnknown = options?.stripUnknown ?? true;
+
   return {
     validate(input: unknown): SchemaResult<T> {
       if (!Value) {
@@ -26,7 +44,16 @@ export function fromTypeBox<T>(typeboxSchema: any): StandardSchema<T, T> {
       try {
         const errors = [...Value.Errors(typeboxSchema, input)];
         if (errors.length === 0) {
-          return { success: true, data: Value.Cast(typeboxSchema, input) };
+          // Cast is only ever reached once Errors() is empty, so it upcasts a
+          // value already known to conform — it never rescues invalid input.
+          const cast = Value.Cast(typeboxSchema, input);
+          if (!stripUnknown) {
+            return { success: true, data: cast };
+          }
+          // Cast returns the SAME reference when the input already conforms and
+          // Clean mutates in place, so clone first: validation must never
+          // mutate the caller's request body.
+          return { success: true, data: Value.Clean(typeboxSchema, Value.Clone(cast)) };
         }
         return {
           success: false,

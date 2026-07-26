@@ -14,10 +14,38 @@ interface ZodLike {
   toJsonSchema?(): Record<string, unknown>;
 }
 
+/**
+ * True when Zod refused a synchronous parse because the schema contains an
+ * async refinement/transform. Zod 4 throws `$ZodAsyncError`; Zod 3 throws a
+ * plain Error. Matched narrowly so genuine adapter bugs still surface.
+ */
+function isZodAsyncError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.constructor?.name === "$ZodAsyncError" ||
+    /Promise during synchronous parse|Synchronous parse encountered promise/i.test(error.message)
+  );
+}
+
 export function fromZod<T>(zodSchema: ZodLike): StandardSchema<T, T> {
   return {
     validate(input: unknown): SchemaResult<T> {
-      const result = zodSchema.safeParse(input);
+      let result: ReturnType<ZodLike["safeParse"]>;
+      try {
+        result = zodSchema.safeParse(input);
+      } catch (error) {
+        // Async Zod schemas can't be resolved through this synchronous
+        // interface. Fail loud as a result (mirroring the Valibot adapter)
+        // instead of throwing out of validate(), which every caller treats as
+        // a crash rather than a validation outcome. Anything else rethrows.
+        if (isZodAsyncError(error)) {
+          return {
+            success: false,
+            issues: [{ message: "Async Zod schemas are not supported by validate() — use a synchronous schema." }],
+          };
+        }
+        throw error;
+      }
       if (result.success) {
         return { success: true, data: result.data as T };
       }
