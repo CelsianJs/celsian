@@ -13,12 +13,32 @@ A complete SaaS backend built with CelsianJS in a single file. Demonstrates:
 
 ## Run
 
+Install once from the monorepo root (the example depends on workspace packages):
+
 ```bash
-npm install
-npx tsx src/index.ts
+pnpm install
 ```
 
-Server starts on `http://localhost:3000`.
+Then, from this directory:
+
+```bash
+pnpm start          # or: pnpm dev   for reload on change
+```
+
+Server starts on `http://localhost:3000`. Override with `PORT`.
+
+`JWT_SECRET` falls back to an obvious placeholder so the demo runs with no
+setup. Set a real one before deploying anything based on this:
+
+```bash
+JWT_SECRET=$(node -e "console.log(crypto.randomBytes(32).toString('hex'))") pnpm start
+```
+
+To list the routes without starting a server:
+
+```bash
+celsian routes      # needs @celsian/cli
+```
 
 ## Endpoints
 

@@ -1,0 +1,27 @@
+{
+  "version": "2.0",
+  "routeKey": "POST /users",
+  "rawPath": "/users",
+  "rawQueryString": "",
+  "headers": {
+    "accept": "*/*",
+    "content-type": "application/json",
+    "host": "example.execute-api.us-east-1.amazonaws.com",
+    "user-agent": "curl/8.4.0",
+    "x-forwarded-proto": "https"
+  },
+  "body": "{\"name\":\"Ada\",\"email\":\"ada@example.com\"}",
+  "isBase64Encoded": false,
+  "requestContext": {
+    "http": {
+      "method": "POST",
+      "path": "/users",
+      "protocol": "HTTP/1.1",
+      "sourceIp": "203.0.113.42",
+      "userAgent": "curl/8.4.0"
+    },
+    "requestId": "JKJaXmPLvHcESHB=",
+    "time": "26/Jul/2026:07:00:00 +0000",
+    "timeEpoch": 1785049200000
+  }
+}

@@ -1,0 +1,22 @@
+// Program used by vitest's `typecheck` mode (see vitest.config.ts).
+//
+// Deliberately narrower than tsconfig.typecheck.json: shipped source plus the
+// files that carry `expectTypeOf` assertions. vitest reports any error in the
+// program, and errors outside its `typecheck.include` list surface as
+// "unhandled source errors" rather than as a named failing test. Pointing it
+// at the full repo program therefore buried the two real inference failures
+// under a couple hundred unrelated test-file errors.
+//
+// `pnpm typecheck` remains the broad gate. This one answers a narrower
+// question: do the type-level assertions actually hold?
+//
+// Adding a new file of type assertions: list it here AND in
+// `test.typecheck.include` in vitest.config.ts.
+{
+  "extends": "./tsconfig.typecheck.json",
+  "include": [
+    "packages/*/src/**/*.ts",
+    "packages/core/test/type-inference.test.ts",
+    "packages/rpc/test/procedure.test.ts"
+  ]
+}

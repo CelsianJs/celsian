@@ -1,4 +1,4 @@
-// @celsian/cli — Logger with colored output
+// @celsian/cli: Logger with colored output
 
 const RESET = "\x1b[0m";
 const BOLD = "\x1b[1m";

@@ -1,4 +1,4 @@
-// @celsian/cli — celsian build command
+// @celsian/cli: celsian build command
 
 import { relative, resolve } from "node:path";
 import { logger } from "../utils/logger.js";
@@ -10,6 +10,8 @@ export interface BuildOptions {
   target: string;
   minify: boolean;
   platform: string;
+  /** Print each elided side-effect-only import instead of just a count. */
+  verbose?: boolean;
 }
 
 function formatBytes(bytes: number): string {
@@ -71,10 +73,31 @@ export async function buildCommand(options: BuildOptions): Promise<void> {
     console.log("");
     logger.dim(`  Done in ${elapsed.toFixed(0)}ms`);
 
-    if (result.warnings.length > 0) {
+    // esbuild emits `ignored-bare-import` for every side-effect-only import of a
+    // package marked `"sideEffects": false` -- which is every Celsian package.
+    // It is expected and harmless (the import is elided because the package
+    // declares it has no side effects), but as a raw warning it reads like a
+    // build problem. Count them instead of printing each one.
+    const elidedImports = result.warnings.filter((w) => w.id === "ignored-bare-import");
+    const realWarnings = result.warnings.filter((w) => w.id !== "ignored-bare-import");
+
+    if (realWarnings.length > 0) {
       console.log("");
-      for (const warning of result.warnings) {
+      for (const warning of realWarnings) {
         logger.warn(`${warning.text}`);
+      }
+    }
+
+    if (elidedImports.length > 0) {
+      console.log("");
+      logger.dim(
+        `  ${elidedImports.length} side-effect-only import${elidedImports.length === 1 ? "" : "s"} elided ` +
+          `(the package declares "sideEffects": false). This is expected -- run with --verbose for details.`,
+      );
+      if (options.verbose) {
+        for (const warning of elidedImports) {
+          logger.dim(`    ${warning.text}`);
+        }
       }
     }
   } catch (error) {

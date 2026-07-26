@@ -2,6 +2,9 @@
   "name": "example-vercel-edge",
   "private": true,
   "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
   "dependencies": {
     "@celsian/core": "workspace:*",
     "@celsian/adapter-vercel": "workspace:*"

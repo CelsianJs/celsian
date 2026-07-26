@@ -74,6 +74,9 @@ importers:
       '@celsian/core':
         specifier: workspace:*
         version: link:../packages/core
+      '@hono/node-server':
+        specifier: ^1.14.0
+        version: 1.19.15(hono@4.12.32)
       '@types/express':
         specifier: ^5.0.6
         version: 5.0.6
@@ -86,6 +89,9 @@ importers:
       fastify:
         specifier: ^5.9.0
         version: 5.9.0
+      hono:
+        specifier: ^4.7.0
+        version: 4.12.32
     devDependencies:
       '@types/autocannon':
         specifier: ^7.12.7
@@ -188,33 +194,6 @@ importers:
       tsx:
         specifier: ^4.23.0
         version: 4.23.0
-
-  examples/qa-test:
-    dependencies:
-      '@celsian/compress':
-        specifier: workspace:*
-        version: link:../../packages/compress
-      '@celsian/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@celsian/jwt':
-        specifier: workspace:*
-        version: link:../../packages/jwt
-      '@celsian/rate-limit':
-        specifier: workspace:*
-        version: link:../../packages/rate-limit
-      '@celsian/rpc':
-        specifier: workspace:*
-        version: link:../../packages/rpc
-      '@celsian/schema':
-        specifier: workspace:*
-        version: link:../../packages/schema
-      '@sinclair/typebox':
-        specifier: ^0.34.49
-        version: 0.34.49
-      celsian:
-        specifier: workspace:*
-        version: link:../../packages/celsian
 
   examples/quickstart:
     dependencies:
@@ -400,6 +379,25 @@ importers:
       create-celsian:
         specifier: workspace:*
         version: link:../create-celsian
+    devDependencies:
+      '@celsian/cache':
+        specifier: workspace:*
+        version: link:../cache
+      '@celsian/compress':
+        specifier: workspace:*
+        version: link:../compress
+      '@celsian/jwt':
+        specifier: workspace:*
+        version: link:../jwt
+      '@celsian/rate-limit':
+        specifier: workspace:*
+        version: link:../rate-limit
+      '@celsian/rpc':
+        specifier: workspace:*
+        version: link:../rpc
+      celsian:
+        specifier: workspace:*
+        version: link:../celsian
 
   packages/compress:
     dependencies:
@@ -1028,6 +1026,12 @@ packages:
 
   '@gerrit0/mini-shiki@1.27.2':
     resolution: {integrity: sha512-GeWyHz8ao2gBiUW4OJnQDxXQnFgZQwwQk05t/CVVgNBN7/rK8XZ7xY6YhLVv9tH3VppWWmr9DCl3MwemB/i+Og==}
+
+  '@hono/node-server@1.19.15':
+    resolution: {integrity: sha512-Za2ai6TLdKjUvnur+eenO6nuYYipVAEhyCAdaV8IRvmU9kK8crOZUSYvIXn72E4f8fJqyAbpcJuTsYYmZp9Deg==}
+    engines: {node: '>=18.14.1'}
+    peerDependencies:
+      hono: ^4
 
   '@img/colour@1.1.0':
     resolution: {integrity: sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ==}
@@ -1975,6 +1979,10 @@ packages:
 
   hdr-histogram-percentiles-obj@3.0.0:
     resolution: {integrity: sha512-7kIufnBqdsBGcSZLPJwqHT3yhk1QTsSlFsVD3kx5ixH/AlgBs9yM1q6DPhXZ8f8gtdqgh7N7/5btRLpQsS2gHw==}
+
+  hono@4.12.32:
+    resolution: {integrity: sha512-XcuyW9qE2kJn07PkecMOBd5Vq/hMy7mmGw+idz1yblbg9N17ijJODrvPkn7/dwL3Kulj8LcRJ69DLOWf91dRUg==}
+    engines: {node: '>=16.9.0'}
 
   html-escaper@2.0.2:
     resolution: {integrity: sha512-H2iMtd0I4Mt5eYiapRdIDjp+XzelXQ0tFE4JS7YFwFevXXMmOp9myNrUvCg0D6ws8iqkRPBfKHgbwig1SmlLfg==}
@@ -3352,6 +3360,10 @@ snapshots:
       '@shikijs/types': 1.29.2
       '@shikijs/vscode-textmate': 10.0.2
 
+  '@hono/node-server@1.19.15(hono@4.12.32)':
+    dependencies:
+      hono: 4.12.32
+
   '@img/colour@1.1.0': {}
 
   '@img/sharp-darwin-arm64@0.34.5':
@@ -4345,6 +4357,8 @@ snapshots:
       pako: 1.0.11
 
   hdr-histogram-percentiles-obj@3.0.0: {}
+
+  hono@4.12.32: {}
 
   html-escaper@2.0.2: {}
 

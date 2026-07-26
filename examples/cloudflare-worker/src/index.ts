@@ -1,4 +1,4 @@
-// CelsianJS — Cloudflare Workers example
+// CelsianJS -- Cloudflare Workers example
 //
 // Demonstrates:
 //  - createCloudflareHandler() adapter
@@ -20,7 +20,10 @@ interface Env extends CloudflareEnv {
 
 // ─── App Setup ──────────────────────────────────────────────────
 
-const app = createApp();
+// Exported as `app` so tooling that loads this file (for example
+// `celsian routes`) can find it. The default export stays the Worker handler,
+// which is what Cloudflare requires.
+export const app = createApp();
 
 // Plugins
 app.register(
@@ -63,7 +66,7 @@ app.get("/api/info", (req, reply) => {
 
 // ─── KV Read / Write ────────────────────────────────────────────
 
-// GET /kv/:key — read a value from CACHE KV
+// GET /kv/:key -- read a value from CACHE KV
 app.get("/kv/:key", async (req, reply) => {
   const env = (req as unknown as Record<string, unknown>).env as Env;
   const { key } = req.params;
@@ -84,7 +87,7 @@ app.get("/kv/:key", async (req, reply) => {
   }
 });
 
-// PUT /kv/:key — write a value to CACHE KV (typed body from schema)
+// PUT /kv/:key -- write a value to CACHE KV (typed body from schema)
 const KVPutSchema = Type.Object({
   value: Type.Unknown(),
   ttl: Type.Optional(Type.Number({ minimum: 0 })),
@@ -128,7 +131,7 @@ app.put(
   },
 );
 
-// DELETE /kv/:key — delete a value from CACHE KV
+// DELETE /kv/:key -- delete a value from CACHE KV
 app.delete("/kv/:key", async (req, reply) => {
   const env = (req as unknown as Record<string, unknown>).env as Env;
   const ctx = (req as unknown as Record<string, unknown>).ctx as {

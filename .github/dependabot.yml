@@ -5,3 +5,14 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+
+  # Workflows pin third-party actions to full commit SHAs (see
+  # .github/workflows/*.yml). Pinning is what stops a retagged or compromised
+  # action from reaching the release job's NPM_TOKEN, but it also means nothing
+  # ever updates on its own. Dependabot bumps the SHAs and rewrites the trailing
+  # version comment, so pinning stays maintainable instead of rotting.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5

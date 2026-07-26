@@ -14,9 +14,9 @@ A caught error is serialized to JSON with a consistent shape:
 }
 ```
 
-- `error` — a human-readable message. For 5xx errors in production, this is replaced with a generic message so internal details are not leaked.
-- `statusCode` — the HTTP status, mirrored in the response status line.
-- `code` — a stable, machine-readable string (the focus of this page).
+- `error`, a human-readable message. For 5xx errors in production, this is replaced with a generic message so internal details are not leaked.
+- `statusCode`, the HTTP status, mirrored in the response status line.
+- `code`, a stable, machine-readable string (the focus of this page).
 
 Validation errors add an `issues` array, and in development a `stack` (and any `cause`) is included. See [Error Handling](../README.md#error-handling) for how to throw and customize errors.
 
@@ -32,7 +32,7 @@ throw new HttpError(409, 'Email already registered', { code: 'EMAIL_TAKEN' });
 
 ## Codes the framework emits
 
-These codes come from CelsianJS itself — request parsing, routing, and validation — before your handler runs or when it throws a known error type.
+These codes come from CelsianJS itself (request parsing, routing, and validation) before your handler runs, or when it throws a known error type.
 
 | `code` | Status | Cause | Fix |
 | ------ | -----: | ----- | --- |

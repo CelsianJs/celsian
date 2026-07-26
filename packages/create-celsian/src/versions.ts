@@ -1,9 +1,9 @@
-// create-celsian — Centralized dependency version pins
+// create-celsian: Centralized dependency version pins
 // Single source of truth for the versions scaffolded into new projects.
 // Keeping these here prevents drift across the individual templates.
 
 /** Pin used for every Celsian package (celsian, @celsian/*). Tracks the unified
- *  fixed-group release line — bump in lockstep with the published version. */
+ *  fixed-group release line, bump in lockstep with the published version. */
 export const CELSIAN_VERSION = "^0.5.0";
 
 /** Third-party dependency pins shared across templates. */

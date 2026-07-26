@@ -8,9 +8,12 @@
 import { createVercelEdgeHandler } from "@celsian/adapter-vercel";
 import { cors, createApp } from "@celsian/core";
 
-const app = createApp({ logger: true });
+// Exported as `app` so tooling that loads this file (for example
+// `celsian routes api/index.ts`) can find it. The default export stays the
+// Edge function handler, which is what Vercel requires.
+export const app = createApp({ logger: true });
 
-// Register CORS (deferred — no top-level await)
+// Register CORS (deferred -- no top-level await)
 const initPromise = app.register(cors({ origin: "*" }), { encapsulate: false });
 
 // Health check

@@ -42,5 +42,13 @@
     "routes",
     "typescript"
   ],
-  "sideEffects": false
+  "sideEffects": false,
+  "devDependencies": {
+    "@celsian/rpc": "workspace:*",
+    "@celsian/jwt": "workspace:*",
+    "@celsian/cache": "workspace:*",
+    "@celsian/compress": "workspace:*",
+    "@celsian/rate-limit": "workspace:*",
+    "celsian": "workspace:*"
+  }
 }

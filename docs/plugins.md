@@ -1,6 +1,12 @@
 # Plugins and Encapsulation
 
-CelsianJS uses a Fastify-inspired plugin system where each plugin runs in an isolated context. Hooks and decorations registered inside a plugin are scoped to that plugin's routes by default.
+CelsianJS uses a Fastify-inspired plugin system where each plugin runs in an isolated context. Decorations, and `onRequest` / `preHandler` hooks, registered inside a plugin are scoped to that plugin's routes by default.
+
+> **Known gap (0.5.5).** Encapsulation is not complete. `onSend` and `onResponse` hooks
+> registered inside a plugin also run for routes registered outside it. Verified
+> 2026-07-26: a plugin registered under a `/p` prefix, adding all four hook types,
+> still fired its `onSend` and `onResponse` for a sibling `GET /outside`. Treat those
+> two hook types as app-wide regardless of where you register them.
 
 ## Writing a Plugin
 
@@ -153,11 +159,29 @@ async function userPlugin(app) {
 
 ### Reply Decorators
 
+`decorateReply` treats a **function value as a per-request factory**: on every request the
+framework calls it with no arguments and assigns the *return value* to the reply
+(`packages/core/src/app.ts:700`). So to add a reply *method*, pass a factory that returns
+the method:
+
 ```typescript
-app.decorateReply('sendCSV', function(data: string[][]) {
-  // Custom reply method
+// Correct: a factory that RETURNS the method.
+app.decorateReply('sendCSV', () => (rows: string[][]) =>
+  rows.map((r) => r.join(',')).join('\n')
+);
+```
+
+```typescript
+// WRONG: passing the method itself.
+// The framework invokes this once per request with no arguments, so `rows` is
+// undefined and every request to every route throws before reaching a handler.
+app.decorateReply('sendCSV', function (rows: string[][]) {
+  return rows.map((r) => r.join(',')).join('\n');
 });
 ```
+
+Non-function values are assigned as-is, and no decoration overwrites a property the reply
+already has.
 
 ## Plugin Options
 
@@ -246,9 +270,9 @@ Serves an OpenAPI 3.1 JSON spec at `/docs/openapi.json` and a Swagger UI at `/do
 | `@celsian/rate-limit` | `app.register(rateLimit({ max: 100, window: 60_000, trustProxy: true }), { encapsulate: false })` | `app.register(rateLimit({ max: 50, window: 60_000, trustProxy: true }), { encapsulate: false })` |
 | `@celsian/compress` | `app.register(compress({ threshold: 1024 }), { encapsulate: false })` | `app.register(compress(), { encapsulate: false })` |
 
-**Important:** Rate-limit and compress install their logic as an `onRequest` hook. That hook applies to routes in the *same* encapsulation scope as where the hook is added. Always register these plugins with `{ encapsulate: false }` — both globally **and** inside a feature plugin.
+**Important:** Rate-limit and compress install their logic as an `onRequest` hook. That hook applies to routes in the *same* encapsulation scope as where the hook is added. Always register these plugins with `{ encapsulate: false }`, both globally **and** inside a feature plugin.
 
-Why `{ encapsulate: false }` even for scoped use? When you `app.register(rateLimit(...))` with the default (encapsulated) registration, the plugin runs in a fresh **child** scope and adds its `onRequest` hook there. Your feature's routes live in the parent scope, so the hook never runs against them — the limiter is silently disabled. Passing `{ encapsulate: false }` runs the plugin against your feature's own scope, so its hook protects that feature's routes. To get a *per-feature* limit, register the limiter with `{ encapsulate: false }` inside each feature plugin (see [Pattern: Feature Plugin](#pattern-feature-plugin)).
+Why `{ encapsulate: false }` even for scoped use? When you `app.register(rateLimit(...))` with the default (encapsulated) registration, the plugin runs in a fresh **child** scope and adds its `onRequest` hook there. Your feature's routes live in the parent scope, so the hook never runs against them, the limiter is silently disabled. Passing `{ encapsulate: false }` runs the plugin against your feature's own scope, so its hook protects that feature's routes. To get a *per-feature* limit, register the limiter with `{ encapsulate: false }` inside each feature plugin (see [Pattern: Feature Plugin](#pattern-feature-plugin)).
 
 > `rateLimit()` also requires either `trustProxy: true` (to read the client IP from `X-Forwarded-For`/`X-Real-IP`) or a custom `keyGenerator`. With neither, it throws at registration so the limiter can never silently run without a way to identify clients.
 
@@ -258,7 +282,7 @@ A common pattern is to group routes, hooks, and services into a feature plugin:
 
 ```typescript
 async function usersFeature(app) {
-  // Scoped rate limit — use { encapsulate: false } so the onRequest hook
+  // Scoped rate limit: use { encapsulate: false } so the onRequest hook
   // applies to routes registered in this plugin context. trustProxy reads the
   // client IP from X-Forwarded-For (or pass a keyGenerator); one is required.
   await app.register(rateLimit({ max: 50, window: 60_000, trustProxy: true }), { encapsulate: false });
@@ -283,7 +307,7 @@ async function ordersFeature(app) {
 await app.register(cors(), { encapsulate: false });
 await app.register(security(), { encapsulate: false });
 
-// Feature plugins — each gets its own encapsulation scope with a prefix
+// Feature plugins: each gets its own encapsulation scope with a prefix
 await app.register(usersFeature, { prefix: '/api' });
 await app.register(ordersFeature, { prefix: '/api' });
 ```

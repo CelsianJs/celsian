@@ -1,4 +1,4 @@
-// Todo CRUD routes — registered as an encapsulated plugin with a /todos prefix.
+// Todo CRUD routes -- registered as an encapsulated plugin with a /todos prefix.
 //
 // Demonstrates:
 //   - Route shorthand methods (get, post, put, delete)
@@ -44,20 +44,20 @@ const updateTodoSchema = z.object({
 // ─── Plugin ───
 
 export const todoRoutes: PluginFunction = (app) => {
-  // GET /todos — List all todos
+  // GET /todos -- List all todos
   app.get("/todos", (_req, reply) => {
     const list = Array.from(todos.values());
     return reply.json(list);
   });
 
-  // GET /todos/:id — Get a single todo
+  // GET /todos/:id -- Get a single todo
   app.get("/todos/:id", (req, reply) => {
     const todo = todos.get(req.params.id);
     if (!todo) return reply.notFound("Todo not found");
     return reply.json(todo);
   });
 
-  // POST /todos — Create a new todo (with schema validation + typed body)
+  // POST /todos -- Create a new todo (with schema validation + typed body)
   app.post(
     "/todos",
     {
@@ -78,7 +78,7 @@ export const todoRoutes: PluginFunction = (app) => {
     },
   );
 
-  // PUT /todos/:id — Update a todo (with schema validation + typed body)
+  // PUT /todos/:id -- Update a todo (with schema validation + typed body)
   app.put(
     "/todos/:id",
     {
@@ -96,7 +96,7 @@ export const todoRoutes: PluginFunction = (app) => {
     },
   );
 
-  // DELETE /todos/:id — Delete a todo (204 No Content)
+  // DELETE /todos/:id -- Delete a todo (204 No Content)
   app.delete("/todos/:id", (req, reply) => {
     const existed = todos.delete(req.params.id);
     if (!existed) return reply.notFound("Todo not found");

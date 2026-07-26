@@ -1,4 +1,4 @@
-// CelsianJS on Vercel — Serverless Function (Fluid Compute)
+// CelsianJS on Vercel -- Serverless Function (Fluid Compute)
 //
 // This is the recommended way to deploy CelsianJS on Vercel.
 // Uses Node.js runtime with Fluid Compute for optimal cold-start
@@ -7,7 +7,10 @@
 import { createVercelHandler } from "@celsian/adapter-vercel";
 import { cors, createApp } from "@celsian/core";
 
-const app = createApp({ logger: true, trustProxy: true });
+// Exported as `app` so tooling that loads this file (for example
+// `celsian routes api/index.ts`) can find it. The default export stays the
+// Vercel function handler, which is what Vercel requires.
+export const app = createApp({ logger: true, trustProxy: true });
 
 // Register plugins
 await app.register(cors({ origin: "*" }), { encapsulate: false });

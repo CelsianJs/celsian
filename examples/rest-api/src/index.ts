@@ -3,9 +3,12 @@ import { createApp, serve } from "celsian";
 
 const app = createApp();
 
+// TypeBox `format` keywords are opt-in: unless the format is registered with
+// TypeBox's FormatRegistry, validation fails with "Unknown format 'email'".
+// A pattern keeps this example self-contained.
 const CreateUserSchema = Type.Object({
-  name: Type.String(),
-  email: Type.String({ format: "email" }),
+  name: Type.String({ minLength: 1 }),
+  email: Type.String({ pattern: "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$" }),
 });
 
 const users: Array<{ id: number; name: string; email: string }> = [];
@@ -34,4 +37,8 @@ app.get("/users/:id", (req, reply) => {
   return reply.json(user);
 });
 
-serve(app, { port: 3000 });
+serve(app, { port: parseInt(process.env.PORT ?? "3000", 10) });
+
+// Exported so tooling that loads this file (for example `celsian routes`)
+// can find the app. Running the file directly still starts the server above.
+export default app;

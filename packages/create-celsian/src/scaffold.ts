@@ -1,4 +1,4 @@
-// create-celsian — Scaffolding engine
+// create-celsian: Scaffolding engine
 // Shared between the create-celsian bin and `celsian create` in @celsian/cli.
 // Zero external dependencies.
 
@@ -109,7 +109,7 @@ export function scaffold(name: string, template: string, options: ScaffoldOption
 
   const projectName = basename(dir);
 
-  // The directory basename becomes the npm package name — enforce npm rules.
+  // The directory basename becomes the npm package name: enforce npm rules.
   const nameError = validateProjectName(projectName);
   if (nameError) {
     throw new ScaffoldError(nameError);
@@ -150,7 +150,7 @@ export function detectPackageManager(): string {
 }
 
 /**
- * The "Done! Next steps" block printed after scaffolding — shared so
+ * The "Done! Next steps" block printed after scaffolding, shared so
  * create-celsian and `celsian create` give identical guidance.
  */
 export function nextStepsLines(projectName: string, template: string, pm: string): string[] {
@@ -159,7 +159,7 @@ export function nextStepsLines(projectName: string, template: string, pm: string
 
   const lines = [`\n  Done! Next steps:\n`, `  cd ${projectName}`, `  ${install}`];
   if (template === "full") {
-    lines.push("  # Review .env (PORT, JWT_SECRET) — it was created from .env.example");
+    lines.push("  # Review .env (PORT, JWT_SECRET), it was created from .env.example");
   }
   lines.push(`  ${dev}`);
   if (template === "full") {

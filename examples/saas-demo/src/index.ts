@@ -1,13 +1,19 @@
-// SaaS Backend in One File — CelsianJS Demo
+// SaaS Backend in One File -- CelsianJS Demo
 // Demonstrates: JWT auth, CRUD, background tasks, cron, SSE, OpenAPI, Zod validation
 
+import { realpathSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import { cors, createApp, createSSEHub, openapi, serve } from "@celsian/core";
 import { createJWTGuard, jwt } from "@celsian/jwt";
 import { z } from "zod";
 
 // ─── Config ───
 
-const JWT_SECRET = process.env.JWT_SECRET ?? "celsian-demo-secret-change-me";
+// The fallback is an obvious placeholder, and at least 32 bytes so
+// @celsian/jwt does not warn about a brute-forceable HMAC secret on boot.
+// Generate a real one with:
+//   node -e "console.log(crypto.randomBytes(32).toString('hex'))"
+const JWT_SECRET = process.env.JWT_SECRET ?? "celsian-saas-demo-dev-secret-change-me";
 const PORT = Number(process.env.PORT ?? 3000);
 
 // ─── In-Memory Data Store ───
@@ -26,7 +32,7 @@ const emailIndex = new Map<string, string>(); // email -> user id
 let nextId = 1;
 
 function hashPassword(password: string): string {
-  // Simple hash for demo purposes — use bcrypt/argon2 in production
+  // Simple hash for demo purposes -- use bcrypt/argon2 in production
   let hash = 0;
   for (let i = 0; i < password.length; i++) {
     hash = (hash << 5) - hash + password.charCodeAt(i);
@@ -250,7 +256,9 @@ app.get(
 
 app.task({
   name: "send-welcome-email",
-  handler: async ({ input }) => {
+  // A task handler receives the enqueued input as its first argument
+  // (and a TaskContext as its second), not a wrapper object.
+  handler: async (input) => {
     const { userId, email, name } = input as { userId: string; email: string; name: string };
     // Simulate sending an email
     console.log(`[email] Sending welcome email to ${name} <${email}> (user: ${userId})`);
@@ -273,19 +281,36 @@ app.cron("daily-report", "0 9 * * *", async () => {
 
 // ─── Start Server ───
 
-app.startWorker();
-app.startCron();
+// Exported so tooling that loads this file (for example `celsian routes`)
+// can find the app.
+export default app;
 
-serve(app, {
-  port: PORT,
-  onShutdown: async () => {
-    await app.stopWorker();
-    app.stopCron();
-    console.log("Graceful shutdown complete");
-  },
-});
+const isDirectRun = (() => {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return pathToFileURL(realpathSync(entry)).href === import.meta.url;
+  } catch {
+    return false;
+  }
+})();
 
-console.log(`
+if (isDirectRun) {
+  // serve() starts the worker and cron scheduler itself, but starting them
+  // here too is harmless and keeps the demo explicit about what is running.
+  app.startWorker();
+  app.startCron();
+
+  await serve(app, {
+    port: PORT,
+    onShutdown: async () => {
+      await app.stopWorker();
+      app.stopCron();
+      console.log("Graceful shutdown complete");
+    },
+  });
+
+  console.log(`
   SaaS Demo API running on http://localhost:${PORT}
 
   Endpoints:
@@ -300,3 +325,4 @@ console.log(`
     GET  /docs             OpenAPI / Swagger UI
     GET  /health           Health check
 `);
+}

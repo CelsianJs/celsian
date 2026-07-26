@@ -4,7 +4,9 @@ import { Type } from "@sinclair/typebox";
 
 // ─── App Setup ───
 
-const app = createApp({
+// Exported as `app` so tooling that loads this file (for example
+// `celsian routes`) can find it. Lambda itself only uses the `handler` export.
+export const app = createApp({
   trustProxy: true,
 });
 

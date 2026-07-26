@@ -1,4 +1,4 @@
-# CelsianJS — Cloudflare Workers Example
+# CelsianJS on Cloudflare Workers
 
 Deploys a CelsianJS app to Cloudflare Workers with KV storage, CORS, and security headers.
 

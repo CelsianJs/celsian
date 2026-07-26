@@ -1,4 +1,4 @@
-// benchmarks/server-express.ts — Express benchmark target
+// benchmarks/server-express.ts - Express benchmark target
 
 import type { NextFunction, Request, Response } from "express";
 import express from "express";
@@ -8,17 +8,17 @@ export async function startExpressServer(port: number): Promise<{ close: () => P
 
   app.use(express.json());
 
-  // ─── Scenario 1: JSON hello ───
+  // Scenario 1: JSON hello
   app.get("/json", (_req: Request, res: Response) => {
     res.json({ message: "Hello, World!" });
   });
 
-  // ─── Scenario 2: Params ───
+  // Scenario 2: Params
   app.get("/user/:id", (req: Request, res: Response) => {
     res.json({ id: req.params.id, name: `User ${req.params.id}`, email: `user${req.params.id}@test.com` });
   });
 
-  // ─── Scenario 3: Middleware chain (5 layers) ───
+  // Scenario 3: Middleware chain (5 layers)
   const mw1 = (_req: Request, res: Response, next: NextFunction) => {
     res.setHeader("x-mw-1", "true");
     next();
@@ -44,12 +44,12 @@ export async function startExpressServer(port: number): Promise<{ close: () => P
     res.json({ middleware: "ok" });
   });
 
-  // ─── Scenario 4: Body parse (POST /echo) ───
+  // Scenario 4: Body parse (POST /echo)
   app.post("/echo", (req: Request, res: Response) => {
     res.json(req.body);
   });
 
-  // ─── Scenario 5: Error handling ───
+  // Scenario 5: Error handling
   app.get("/error", (_req: Request, _res: Response) => {
     throw new Error("Intentional benchmark error");
   });

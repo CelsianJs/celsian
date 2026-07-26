@@ -264,26 +264,43 @@ Install the adapter:
 npm install @celsian/adapter-fly
 ```
 
-The Fly adapter generates `fly.toml`, `Dockerfile`, and `.dockerignore` for you:
+The Fly adapter generates `fly.toml`, `Dockerfile`, and `.dockerignore` for you.
+
+> **Not yet built: config-driven adapters.** This section previously documented wiring the
+> adapter through `defineConfig({ build: { adapter } })`. That does not work.
+> `CelsianConfig` (`packages/core/src/config.ts`) has no `build` key, and nothing in the
+> framework reads one, so the adapter's `buildEnd()` would never be called. Corrected
+> 2026-07-26. Call the adapter directly from a build script instead, as below. That path
+> is real and verified.
 
 ```typescript
-// celsian.config.ts
-import { defineConfig } from '@celsian/core';
+// scripts/generate-deploy-files.ts
+// Run after your build: `tsx scripts/generate-deploy-files.ts`
 import { flyAdapter } from '@celsian/adapter-fly';
 
-export default defineConfig({
-  build: {
-    adapter: flyAdapter({
-      appName: 'my-api',
-      primaryRegion: 'iad',
-      regions: ['lhr', 'nrt'],  // Multi-region
-      memoryMb: 256,
-      autoStop: true,
-      autoStart: true,
-    }),
-  },
+const adapter = flyAdapter({
+  appName: 'my-api',
+  primaryRegion: 'iad',
+  regions: ['lhr', 'nrt'],  // Multi-region
+  memoryMb: 256,
+  autoStop: true,
+  autoStart: true,
 });
+
+await adapter.buildEnd({
+  serverEntry: 'dist/index.js',
+  clientDir: '',
+  staticDir: '',
+  outDir: '.',
+});
+// → fly.toml
+// → Dockerfile
+// → .dockerignore
 ```
+
+`@celsian/adapter-railway` exposes the same `buildEnd()` shape. `@celsian/adapter-node`
+declares `buildEnd()` but it is a stub that throws: it depends on a build pipeline that
+has not shipped.
 
 Deploy:
 
@@ -359,13 +376,13 @@ When deploying to serverless platforms (Vercel, AWS Lambda, Cloudflare Workers),
 Use route tags to plan which routes go where:
 
 ```typescript
-// Stateless API routes — deploy as serverless functions
+// Stateless API routes: deploy as serverless functions
 app.route({ method: 'GET', url: '/api/users', kind: 'serverless', handler: listUsers });
 
-// WebSocket or SSE — needs a persistent server
+// WebSocket or SSE: needs a persistent server
 app.route({ method: 'GET', url: '/ws', kind: 'hot', handler: wsHandler });
 
-// Background work — runs on worker processes
+// Background work: runs on worker processes
 app.route({ method: 'POST', url: '/tasks/email', kind: 'task', handler: emailHandler });
 
 const manifest = app.getRouteManifest();

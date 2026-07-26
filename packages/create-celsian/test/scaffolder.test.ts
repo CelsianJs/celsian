@@ -1,4 +1,4 @@
-// create-celsian — Scaffolder template tests
+// create-celsian: Scaffolder template tests
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -536,7 +536,7 @@ describe("rest-api email validation (no unregistered TypeBox format)", () => {
   it("the scaffolded pattern matches valid emails and rejects junk", () => {
     const match = restApiTemplate["src/index.ts"].match(/pattern: '([^']+)'/) ?? [];
     expect(match[1]).toBeDefined();
-    // The template source holds a TS string literal — unescape \\ to get the runtime pattern
+    // The template source holds a TS string literal: unescape \\ to get the runtime pattern
     const pattern = (match[1] ?? "").replace(/\\\\/g, "\\");
     const re = new RegExp(pattern);
     expect(re.test("ada@example.com")).toBe(true);
@@ -547,16 +547,31 @@ describe("rest-api email validation (no unregistered TypeBox format)", () => {
   });
 });
 
-describe("full template CSRF excludes (0.5.1 exact-match semantics)", () => {
-  it("lists every scaffolded RPC procedure path individually", () => {
+// Rewritten 2026-07-26. This block used to assert the OPPOSITE: that the
+// template enumerated every RPC procedure path individually, which was a
+// workaround for @celsian/core <= 0.5.1 matching `excludePaths` exactly.
+// Prefix matching shipped (packages/core/src/plugins/csrf.ts), so the
+// workaround was removed and every scaffolded project no longer inherits a
+// hand-maintained list that silently breaks when a procedure is added.
+describe("full template CSRF excludes (prefix-match semantics)", () => {
+  it("relies on prefix matching instead of enumerating each RPC procedure", () => {
     const security = fullTemplate["src/plugins/security.ts"];
+
+    expect(security).toContain("excludePaths: ['/health', '/ready', '/_rpc']");
+
+    // The obsolete per-procedure list must NOT come back: it is exactly the
+    // maintenance burden that made a newly added procedure 403 in production.
+    // Assert against the excludePaths ARRAY only, since the surrounding comment
+    // legitimately names a procedure path to explain what the prefix covers.
+    const excludeList = security.match(/excludePaths:\s*\[[^\]]*\]/)?.[0] ?? "";
+    expect(excludeList).toBeTruthy();
     for (const path of ["/_rpc/greeting.hello", "/_rpc/math.add", "/_rpc/math.multiply", "/_rpc/system.ping"]) {
-      expect(security).toContain(`'${path}'`);
+      expect(excludeList).not.toContain(path);
     }
-    // Forward-compat prefix entry for cores with pattern matching
-    expect(security).toContain("'/_rpc/*'");
-    // No longer relies on the broken bare '/_rpc' exact entry alone
-    expect(security).not.toMatch(/excludePaths: \['\/health', '\/ready', '\/_rpc'\]/);
+    expect(excludeList).not.toContain("/_rpc/*");
+
+    // And the stale claim about core's semantics must not be re-introduced.
+    expect(security).not.toMatch(/matches? excludePaths EXACTLY/i);
   });
 
   it("scaffolded test asserts an RPC mutation succeeds through the security stack", () => {

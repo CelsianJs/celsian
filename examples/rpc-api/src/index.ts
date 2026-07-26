@@ -27,6 +27,10 @@ app.route({
   },
 });
 
-serve(app, { port: 3000 });
+serve(app, { port: parseInt(process.env.PORT ?? "3000", 10) });
 
 export type AppRouter = typeof appRouter;
+
+// Exported so tooling that loads this file (for example `celsian routes`)
+// can find the app. Running the file directly still starts the server above.
+export default app;

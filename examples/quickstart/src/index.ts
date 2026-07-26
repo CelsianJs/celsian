@@ -1,4 +1,4 @@
-// CelsianJS Quickstart — Todo API with Auth
+// CelsianJS Quickstart -- Todo API with Auth
 //
 // A realistic starter template demonstrating:
 //   - createApp() with logging
@@ -10,8 +10,10 @@
 //   - Graceful shutdown
 //
 // Run:  pnpm dev        (hot-reload via tsx)
-// Test: pnpm test       (vitest with app.inject — no server needed)
+// Test: pnpm test       (vitest with app.inject -- no server needed)
 
+import { realpathSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import { cors, createApp, serve } from "@celsian/core";
 import type { JWTNamespace } from "@celsian/jwt";
 import { jwt } from "@celsian/jwt";
@@ -36,7 +38,7 @@ export function buildApp() {
     { encapsulate: false },
   );
 
-  // Register JWT plugin at the app level — decorates app with `jwt.sign()` and `jwt.verify()`
+  // Register JWT plugin at the app level -- decorates app with `jwt.sign()` and `jwt.verify()`
   app.register(jwt({ secret: JWT_SECRET }), { encapsulate: false }).then(() => {
     // Store the JWT instance so auth routes can use it
     const jwtNs = app.getDecoration("jwt") as JWTNamespace;
@@ -44,8 +46,8 @@ export function buildApp() {
   });
 
   // ─── Health Check ───
-  // GET /health  — liveness probe
-  // GET /ready   — readiness probe (waits for all plugins to load)
+  // GET /health  -- liveness probe
+  // GET /ready   -- readiness probe (waits for all plugins to load)
 
   app.health();
 
@@ -58,14 +60,28 @@ export function buildApp() {
   return app;
 }
 
-// ─── Start Server (only when run directly, not during tests) ───
+// A ready-made instance, exported as the default so tooling that loads this
+// file (for example `celsian routes`) can find it. Tests call buildApp() to
+// get their own isolated instance.
+const app = buildApp();
+export default app;
 
-const isMainModule = process.argv[1]?.endsWith("index.ts") || process.argv[1]?.endsWith("index.js");
-if (isMainModule) {
-  const app = buildApp();
+// ─── Start Server (only when run directly, not during tests or tooling) ───
+
+const isDirectRun = (() => {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return pathToFileURL(realpathSync(entry)).href === import.meta.url;
+  } catch {
+    return false;
+  }
+})();
+
+if (isDirectRun) {
   await app.ready();
 
-  serve(app, {
+  await serve(app, {
     port: parseInt(process.env.PORT ?? "3000", 10),
     onReady({ port, host }) {
       console.log(`Quickstart API ready at http://${host}:${port}`);

@@ -43,16 +43,31 @@ serve(app, { port: 3000 })
 - **Security** -- CORS, CSRF protection, Helmet-style headers, rate limiting, JWT auth.
 - **OpenAPI** -- Auto-generated API documentation with Swagger UI.
 
-## Packages
+## What this package re-exports
 
-This is a convenience meta-package that re-exports from the CelsianJS monorepo:
+`celsian` is a convenience meta-package. It re-exports **`@celsian/core` and `@celsian/schema` only**:
 
-| Package | Description |
-|---------|-------------|
-| `@celsian/core` | Server runtime, routing, hooks, plugins, tasks, cron, WebSocket |
-| `@celsian/schema` | Standard Schema adapters (Zod, TypeBox, Valibot) |
-| `@celsian/rpc` | Type-safe RPC procedures, middleware, typed client |
-| `@celsian/cli` | Dev server, route listing, code generation |
+| Package | Re-exported here? | Contents |
+|---------|-------------------|----------|
+| `@celsian/core` | Yes | `createApp`, `serve`, `cors`, `csrf`, `security`, `openapi`, `database`, errors, logger, cookies, ETag, config |
+| `@celsian/schema` | Yes | `fromSchema`, `fromZod`, `fromTypeBox`, `fromValibot`, `coerceQueryParams`, `coerceString` |
+
+Everything else is a separate install and is **not** available from `celsian`:
+
+```bash
+npm install @celsian/rpc          # type-safe RPC procedures
+npm install @celsian/jwt          # JWT auth plugin
+npm install @celsian/rate-limit   # rate limiting
+npm install @celsian/cache        # response cache, session store
+npm install @celsian/compress     # gzip/deflate
+npm install -D @celsian/cli       # dev server, routes, build, deploy
+```
+
+```ts
+// Correct: RPC comes from its own package.
+import { createApp, serve } from 'celsian';
+import { procedure, router, RPCHandler } from '@celsian/rpc';
+```
 
 ## Documentation
 
