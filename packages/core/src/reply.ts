@@ -241,8 +241,12 @@ function safeRedirectLocation(url: string, allowedHosts?: string[]): string {
  * browser will actually honour. Without it, cookies default to `Secure`, which
  * over plain-HTTP local development means the browser drops them and never
  * sends them back. See `resolveSecureDefault`.
+ * @param requestHeaders - The request's headers, read only if a cookie is
+ * actually set. They carry `Host` and `x-forwarded-proto`, which describe the
+ * origin the browser sees, whereas `requestUrl` often carries the address the
+ * server bound to.
  */
-export function createReply(requestUrl?: string | URL): CelsianReply {
+export function createReply(requestUrl?: string | URL, requestHeaders?: Headers): CelsianReply {
   let statusCode = 200;
   const headers: Record<string, string> = {};
   const setCookies: string[] = [];
@@ -348,7 +352,7 @@ export function createReply(requestUrl?: string | URL): CelsianReply {
     },
 
     cookie(name: string, value: string, options?: CookieOptions) {
-      setCookies.push(serializeCookie(name, value, options, { url: requestUrl }));
+      setCookies.push(serializeCookie(name, value, options, { url: requestUrl, headers: requestHeaders }));
       return reply;
     },
 
@@ -356,7 +360,9 @@ export function createReply(requestUrl?: string | URL): CelsianReply {
       // The clearing cookie must match the original's attributes, `Secure`
       // included, or the browser treats it as a different cookie and the
       // original survives. Same context in, same flag out.
-      setCookies.push(serializeCookie(name, "", { ...options, maxAge: 0 }, { url: requestUrl }));
+      setCookies.push(
+        serializeCookie(name, "", { ...options, maxAge: 0 }, { url: requestUrl, headers: requestHeaders }),
+      );
       return reply;
     },
 

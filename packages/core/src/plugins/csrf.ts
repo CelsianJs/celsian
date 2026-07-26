@@ -191,7 +191,7 @@ export function csrf(options: CSRFOptions = {}): PluginFunction {
               domain: cookieOpts.domain,
               httpOnly: false, // Must be readable by JS to send in header (double-submit)
             },
-            { url },
+            { url, headers: request.headers },
           );
           reply.header("set-cookie", cookieStr);
         }

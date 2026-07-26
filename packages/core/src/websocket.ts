@@ -270,7 +270,7 @@ export async function authorizeWSUpgrade(
   }
 
   const celsianRequest = buildRequest(request, url, {});
-  const reply = createReply(url);
+  const reply = createReply(url, request.headers);
   try {
     const early = await runHooks(hooks, celsianRequest, reply);
     if (early instanceof Response) {

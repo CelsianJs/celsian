@@ -203,7 +203,6 @@ describe("TypedCelsianRequest", () => {
 describe("Schema-based route type inference", () => {
   // Mock schema that looks like a Zod schema with _output phantom type
   type MockBodySchema = { _output: { name: string; email: string }; safeParse: unknown; parse: unknown };
-  type MockQuerySchema = { _output: { page: string; limit: string }; safeParse: unknown; parse: unknown };
 
   it("should infer parsedBody type from schema.body", () => {
     const app = createApp();

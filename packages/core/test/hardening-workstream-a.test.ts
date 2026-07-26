@@ -1,6 +1,6 @@
 // @celsian/core — Production-hardening regression tests (workstream A)
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { serializeCookie } from "../src/cookie.js";
 import { parseCronExpression } from "../src/cron.js";

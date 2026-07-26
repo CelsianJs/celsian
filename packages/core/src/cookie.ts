@@ -20,6 +20,17 @@ export interface CookieOptions {
 export interface CookieSecurityContext {
   /** Absolute request URL, e.g. `request.url`. */
   url?: string | URL;
+  /**
+   * The request's headers. Read lazily, and only when a cookie is actually
+   * serialized, so supplying this costs the hot path nothing.
+   *
+   * This matters because `url` is often built from the address the server BOUND
+   * to, not the address the browser typed. On Node, `serve()` composes
+   * `http://${host}:${port}`, and `host` is `0.0.0.0` under `NODE_ENV=production`.
+   * The `Host` header is the browser-facing name, which is the only thing that
+   * decides whether a browser will honour `Secure`.
+   */
+  headers?: Headers;
 }
 
 /**
@@ -31,11 +42,20 @@ export interface CookieSecurityContext {
  * does: testing a dev server from a phone means hitting `http://192.168.x.x`,
  * and that is exactly the case where a `Secure` cookie is set, silently
  * dropped by the browser, and never sent back.
+ *
+ * The wildcard bind addresses `0.0.0.0` and `::` are deliberately NOT here.
+ * They are not names a browser can ever address, they are what a server passes
+ * to `listen()` to accept on every interface, and `serve()` picks exactly those
+ * under `NODE_ENV=production`. Counting them as development is how every
+ * production Node deployment briefly lost the `Secure` flag on its session
+ * cookies: the request URL carried `http://0.0.0.0:3000`, which looked local.
+ * A wildcard bind is evidence of a container, so it falls through to the
+ * secure-by-default branch.
  */
 function isNonRoutableHost(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/^\[/, "").replace(/\]$/, "");
   if (host === "localhost" || host.endsWith(".localhost")) return true;
-  if (host === "::1" || host === "::" || host === "0.0.0.0") return true;
+  if (host === "::1") return true;
   if (host.endsWith(".local")) return true;
 
   const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
@@ -81,32 +101,79 @@ export function resetCookieSecurityWarnings(): void {
  * variable is what shipped session cookies with no `Secure` flag in the first
  * place. The request's own protocol is a fact, not an inference.
  */
-export function resolveSecureDefault(requestUrl: string | URL | undefined): boolean {
-  if (!requestUrl) return true;
+export function resolveSecureDefault(contextOrUrl: CookieSecurityContext | string | URL | undefined = {}): boolean {
+  // A bare URL is accepted as well as a full context: it is the shape callers
+  // outside the framework naturally reach for, and it is what this function
+  // originally took.
+  const context: CookieSecurityContext =
+    typeof contextOrUrl === "string" || contextOrUrl instanceof URL ? { url: contextOrUrl } : contextOrUrl;
+  const { url: requestUrl, headers } = context;
 
-  let url: URL;
-  try {
-    url = typeof requestUrl === "string" ? new URL(requestUrl) : requestUrl;
-  } catch {
-    return true;
+  // A proxy reporting HTTPS is enough on its own, and it is the common shape:
+  // TLS terminates at the edge and the app itself only ever sees plain HTTP.
+  // Trusting this header can only ever ADD `Secure`, so a spoofed value cannot
+  // downgrade anyone.
+  const forwardedProto = headers?.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase();
+  if (forwardedProto === "https" || forwardedProto === "wss") return true;
+
+  let url: URL | undefined;
+  if (requestUrl) {
+    try {
+      url = typeof requestUrl === "string" ? new URL(requestUrl) : requestUrl;
+    } catch {
+      url = undefined;
+    }
   }
 
-  if (url.protocol === "https:" || url.protocol === "wss:") return true;
-  if (url.protocol !== "http:" && url.protocol !== "ws:") return true;
+  if (url && (url.protocol === "https:" || url.protocol === "wss:")) return true;
+  if (url && url.protocol !== "http:" && url.protocol !== "ws:") return true;
 
-  if (isNonRoutableHost(url.hostname)) return false;
+  // Prefer the `Host` header over the URL's hostname. The URL is frequently
+  // built from the bind address (`0.0.0.0` in production), whereas `Host` is
+  // the name the browser actually addressed, and it is the browser's view that
+  // decides whether `Secure` is honoured.
+  //
+  // `Host` is client-controlled, so a caller can send `Host: localhost` and get
+  // a cookie without `Secure`. That only ever affects the cookie in that
+  // caller's own browser, since a browser sets `Host` from the URL it was given
+  // and an attacker cannot make a victim's browser lie. There is no cross-user
+  // downgrade here.
+  const hostHeader = headers?.get("host")?.trim();
+  const browserFacingHost = hostHeader || url?.host;
+  if (!browserFacingHost) return true;
 
-  if (!warnedInsecureHosts.has(url.host)) {
-    warnedInsecureHosts.add(url.host);
+  const hostname = stripPort(browserFacingHost);
+  if (isNonRoutableHost(hostname)) return false;
+
+  if (!warnedInsecureHosts.has(browserFacingHost)) {
+    warnedInsecureHosts.add(browserFacingHost);
     console.warn(
-      `[celsian] Setting a Secure cookie over plain HTTP for host "${url.host}". ` +
+      `[celsian] Setting a Secure cookie over plain HTTP for host "${browserFacingHost}". ` +
         "Browsers will accept the Set-Cookie header and then never send the cookie back, " +
         "so sessions written this way silently do not persist. " +
-        "If this app sits behind a TLS-terminating proxy, forward the x-forwarded-proto header. " +
+        "If this app sits behind a TLS-terminating proxy, have the proxy send x-forwarded-proto: https. " +
         "If it genuinely serves plain HTTP, pass { secure: false } explicitly.",
     );
   }
   return true;
+}
+
+/**
+ * Take the hostname out of a `Host`-header-shaped value.
+ *
+ * Bracketed IPv6 (`[::1]:3000`) has to be handled before the port split,
+ * because a bare IPv6 address is full of colons.
+ */
+function stripPort(hostValue: string): string {
+  if (hostValue.startsWith("[")) {
+    const end = hostValue.indexOf("]");
+    if (end !== -1) return hostValue.slice(1, end);
+  }
+  const colon = hostValue.lastIndexOf(":");
+  if (colon !== -1 && !hostValue.slice(colon + 1).includes(":")) {
+    return hostValue.slice(0, colon);
+  }
+  return hostValue;
 }
 
 // Keys that must never be set via user input (prototype pollution prevention)
@@ -189,7 +256,7 @@ export function serializeCookie(
     httpOnly: true,
     sameSite: "lax",
     ...options,
-    secure: options.secure ?? resolveSecureDefault(context.url),
+    secure: options.secure ?? resolveSecureDefault(context),
   };
 
   let cookie = `${name}=${encodeURIComponent(value)}`;

@@ -49,6 +49,15 @@ Each of these was proven by executing the documented sample, not by reading it.
   `x-forwarded-proto`. `NODE_ENV` is not consulted, since a missing env var is
   what caused the original defect. The CSRF plugin now shares this policy instead
   of exempting itself with its own `NODE_ENV` check.
+
+  The host that decision is made against is the one the browser addressed, read
+  from the `Host` header, and `x-forwarded-proto: https` alone is enough to
+  force `Secure`. Both matter because the request URL is frequently built from
+  the address the server BOUND to rather than the one the client typed: on Node,
+  `serve()` composes `http://${host}:${port}`, and `host` is the wildcard
+  `0.0.0.0` under `NODE_ENV=production`. Wildcard binds are therefore not
+  treated as local. Deriving from the bind address instead would strip `Secure`
+  from the session cookies of every production Node deployment.
 - **`createVercelCronHandler` runs cron jobs.** It validated `CRON_SECRET` and
   then called `app.handle(request)`, so no `app.cron()` job ever ran and a
   correctly-configured Vercel cron got a 404: scheduled work silently never

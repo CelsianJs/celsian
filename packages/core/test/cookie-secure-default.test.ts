@@ -136,3 +136,66 @@ describe("reply.cookie() over plain-HTTP development", () => {
     expect(res.headers.get("set-cookie")).toContain("Secure");
   });
 });
+
+// A wildcard bind address is not a browser-facing name, and treating one as
+// "local" silently stripped `Secure` from every session cookie in production.
+//
+// The chain: `serve()` binds 0.0.0.0 under NODE_ENV=production, the Node
+// adapter builds each request URL as `http://${host}:${port}`, so every request
+// carried `http://0.0.0.0:3000`. That was read as loopback, so a real
+// production deployment behind a TLS-terminating proxy set session cookies with
+// no `Secure` flag and no warning. Reproduced end to end against a booted
+// server before this test existed.
+describe("wildcard bind addresses are not development", () => {
+  it("keeps Secure when the request URL carries a wildcard bind address", () => {
+    expect(resolveSecureDefault("http://0.0.0.0:3000/login")).toBe(true);
+    expect(resolveSecureDefault("http://[::]:3000/login")).toBe(true);
+  });
+
+  it("prefers the Host header over a bind address in the URL", () => {
+    // What a browser sees is what decides whether Secure is honoured, and the
+    // Host header is the only carrier of that. The URL is the bind address.
+    const url = "http://0.0.0.0:3000/login";
+    expect(resolveSecureDefault({ url, headers: new Headers({ host: "api.example.com" }) })).toBe(true);
+    expect(resolveSecureDefault({ url, headers: new Headers({ host: "localhost:3000" }) })).toBe(false);
+    expect(resolveSecureDefault({ url, headers: new Headers({ host: "192.168.1.50:3000" }) })).toBe(false);
+    expect(resolveSecureDefault({ url, headers: new Headers({ host: "[::1]:3000" }) })).toBe(false);
+  });
+
+  it("honours x-forwarded-proto: https from a TLS-terminating proxy", () => {
+    // The common production shape: TLS ends at the edge, the app only ever
+    // sees plain HTTP. Trusting this header can only add Secure, never remove
+    // it, so a spoofed value cannot downgrade anyone.
+    expect(
+      resolveSecureDefault({
+        url: "http://0.0.0.0:3000/login",
+        headers: new Headers({ host: "api.example.com", "x-forwarded-proto": "https" }),
+      }),
+    ).toBe(true);
+    // Proxy chains append, so the client-facing protocol is the first entry.
+    expect(
+      resolveSecureDefault({
+        url: "http://0.0.0.0:3000/login",
+        headers: new Headers({ "x-forwarded-proto": "https, http" }),
+      }),
+    ).toBe(true);
+  });
+
+  it("sets Secure end to end for a production request through the app", async () => {
+    const app = createApp();
+    app.get("/login", (_req, reply) => reply.cookie("session", "abc123").json({ ok: true }));
+
+    // The URL a production Node server actually builds, plus the Host a real
+    // browser sends. Before the fix this returned a cookie with no Secure.
+    //
+    // Deliberately no x-forwarded-proto: that header would reach the same
+    // answer down a different path, and this test exists to pin the host-based
+    // one that actually regressed.
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const res = await app.inject({
+      url: "http://0.0.0.0:3000/login",
+      headers: { host: "api.example.com" },
+    });
+    expect(res.headers.get("set-cookie")).toContain("Secure");
+  });
+});

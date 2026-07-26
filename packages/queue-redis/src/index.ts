@@ -362,7 +362,10 @@ export class RedisQueue implements QueueBackend {
    * Push this delivery's lease expiry out. Returns false when the lease is
    * already gone, meaning another worker may now own the message.
    */
-  async extend(id: string, leaseToken: string, extraMs?: number): Promise<boolean> {
+  // `_id` is unused: a lease token is a per-delivery randomUUID, so it already
+  // identifies the entry on its own. The parameter stays for symmetry with
+  // ack()/nack(), where the token is optional and the id is the fallback.
+  async extend(_id: string, leaseToken: string, extraMs?: number): Promise<boolean> {
     await this.connect();
     const expiry = Date.now() + (extraMs ?? this.visibilityTimeoutMs);
     const extended = (await this.redis.eval(

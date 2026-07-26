@@ -661,7 +661,7 @@ export class CelsianApp {
       // Host-header injection guard: only honor x-forwarded-host when the value
       // appears in the configured trustedHosts allowlist. Without an allowlist,
       // keep the real Host to prevent attacker-controlled host/fullUrl.
-      if (host && this.options.trustedHosts && this.options.trustedHosts.includes(host)) {
+      if (host && this.options.trustedHosts?.includes(host)) {
         fullUrl.host = host;
       }
     }
@@ -778,7 +778,7 @@ export class CelsianApp {
     // x-forwarded-proto override); otherwise hand over the raw URL string and
     // let the reply parse it lazily, and only if a cookie is actually set. The
     // hot path stays free of a `new URL()` call.
-    const reply = createReply(fullUrl ?? rawUrl);
+    const reply = createReply(fullUrl ?? rawUrl, request.headers);
 
     // Apply reply decorations (skip loop if none registered)
     if (scope.replyDecorations.size > 0) {
@@ -1026,7 +1026,7 @@ export class CelsianApp {
   ): Promise<{ request: CelsianRequest; reply: CelsianReply }> {
     if (!fullUrl) fullUrl = new URL(rawUrl, "http://localhost");
     const celsianRequest = buildRequest(request, fullUrl, {});
-    const reply = createReply(fullUrl);
+    const reply = createReply(fullUrl, request.headers);
     if (this.rootScope.replyDecorations.size > 0) {
       for (const [key, value] of this.rootScope.replyDecorations) {
         (reply as Record<string, unknown>)[key] = typeof value === "function" ? value() : value;
