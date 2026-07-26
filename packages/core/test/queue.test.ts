@@ -41,7 +41,8 @@ describe("MemoryQueue", () => {
     });
 
     const msg = await queue.pop();
-    await queue.ack(msg?.id);
+    if (!msg) throw new Error("expected pop() to return the message that was just pushed");
+    await queue.ack(msg.id);
 
     expect(await queue.size()).toBe(0);
   });
@@ -60,7 +61,8 @@ describe("MemoryQueue", () => {
     });
 
     const msg = await queue.pop();
-    await queue.nack(msg?.id, 0);
+    if (!msg) throw new Error("expected pop() to return the message that was just pushed");
+    await queue.nack(msg.id, 0);
 
     expect(await queue.size()).toBe(1);
 

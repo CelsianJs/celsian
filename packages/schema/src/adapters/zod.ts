@@ -2,15 +2,37 @@
 
 import type { SchemaResult, StandardSchema } from "../standard.js";
 
-/** Minimal structural view of a Zod issue (avoids depending on the zod package). */
+/**
+ * Minimal structural view of a Zod issue (avoids depending on the zod package).
+ *
+ * `path` is `PropertyKey[]` because that is what Zod 4 actually produces: its
+ * `$ZodIssue.path` allows symbol segments for record keys. Declaring it as
+ * `(string | number)[]` made every real `z.object()` schema fail to satisfy
+ * this interface. Symbols are normalized to strings on the way out, so the
+ * published `SchemaIssue.path` contract is unchanged.
+ */
 interface ZodIssue {
   message: string;
-  path?: (string | number)[];
+  path?: readonly PropertyKey[];
 }
 
-/** Minimal structural view of the parts of a Zod schema this adapter uses. */
+/**
+ * Minimal structural view of the parts of a Zod schema this adapter uses.
+ *
+ * The result is deliberately NOT a discriminated union on `success`. A union
+ * requires the literal types `true`/`false`, which no ordinary object returned
+ * from a user function ever has (TypeScript widens `success` to `boolean`), so
+ * only Zod's own types could satisfy it. This shape describes exactly the three
+ * things the adapter reads, and the adapter narrows at runtime instead.
+ */
+interface ZodResultLike {
+  success: boolean;
+  data?: unknown;
+  error?: { issues: readonly ZodIssue[] };
+}
+
 interface ZodLike {
-  safeParse(input: unknown): { success: true; data: unknown } | { success: false; error: { issues: ZodIssue[] } };
+  safeParse(input: unknown): ZodResultLike;
   toJsonSchema?(): Record<string, unknown>;
 }
 
@@ -30,7 +52,7 @@ function isZodAsyncError(error: unknown): boolean {
 export function fromZod<T>(zodSchema: ZodLike): StandardSchema<T, T> {
   return {
     validate(input: unknown): SchemaResult<T> {
-      let result: ReturnType<ZodLike["safeParse"]>;
+      let result: ZodResultLike;
       try {
         result = zodSchema.safeParse(input);
       } catch (error) {
@@ -49,11 +71,22 @@ export function fromZod<T>(zodSchema: ZodLike): StandardSchema<T, T> {
       if (result.success) {
         return { success: true, data: result.data as T };
       }
+      if (!result.error) {
+        // A failed parse with no error object is not something Zod produces.
+        // Report it rather than crashing on a missing property or returning an
+        // empty (and therefore silent) issue list.
+        return {
+          success: false,
+          issues: [{ message: "Zod schema reported a failed parse without an error object." }],
+        };
+      }
       return {
         success: false,
         issues: result.error.issues.map((i: ZodIssue) => ({
           message: i.message,
-          path: i.path,
+          // Symbol path segments cannot survive JSON serialization, so they are
+          // rendered as their description rather than dropped.
+          path: i.path?.map((segment) => (typeof segment === "symbol" ? segment.toString() : segment)),
         })),
       };
     },

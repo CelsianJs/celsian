@@ -1,26 +1,12 @@
 // @celsian/queue-redis, Redis-backed queue for CelsianJS task system
 
-import type { QueueBackend, QueueMessage } from "@celsian/core";
+import type { DeadLetterEntry, QueueBackend, QueueMessage, TaskFailure } from "@celsian/core";
 import Redis from "ioredis";
 
-/**
- * Structural mirrors of the dead-letter types in `@celsian/core`'s queue module.
- * They are re-declared here only because core's package exports do not yet
- * surface them; they are structurally identical, so `RedisQueue` still
- * type-checks against `QueueBackend`.
- */
-export interface TaskFailure {
-  attempt: number;
-  error: string;
-  failedAt: number;
-}
-
-export interface DeadLetterEntry {
-  message: QueueMessage;
-  error: string;
-  failures: TaskFailure[];
-  deadLetteredAt: number;
-}
+// Re-exported so consumers of the Redis backend get the dead-letter types
+// without a second import. These used to be structural mirrors declared here
+// because core did not export them; core does now, so these are the real ones.
+export type { DeadLetterEntry, QueueMessage, TaskFailure };
 
 export interface RedisQueueOptions {
   /** Redis connection URL (redis://...) */

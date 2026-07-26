@@ -1,6 +1,28 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { escapeHtml, openapi } from "../src/plugins/openapi.js";
+import { json } from "./helpers/json.js";
+
+// A view of the generated document covering only the parts these tests read.
+// Path and status-code keys are dynamic, so those levels are index signatures.
+// Written as type aliases rather than interfaces so they stay assignable to
+// `Record<string, unknown>`, which the `.find()` predicates below annotate.
+type OpenAPIMediaType = { schema: { properties: Record<string, { type?: string }> } };
+
+type OpenAPIParameter = { name: string; in: string; required?: boolean; schema: { type?: string } };
+
+type OpenAPIOperation = {
+  parameters: OpenAPIParameter[];
+  requestBody: { required?: boolean; content: Record<string, OpenAPIMediaType> };
+  responses: Record<string, { content: Record<string, OpenAPIMediaType> }>;
+};
+
+type OpenAPISpec = {
+  openapi: string;
+  info: { title: string; version: string; description?: string };
+  servers: { url: string; description?: string }[];
+  paths: Record<string, Record<string, OpenAPIOperation>>;
+};
 
 describe("OpenAPI Plugin", () => {
   it("should generate spec with registered routes", async () => {
@@ -13,7 +35,7 @@ describe("OpenAPI Plugin", () => {
     const response = await app.inject({ url: "/docs/openapi.json" });
     expect(response.status).toBe(200);
 
-    const spec = await response.json();
+    const spec = await json<OpenAPISpec>(response);
     expect(spec.openapi).toBe("3.1.0");
     expect(spec.info.title).toBe("CelsianJS API");
     expect(spec.info.version).toBe("1.0.0");
@@ -77,7 +99,7 @@ describe("OpenAPI Plugin", () => {
     await app.register(openapi());
 
     const response = await app.inject({ url: "/docs/openapi.json" });
-    const spec = await response.json();
+    const spec = await json<OpenAPISpec>(response);
 
     const postOp = spec.paths["/items"].post;
 
@@ -88,7 +110,9 @@ describe("OpenAPI Plugin", () => {
     expect(postOp.requestBody.content["application/json"].schema.properties.price.type).toBe("number");
 
     // Query parameters
-    const queryParam = postOp.parameters?.find((p: Record<string, unknown>) => p.in === "query" && p.name === "format");
+    // Non-null assertion: `.find()` widens to `| undefined`, and the assertion
+    // below is what actually proves the parameter was emitted.
+    const queryParam = postOp.parameters.find((p: Record<string, unknown>) => p.in === "query" && p.name === "format")!;
     expect(queryParam).toBeDefined();
     expect(queryParam.schema.type).toBe("string");
 
@@ -106,7 +130,7 @@ describe("OpenAPI Plugin", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("application/json");
 
-    const spec = await response.json();
+    const spec = await json<OpenAPISpec>(response);
     expect(spec.openapi).toBe("3.1.0");
     expect(spec.paths["/ping"]).toBeDefined();
     expect(spec.paths["/ping"].get).toBeDefined();
@@ -139,7 +163,7 @@ describe("OpenAPI Plugin", () => {
     );
 
     const response = await app.inject({ url: "/docs/openapi.json" });
-    const spec = await response.json();
+    const spec = await json<OpenAPISpec>(response);
 
     expect(spec.info.title).toBe("My Custom API");
     expect(spec.info.version).toBe("2.5.0");
@@ -163,7 +187,7 @@ describe("OpenAPI Plugin", () => {
 
     const jsonResponse = await app.inject({ url: "/api-docs/spec.json" });
     expect(jsonResponse.status).toBe(200);
-    const spec = await jsonResponse.json();
+    const spec = await json<OpenAPISpec>(jsonResponse);
     expect(spec.paths["/api/test"]).toBeDefined();
 
     const uiResponse = await app.inject({ url: "/api-docs" });
@@ -185,7 +209,7 @@ describe("OpenAPI Plugin", () => {
     );
 
     const response = await app.inject({ url: "/docs/openapi.json" });
-    const spec = await response.json();
+    const spec = await json<OpenAPISpec>(response);
 
     expect(spec.servers).toHaveLength(2);
     expect(spec.servers[0].url).toBe("https://api.example.com");
@@ -199,12 +223,12 @@ describe("OpenAPI Plugin", () => {
     await app.register(openapi());
 
     const response = await app.inject({ url: "/docs/openapi.json" });
-    const spec = await response.json();
+    const spec = await json<OpenAPISpec>(response);
 
     const getOp = spec.paths["/projects/{projectId}/tasks/{taskId}"].get;
     expect(getOp.parameters).toHaveLength(2);
 
-    const projectParam = getOp.parameters.find((p: Record<string, unknown>) => p.name === "projectId");
+    const projectParam = getOp.parameters.find((p: Record<string, unknown>) => p.name === "projectId")!;
     expect(projectParam).toBeDefined();
     expect(projectParam.in).toBe("path");
     expect(projectParam.required).toBe(true);
@@ -219,7 +243,7 @@ describe("OpenAPI Plugin", () => {
     await app.register(openapi());
 
     const response = await app.inject({ url: "/docs/openapi.json" });
-    const spec = await response.json();
+    const spec = await json<OpenAPISpec>(response);
 
     // The /docs and /docs/openapi.json routes should be excluded
     expect(spec.paths["/docs"]).toBeUndefined();
@@ -235,7 +259,7 @@ describe("OpenAPI Plugin", () => {
     await app.register(openapi());
 
     const response = await app.inject({ url: "/docs/openapi.json" });
-    const spec = await response.json();
+    const spec = await json<OpenAPISpec>(response);
 
     // Routes without schemas should have at least a default 200 response
     expect(spec.paths["/simple"].get.responses["200"]).toBeDefined();

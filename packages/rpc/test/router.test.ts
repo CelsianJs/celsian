@@ -1,7 +1,25 @@
 import { describe, expect, it, vi } from "vitest";
+import { json } from "../../core/test/helpers/json.js";
 import { procedure } from "../src/procedure.js";
 import { RPCHandler, router } from "../src/router.js";
 import { encode } from "../src/wire.js";
+
+/** Success half of the RPC wire envelope. */
+type RpcResult<T> = { result: T };
+
+/** Failure half of the RPC wire envelope, as far as these tests read it. */
+type RpcError = { error: { message: string; code: string } };
+
+/** Procedure names are dynamic, so the manifest map is keyed by index signature. */
+interface RpcManifest {
+  procedures: Record<string, { type: string }>;
+}
+
+interface OpenApiSpec {
+  openapi: string;
+  info: { title: string };
+  paths: Record<string, unknown>;
+}
 
 describe("router()", () => {
   it("should return the routes as-is", () => {
@@ -36,7 +54,7 @@ describe("RPCHandler", () => {
 
     const response = await handler.handle(new Request(url));
     expect(response.status).toBe(200);
-    const body = await response.json();
+    const body = await json<RpcResult<{ message: string }>>(response);
     expect(body.result).toEqual({ message: "Hello, World!" });
   });
 
@@ -50,7 +68,7 @@ describe("RPCHandler", () => {
       }),
     );
     expect(response.status).toBe(200);
-    const body = await response.json();
+    const body = await json<RpcResult<{ result: number }>>(response);
     expect(body.result).toEqual({ result: 5 });
   });
 
@@ -64,7 +82,7 @@ describe("RPCHandler", () => {
     const handler = createHandler();
     const response = await handler.handle(new Request("http://localhost/_rpc/unknown.proc"));
     expect(response.status).toBe(404);
-    const body = await response.json();
+    const body = await json<RpcError>(response);
     expect(body.error.code).toBe("NOT_FOUND");
   });
 
@@ -72,7 +90,7 @@ describe("RPCHandler", () => {
     const handler = createHandler();
     const response = await handler.handle(new Request("http://localhost/_rpc/manifest.json"));
     expect(response.status).toBe(200);
-    const manifest = await response.json();
+    const manifest = await json<RpcManifest>(response);
     expect(manifest.procedures["greeting.hello"]).toBeDefined();
     expect(manifest.procedures["greeting.hello"].type).toBe("query");
     expect(manifest.procedures["math.add"].type).toBe("mutation");
@@ -82,7 +100,7 @@ describe("RPCHandler", () => {
     const handler = createHandler();
     const response = await handler.handle(new Request("http://localhost/_rpc/openapi.json"));
     expect(response.status).toBe(200);
-    const spec = await response.json();
+    const spec = await json<OpenApiSpec>(response);
     expect(spec.openapi).toBe("3.1.0");
     expect(spec.info.title).toBe("Celsian RPC API");
     expect(spec.paths["/_rpc/greeting.hello"]).toBeDefined();
@@ -127,7 +145,7 @@ describe("RPCHandler", () => {
     });
 
     const response = await handler.handle(new Request("http://localhost/_rpc/whoami"));
-    const body = await response.json();
+    const body = await json<RpcResult<{ user: string }>>(response);
     expect(body.result).toEqual({ user: "admin" });
   });
 
@@ -153,7 +171,7 @@ describe("RPCHandler", () => {
       const handler = new RPCHandler(routes);
       const response = await handler.handle(new Request("http://localhost/_rpc/fail"));
       expect(response.status).toBe(500);
-      const body = await response.json();
+      const body = await json<RpcError>(response);
       expect(body.error.message).toBe("Boom");
     } finally {
       consoleSpy.mockRestore();
@@ -201,7 +219,7 @@ describe("RPCHandler", () => {
       }),
     );
     expect(invalid.status).toBe(400);
-    const body = await invalid.json();
+    const body = await json<RpcError>(invalid);
     expect(body.error.code).toBe("VALIDATION_ERROR");
   });
 });
@@ -220,7 +238,7 @@ describe("RPCHandler production error sanitization", () => {
       const handler = new RPCHandler(routes);
       const response = await handler.handle(new Request("http://localhost/_rpc/fail"));
       expect(response.status).toBe(500);
-      const body = await response.json();
+      const body = await json<RpcError>(response);
       // Internals must NOT leak to clients in production.
       expect(body.error.message).toBe("Internal error");
       expect(body.error.code).toBe("INTERNAL_ERROR");
@@ -248,7 +266,7 @@ describe("RPCHandler production error sanitization", () => {
       const handler = new RPCHandler(routes);
       const response = await handler.handle(new Request("http://localhost/_rpc/forbidden"));
       expect(response.status).toBe(403);
-      const body = await response.json();
+      const body = await json<RpcError>(response);
       expect(body.error.message).toBe("You shall not pass");
       expect(body.error.code).toBe("FORBIDDEN");
     } finally {
@@ -270,7 +288,7 @@ describe("RPCHandler production error sanitization", () => {
       const handler = new RPCHandler(routes);
       const response = await handler.handle(new Request("http://localhost/_rpc/fail"));
       expect(response.status).toBe(500);
-      const body = await response.json();
+      const body = await json<RpcError>(response);
       expect(body.error.message).toBe("Detailed dev error");
       expect(body.error.code).toBe("CUSTOM_CODE");
     } finally {

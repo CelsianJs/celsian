@@ -8,6 +8,7 @@ import {
   ValidationError,
   wrapNonError,
 } from "../src/errors.js";
+import { json } from "./helpers/json.js";
 
 // ─── CelsianError ───
 
@@ -301,7 +302,7 @@ describe("malformed JSON body parsing", () => {
 
     const response = await app.handle(request);
     expect(response.status).toBe(400);
-    const body = await response.json();
+    const body = await json<{ code: string; error: string }>(response);
     expect(body.code).toBe("INVALID_JSON");
     expect(body.error).toContain("content-type: application/json; charset=utf-8");
   });
@@ -343,7 +344,7 @@ describe("non-Error thrown from route handler", () => {
 
     const res = await app.inject({ method: "GET", url: "/throw-string" });
     expect(res.status).toBe(500);
-    const body = await res.json();
+    const body = await json<{ error: string }>(res);
     expect(body.error).toContain("non-Error value");
     expect(body.error).toContain('"something went wrong"');
     expect(body.error).toContain('throw new HttpError(500, "your message")');
@@ -357,7 +358,7 @@ describe("non-Error thrown from route handler", () => {
 
     const res = await app.inject({ method: "GET", url: "/throw-number" });
     expect(res.status).toBe(500);
-    const body = await res.json();
+    const body = await json<{ error: string }>(res);
     expect(body.error).toContain("number");
     expect(body.error).toContain("42");
   });
@@ -370,7 +371,7 @@ describe("non-Error thrown from route handler", () => {
 
     const res = await app.inject({ method: "GET", url: "/throw-null" });
     expect(res.status).toBe(500);
-    const body = await res.json();
+    const body = await json<{ error: string }>(res);
     expect(body.error).toContain("null");
   });
 
@@ -382,7 +383,7 @@ describe("non-Error thrown from route handler", () => {
 
     const res = await app.inject({ method: "GET", url: "/throw-error" });
     expect(res.status).toBe(418);
-    const body = await res.json();
+    const body = await json<{ error: string }>(res);
     expect(body.error).toBe("I am a teapot");
   });
 });

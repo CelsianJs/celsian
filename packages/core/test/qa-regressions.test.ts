@@ -7,6 +7,7 @@ import { cors } from "../src/plugins/cors.js";
 import { withETag } from "../src/plugins/etag.js";
 import { Router } from "../src/router.js";
 import { createSSEHub, createSSEStream } from "../src/sse.js";
+import { json } from "./helpers/json.js";
 
 // ─── BUG-1: ESM serve() crash (require() calls) ───
 
@@ -144,7 +145,7 @@ describe("BUG-7: Router returns 405 for method mismatch, not 404", () => {
 
     const response = await app.handle(new Request("http://localhost/users", { method: "DELETE" }));
     expect(response.status).toBe(405);
-    const body = await response.json();
+    const body = await json<{ code: string }>(response);
     expect(body.code).toBe("METHOD_NOT_ALLOWED");
   });
 
@@ -205,7 +206,7 @@ describe("BUG-9: RPC handler uses pre-parsed body instead of re-reading", () => 
         body: JSON.stringify({ key: "value" }),
       }),
     );
-    const data = await response.json();
+    const data = await json<{ body: { key: string } }>(response);
     expect(data.body).toEqual({ key: "value" });
   });
 });
@@ -225,7 +226,7 @@ describe("BUG-10: Malformed JSON returns 400, not 200", () => {
       }),
     );
     expect(response.status).toBe(400);
-    const body = await response.json();
+    const body = await json<{ code: string }>(response);
     expect(body.code).toBe("INVALID_JSON");
   });
 
@@ -241,7 +242,7 @@ describe("BUG-10: Malformed JSON returns 400, not 200", () => {
       }),
     );
     expect(response.status).toBe(200);
-    const data = await response.json();
+    const data = await json<{ body: null }>(response);
     expect(data.body).toBeNull();
   });
 });
@@ -254,7 +255,7 @@ describe("BUG-11: Path parameters are URL-decoded", () => {
     app.get("/files/:name", (req, reply) => reply.json({ name: req.params.name }));
 
     const response = await app.handle(new Request("http://localhost/files/hello%20world"));
-    const body = await response.json();
+    const body = await json<{ name: string }>(response);
     expect(body.name).toBe("hello world");
   });
 
@@ -333,7 +334,7 @@ describe("BUG-13: Duplicate query parameters accumulated as arrays", () => {
     app.get("/search", (req, reply) => reply.json({ tags: req.query.tag }));
 
     const response = await app.handle(new Request("http://localhost/search?tag=a&tag=b&tag=c"));
-    const body = await response.json();
+    const body = await json<{ tags: string[] }>(response);
     expect(body.tags).toEqual(["a", "b", "c"]);
   });
 
@@ -342,7 +343,7 @@ describe("BUG-13: Duplicate query parameters accumulated as arrays", () => {
     app.get("/search", (req, reply) => reply.json({ q: req.query.q }));
 
     const response = await app.handle(new Request("http://localhost/search?q=hello"));
-    const body = await response.json();
+    const body = await json<{ q: string }>(response);
     expect(body.q).toBe("hello");
   });
 
@@ -356,7 +357,7 @@ describe("BUG-13: Duplicate query parameters accumulated as arrays", () => {
     });
 
     const response = await app.handle(new Request("http://localhost/search?__proto__=evil&constructor=bad"));
-    const body = await response.json();
+    const body = await json<{ hasProto: boolean; hasConstructor: boolean }>(response);
     expect(body.hasProto).toBe(false);
     expect(body.hasConstructor).toBe(false);
   });
@@ -378,7 +379,8 @@ describe("SSE: Migrated from @celsian/server to @celsian/core", () => {
     channel.send({ event: "greeting", data: { message: "hello" }, id: "1" });
     channel.close();
 
-    const reader = channel.response.body?.getReader();
+    if (!channel.response.body) throw new Error("SSE channel response had no body");
+    const reader = channel.response.body.getReader();
     const { value } = await reader.read();
     const text = new TextDecoder().decode(value);
     expect(text).toContain("event: greeting");

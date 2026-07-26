@@ -42,12 +42,13 @@ describe("Session Manager", () => {
     await session.save();
 
     const loaded = await manager.load(session.id);
-    const data = loaded?.all();
+    if (!loaded) throw new Error("the session that was just saved did not load back");
+    const data = loaded.all();
     expect(data).toEqual({ a: 1, b: 2 });
 
     // Modifying the returned object doesn't affect the session
     data.c = 3;
-    expect(loaded?.get("c")).toBeUndefined();
+    expect(loaded.get("c")).toBeUndefined();
   });
 
   it("delete removes a session key", async () => {

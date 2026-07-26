@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
+import { json } from "./helpers/json.js";
 
 describe("CelsianApp", () => {
   it("should handle GET requests", async () => {
@@ -142,13 +143,17 @@ describe("CelsianApp", () => {
 
     const response = await app.handle(new Request("http://localhost/error"));
     expect(response.status).toBe(500);
-    const body = await response.json();
+    const body = await json<{ error: string }>(response);
     expect(body.error).toBe("Something went wrong");
   });
 
   it("should run onError hooks", async () => {
     const app = createApp();
-    let caughtError: Error | null = null;
+    // The annotation is repeated on the initializer because the only write is
+    // inside the hook below, which control-flow analysis does not track: it
+    // would otherwise narrow the declaration to `null` and report the read at
+    // the end of the test as `never`.
+    let caughtError: Error | null = null as Error | null;
 
     app.addHook("onError", (error, _req, reply) => {
       caughtError = error;
@@ -174,7 +179,7 @@ describe("CelsianApp", () => {
     });
 
     const response = await app.handle(new Request("http://localhost/decorated"));
-    const body = await response.json();
+    const body = await json<{ hasStartTime: boolean }>(response);
     expect(body.hasStartTime).toBe(true);
   });
 
@@ -243,7 +248,7 @@ describe("CelsianApp", () => {
 
     const response = await app.handle(new Request("http://localhost/users", { method: "DELETE" }));
     expect(response.status).toBe(405);
-    const body = await response.json();
+    const body = await json<{ code: string }>(response);
     expect(body.code).toBe("METHOD_NOT_ALLOWED");
   });
 
@@ -264,7 +269,7 @@ describe("CelsianApp", () => {
     app.get("/files/:name", (req, reply) => reply.json({ name: req.params.name }));
 
     const response = await app.handle(new Request("http://localhost/files/hello%20world"));
-    const body = await response.json();
+    const body = await json<{ name: string }>(response);
     expect(body.name).toBe("hello world");
   });
 
@@ -275,7 +280,7 @@ describe("CelsianApp", () => {
     app.get("/search", (req, reply) => reply.json({ tags: req.query.tag }));
 
     const response = await app.handle(new Request("http://localhost/search?tag=a&tag=b&tag=c"));
-    const body = await response.json();
+    const body = await json<{ tags: string[] }>(response);
     expect(body.tags).toEqual(["a", "b", "c"]);
   });
 

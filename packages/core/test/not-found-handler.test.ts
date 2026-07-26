@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
+import { json } from "./helpers/json.js";
 
 describe("setNotFoundHandler", () => {
   it("should use custom 404 handler when set", async () => {
@@ -25,7 +26,7 @@ describe("setNotFoundHandler", () => {
 
     const response = await app.handle(new Request("http://localhost/missing"));
     expect(response.status).toBe(404);
-    const body = await response.json();
+    const body = await json<{ error: string; path: string }>(response);
     expect(body.error).toBe("Custom not found");
   });
 
@@ -33,7 +34,7 @@ describe("setNotFoundHandler", () => {
     const app = createApp();
     const response = await app.handle(new Request("http://localhost/nope"));
     expect(response.status).toBe(404);
-    const body = await response.json();
+    const body = await json<{ code: string }>(response);
     expect(body.code).toBe("NOT_FOUND");
   });
 
@@ -61,7 +62,7 @@ describe("setErrorHandler", () => {
 
     const response = await app.handle(new Request("http://localhost/fail"));
     expect(response.status).toBe(500);
-    const body = await response.json();
+    const body = await json<{ customError: boolean; message: string }>(response);
     expect(body.customError).toBe(true);
     expect(body.message).toBe("Boom");
   });

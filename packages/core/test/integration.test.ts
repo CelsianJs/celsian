@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { HttpError } from "../src/errors.js";
 import { serve } from "../src/serve.js";
+import { json } from "./helpers/json.js";
 
 /**
  * Helper: find a free port and start a Celsian server on it.
@@ -148,7 +149,7 @@ describe("HTTP Integration Tests", { timeout: 30_000 }, () => {
   it("should return 404 for unknown routes", async () => {
     const res = await fetch(`${baseUrl}/nonexistent`);
     expect(res.status).toBe(404);
-    const body = await res.json();
+    const body = await json<{ statusCode: number }>(res);
     expect(body.statusCode).toBe(404);
   });
 
@@ -157,7 +158,7 @@ describe("HTTP Integration Tests", { timeout: 30_000 }, () => {
   it("should return structured error for thrown HttpError", async () => {
     const res = await fetch(`${baseUrl}/error`);
     expect(res.status).toBe(422);
-    const body = await res.json();
+    const body = await json<{ statusCode: number; code: string; error: string }>(res);
     expect(body.statusCode).toBe(422);
     expect(body.code).toBe("INVALID_INPUT");
     expect(body.error).toBe("Validation failed");
@@ -179,7 +180,7 @@ describe("HTTP Integration Tests", { timeout: 30_000 }, () => {
     const requests = Array.from({ length: 20 }, (_, _i) =>
       fetch(`${baseUrl}/json`).then(async (res) => ({
         status: res.status,
-        body: await res.json(),
+        body: await json<{ message: string }>(res),
       })),
     );
 
@@ -223,7 +224,7 @@ describe("HTTP Integration Tests", { timeout: 30_000 }, () => {
       headers: { cookie: cookieValue },
     });
     expect(readRes.status).toBe(200);
-    const body = await readRes.json();
+    const body = await json<{ session: string | null }>(readRes);
     expect(body.session).toBe("abc123");
   });
 
@@ -250,7 +251,7 @@ describe("HTTP Integration Tests", { timeout: 30_000 }, () => {
     expect(errorRes.status).toBe(422);
     expect(slowRes.status).toBe(200);
 
-    const slowBody = await slowRes.json();
+    const slowBody = await json<{ slow: boolean }>(slowRes);
     expect(slowBody.slow).toBe(true);
   });
 });

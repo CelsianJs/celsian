@@ -88,6 +88,13 @@ export interface CelsianRequest<TParams = Record<string, string>> extends Reques
   params: TParams;
   query: Record<string, string | string[]>;
   parsedBody: unknown;
+  /**
+   * Cookies parsed from the request's `Cookie` header, populated lazily on
+   * first access. Always present: the app defines it on every request, not a
+   * plugin. Declared here so reads are typed rather than falling through to
+   * the plugin index signature below and arriving as `unknown`.
+   */
+  cookies: Record<string, string>;
   /** Populated by plugins */
   [key: string]: unknown;
 }

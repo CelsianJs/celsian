@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { csrf } from "../src/plugins/csrf.js";
+import { json } from "./helpers/json.js";
 
 describe("CSRF middleware", () => {
   async function setupApp(options = {}) {
@@ -63,7 +64,7 @@ describe("CSRF middleware", () => {
       headers: { "content-type": "application/json" },
     });
     expect(res.status).toBe(403);
-    const body = await res.json();
+    const body = await json<{ error: string }>(res);
     expect(body.error).toBe("CSRF token mismatch");
   });
 
@@ -104,7 +105,7 @@ describe("CSRF middleware", () => {
       },
     });
     expect(postRes.status).toBe(200);
-    const body = await postRes.json();
+    const body = await json<{ submitted: boolean }>(postRes);
     expect(body.submitted).toBe(true);
   });
 

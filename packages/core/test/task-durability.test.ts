@@ -190,7 +190,15 @@ describe("TaskWorker timeouts", () => {
       ms?: number,
       ...rest: unknown[]
     ) => {
-      const handle = (realSetTimeout as typeof setTimeout)(fn, ms, ...rest);
+      // Called through a signature with an untyped rest parameter: `typeof
+      // setTimeout` infers its rest tuple from the callback (here `[]`), so
+      // spreading `rest` into it does not type-check.
+      const passthrough = realSetTimeout as (
+        callback: () => void,
+        ms?: number,
+        ...args: unknown[]
+      ) => ReturnType<typeof setTimeout>;
+      const handle = passthrough(fn, ms, ...rest);
       if (ms === 3_600_000) armed.add(handle);
       return handle;
     }) as typeof setTimeout);

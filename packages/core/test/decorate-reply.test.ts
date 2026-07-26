@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
+import { json } from "./helpers/json.js";
 
 describe("decorateReply", () => {
   it("should add static value to reply object", async () => {
@@ -11,7 +12,7 @@ describe("decorateReply", () => {
     });
 
     const response = await app.handle(new Request("http://localhost/test"));
-    const body = await response.json();
+    const body = await json<{ name: string }>(response);
     expect(body.name).toBe("celsian");
   });
 
@@ -28,11 +29,11 @@ describe("decorateReply", () => {
     });
 
     const r1 = await app.handle(new Request("http://localhost/test"));
-    const b1 = await r1.json();
+    const b1 = await json<{ num: number }>(r1);
     expect(b1.num).toBe(1);
 
     const r2 = await app.handle(new Request("http://localhost/test"));
-    const b2 = await r2.json();
+    const b2 = await json<{ num: number }>(r2);
     expect(b2.num).toBe(2);
   });
 
@@ -60,7 +61,7 @@ describe("decorateReply", () => {
 
     const response = await app.handle(new Request("http://localhost/missing"));
     expect(response.status).toBe(404);
-    const body = await response.json();
+    const body = await json<{ version: string; error: string }>(response);
     expect(body.version).toBe("v1");
   });
 
@@ -78,7 +79,7 @@ describe("decorateReply", () => {
     );
 
     const response = await app.handle(new Request("http://localhost/check"));
-    const body = await response.json();
+    const body = await json<{ val: string }>(response);
     expect(body.val).toBe("from-plugin");
   });
 });

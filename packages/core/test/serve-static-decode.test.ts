@@ -51,11 +51,14 @@ describe("[11] error handler routes through structured logger", () => {
 
   it("uses the provided logger (not console) when an onError hook throws", async () => {
     const logger: Logger = {
+      trace: vi.fn(),
       debug: vi.fn(),
       info: vi.fn(),
       warn: vi.fn(),
       error: vi.fn(),
+      fatal: vi.fn(),
       child: () => logger,
+      level: "info",
     };
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 

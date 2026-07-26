@@ -2,6 +2,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
+import { json } from "./helpers/json.js";
 
 const TMP_DIR = join(import.meta.dirname ?? ".", "__tmp_send_file__");
 
@@ -68,7 +69,7 @@ describe("reply.sendFile", () => {
 
     const response = await app.handle(new Request("http://localhost/file"));
     expect(response.status).toBe(404);
-    const body = await response.json();
+    const body = await json<{ code: string }>(response);
     expect(body.code).toBe("NOT_FOUND");
   });
 });
@@ -91,7 +92,7 @@ describe("reply.sendFile with root option", () => {
 
     const response = await app.handle(new Request("http://localhost/file"));
     expect(response.status).toBe(403);
-    const body = await response.json();
+    const body = await json<{ code: string }>(response);
     expect(body.code).toBe("FORBIDDEN");
   });
 
@@ -102,7 +103,7 @@ describe("reply.sendFile with root option", () => {
     const response = await app.handle(new Request("http://localhost/file"));
     // /etc/passwd won't start with TMP_DIR, so this should be 403
     expect(response.status).toBe(403);
-    const body = await response.json();
+    const body = await json<{ code: string }>(response);
     expect(body.code).toBe("FORBIDDEN");
   });
 
@@ -112,7 +113,7 @@ describe("reply.sendFile with root option", () => {
 
     const response = await app.handle(new Request("http://localhost/file"));
     expect(response.status).toBe(404);
-    const body = await response.json();
+    const body = await json<{ code: string }>(response);
     expect(body.code).toBe("NOT_FOUND");
   });
 
@@ -129,7 +130,7 @@ describe("reply.sendFile with root option", () => {
 
     const response = await app.handle(new Request("http://localhost/file"));
     expect(response.status).toBe(403);
-    const body = await response.json();
+    const body = await json<{ code: string }>(response);
     expect(body.code).toBe("FORBIDDEN");
   });
 });

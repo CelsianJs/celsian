@@ -11,6 +11,7 @@ import { createReply } from "../src/reply.js";
 import { buildRequest } from "../src/request.js";
 import { createSSEHub } from "../src/sse.js";
 import { TaskRegistry, TaskWorker } from "../src/task.js";
+import { json } from "./helpers/json.js";
 
 function makeRequest(url = "http://localhost/test") {
   const request = new Request(url);
@@ -93,7 +94,7 @@ describe("sendFile path traversal returns FORBIDDEN code", () => {
     const reply = createReply();
     const response = await reply.sendFile("../../etc/passwd", { root: "/tmp/safe" });
     expect(response.status).toBe(403);
-    const body = await response.json();
+    const body = await json<{ code: string }>(response);
     expect(body.code).toBe("FORBIDDEN");
     expect(body.code).not.toBe("PATH_TRAVERSAL");
   });

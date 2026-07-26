@@ -3,8 +3,15 @@ import { describe, expect, it } from "vitest";
 // handler is framework-agnostic), but the mount() helper targets CelsianApp
 // structurally — so the integration test pulls core straight from the workspace.
 import { createApp } from "../../core/src/index.js";
+import { json } from "../../core/test/helpers/json.js";
 import { procedure } from "../src/procedure.js";
 import { RPCHandler, router } from "../src/router.js";
+
+type RpcResult<T> = { result: T };
+type RpcError = { error: { code: string } };
+
+/** Procedure names are dynamic, so the manifest map is keyed by index signature. */
+type RpcManifest = { procedures: Record<string, { type: string }> };
 
 function buildHandler() {
   const routes = router({
@@ -30,7 +37,7 @@ describe("RPCHandler.mount()", () => {
     const input = encodeURIComponent(JSON.stringify({ name: "Ada" }));
     const queryRes = await app.inject({ url: `/_rpc/greet?input=${input}` });
     expect(queryRes.status).toBe(200);
-    const queryBody = await queryRes.json();
+    const queryBody = await json<RpcResult<{ message: string }>>(queryRes);
     expect(queryBody.result).toEqual({ message: "Hello, Ada!" });
 
     // Mutation over POST with JSON body
@@ -41,7 +48,7 @@ describe("RPCHandler.mount()", () => {
       payload: { n: 41 },
     });
     expect(mutateRes.status).toBe(200);
-    const mutateBody = await mutateRes.json();
+    const mutateBody = await json<RpcResult<{ next: number }>>(mutateRes);
     expect(mutateBody.result).toEqual({ next: 42 });
   });
 
@@ -52,7 +59,7 @@ describe("RPCHandler.mount()", () => {
 
     const res = await app.inject({ url: "/_rpc/counter.bump" });
     expect(res.status).toBe(405);
-    const body = await res.json();
+    const body = await json<RpcError>(res);
     expect(body.error.code).toBe("METHOD_NOT_ALLOWED");
   });
 
@@ -64,7 +71,7 @@ describe("RPCHandler.mount()", () => {
     const input = encodeURIComponent(JSON.stringify({ name: "Grace" }));
     const res = await app.inject({ url: `/api/rpc/greet?input=${input}` });
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = await json<RpcResult<{ message: string }>>(res);
     expect(body.result).toEqual({ message: "Hello, Grace!" });
 
     // The old default prefix is not registered.
@@ -79,7 +86,7 @@ describe("RPCHandler.mount()", () => {
 
     const res = await app.inject({ url: "/_rpc/manifest.json" });
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = await json<RpcManifest>(res);
     expect(body.procedures["counter.bump"].type).toBe("mutation");
   });
 });

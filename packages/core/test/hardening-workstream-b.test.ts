@@ -15,6 +15,7 @@ import { createReply } from "../src/reply.js";
 import { Router } from "../src/router.js";
 import { createSSEStream } from "../src/sse.js";
 import type { CelsianRequest } from "../src/types.js";
+import { json } from "./helpers/json.js";
 
 const TMP_DIR = join(import.meta.dirname ?? ".", "__tmp_hardening_b__");
 const PUBLIC_DIR = join(TMP_DIR, "public");
@@ -271,7 +272,7 @@ describe("SSE field sanitization", () => {
 function multipartRequest(
   url: string,
   parts: {
-    files?: { field: string; name: string; type: string; content: string | Uint8Array }[];
+    files?: { field: string; name: string; type: string; content: string | Uint8Array<ArrayBuffer> }[];
     fields?: Record<string, string>;
   },
 ): Request {
@@ -312,7 +313,7 @@ describe("upload plugin hardening", () => {
         files: [{ field: "f", name: "../../etc/passwd", type: "text/plain", content: "x" }],
       }),
     );
-    const body = await res.json();
+    const body = await json<{ names: string[]; raw: string[] }>(res);
     expect(body.names[0]).toBe("passwd");
     expect(body.names[0]).not.toContain("/");
     expect(body.raw[0]).toBe("../../etc/passwd");
@@ -369,7 +370,7 @@ describe("upload plugin hardening", () => {
         files: [{ field: "f", name: "a.txt", type: "text/plain", content: "a" }],
       }),
     );
-    const body = await res.json();
+    const body = await json<{ fields: string[]; polluted: string | null }>(res);
     expect(body.fields).toEqual(["safe"]);
     expect(body.polluted).toBeNull();
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();

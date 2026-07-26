@@ -7,11 +7,18 @@
 // Every test here fails against the pre-fix handler.
 
 import { describe, expect, it, vi } from "vitest";
+import { json } from "../../core/test/helpers/json.js";
 import { procedure } from "../src/procedure.js";
 import { RPCHandler, router } from "../src/router.js";
 import { decode } from "../src/wire.js";
 
 const JSON_HEADERS = { "content-type": "application/json" };
+
+type RpcResult<T> = { result: T };
+type RpcError = { error: { message: string; code: string } };
+
+/** Path keys are dynamic procedure names, so the OpenAPI paths map uses an index signature. */
+type OpenApiPaths = { paths: Record<string, unknown> };
 
 // ─── H-7: prototype injection ───
 
@@ -65,7 +72,7 @@ describe("H-7: decode() must not perform a prototype assignment from client inpu
     );
 
     const url = `http://localhost/_rpc/me?input=${encodeURIComponent(payload)}`;
-    const body = await (await handler.handle(new Request(url))).json();
+    const body = await json<RpcResult<{ isAdmin: boolean; keys: string[] }>>(await handler.handle(new Request(url)));
 
     expect(body.result).toEqual({ isAdmin: false, keys: ["name"] });
   });
@@ -115,7 +122,7 @@ describe("H-7 companion: decode() depth cap", () => {
     const res = await handler.handle(new Request(url));
 
     expect(res.status).toBe(400);
-    expect((await res.json()).error.code).toBe("PARSE_ERROR");
+    expect((await json<RpcError>(res)).error.code).toBe("PARSE_ERROR");
   });
 });
 
@@ -141,7 +148,7 @@ describe("H-9: mutations must not be reachable by a cross-origin HTML form", () 
     const res = await makeHandler().handle(new Request("http://localhost/_rpc/del", { method: "POST", body: form }));
 
     expect(res.status).toBe(415);
-    expect((await res.json()).error.code).toBe("UNSUPPORTED_MEDIA_TYPE");
+    expect((await json<RpcError>(res)).error.code).toBe("UNSUPPORTED_MEDIA_TYPE");
   });
 
   it("rejects application/x-www-form-urlencoded, also a CORS-simple type", async () => {
@@ -177,7 +184,7 @@ describe("H-9: mutations must not be reachable by a cross-origin HTML form", () 
     const res = await makeHandler().handle(new Request("http://localhost/_rpc/upload", { method: "POST", body: form }));
 
     expect(res.status).toBe(200);
-    expect((await res.json()).result).toEqual({ got: "formdata" });
+    expect((await json<RpcResult<{ got: string }>>(res)).result).toEqual({ got: "formdata" });
   });
 
   it("rejects a cross-origin Origin header on a mutation (403)", async () => {
@@ -190,7 +197,7 @@ describe("H-9: mutations must not be reachable by a cross-origin HTML form", () 
     );
 
     expect(res.status).toBe(403);
-    expect((await res.json()).error.code).toBe("CROSS_ORIGIN_DENIED");
+    expect((await json<RpcError>(res)).error.code).toBe("CROSS_ORIGIN_DENIED");
   });
 
   it("rejects Sec-Fetch-Site: cross-site even without an Origin header", async () => {
@@ -236,7 +243,7 @@ describe("H-9: mutations must not be reachable by a cross-origin HTML form", () 
     );
 
     expect(res.status).toBe(200);
-    expect((await res.json()).result).toEqual({ deleted: true });
+    expect((await json<RpcResult<{ deleted: boolean }>>(res)).result).toEqual({ deleted: true });
   });
 
   it("allows an explicitly allow-listed cross-origin frontend", async () => {
@@ -296,7 +303,7 @@ describe("M-12: introspection endpoints must be gated", () => {
         expect(res.status).toBe(404);
         // Indistinguishable from an unknown procedure, no confirmation that
         // introspection merely got switched off.
-        expect((await res.json()).error.code).toBe("NOT_FOUND");
+        expect((await json<RpcError>(res)).error.code).toBe("NOT_FOUND");
       }
     } finally {
       vi.unstubAllEnvs();
@@ -350,13 +357,13 @@ describe("M-12: introspection endpoints must be gated", () => {
 
     const denied = await handler.handle(new Request("http://localhost/_rpc/manifest.json"));
     expect(denied.status).toBe(401);
-    expect((await denied.json()).error.code).toBe("UNAUTHORIZED");
+    expect((await json<RpcError>(denied)).error.code).toBe("UNAUTHORIZED");
 
     const allowed = await handler.handle(
       new Request("http://localhost/_rpc/openapi.json", { headers: { authorization: "Bearer t" } }),
     );
     expect(allowed.status).toBe(200);
-    expect((await allowed.json()).paths["/_rpc/admin.deleteEverything"]).toBeDefined();
+    expect((await json<OpenApiPaths>(allowed)).paths["/_rpc/admin.deleteEverything"]).toBeDefined();
     expect(seen).toEqual(["guard", "guard"]);
   });
 
@@ -448,7 +455,7 @@ describe("RPCHandler logger option", () => {
 
     const res = await handler.handle(new Request("http://localhost/_rpc/boom?input=%7B%7D"));
     expect(res.status).toBe(500);
-    expect((await res.json()).error.message).toBe("schema exploded");
+    expect((await json<RpcError>(res)).error.message).toBe("schema exploded");
     expect(logged).toHaveLength(1);
   });
 

@@ -8,6 +8,7 @@ import { MemoryKVStore } from "../../cache/src/store.js";
 import { createApp } from "../../core/src/app.js";
 import { cors } from "../../core/src/plugins/cors.js";
 import { createSSEStream } from "../../core/src/sse.js";
+import { json } from "../../core/test/helpers/json.js";
 import { nodeToWebRequest, writeWebResponse } from "../src/index.js";
 
 let server: Server;
@@ -135,7 +136,7 @@ describe("E2E: Full Stack Integration", () => {
   it("GET /api/health returns 200", async () => {
     const res = await fetch(url("/api/health"));
     expect(res.status).toBe(200);
-    const data = await res.json();
+    const data = await json<{ status: string; uptime: number }>(res);
     expect(data.status).toBe("ok");
     expect(data.uptime).toBeGreaterThan(0);
   });
@@ -143,7 +144,7 @@ describe("E2E: Full Stack Integration", () => {
   it("GET with parametric route works", async () => {
     const res = await fetch(url("/api/users/42"));
     expect(res.status).toBe(200);
-    const data = await res.json();
+    const data = await json<{ userId: string; name: string }>(res);
     expect(data.userId).toBe("42");
     expect(data.name).toBe("User 42");
   });
@@ -155,7 +156,7 @@ describe("E2E: Full Stack Integration", () => {
       body: JSON.stringify({ message: "hello" }),
     });
     expect(res.status).toBe(200);
-    const data = await res.json();
+    const data = await json<{ method: string; body: unknown; query: Record<string, string> }>(res);
     expect(data.method).toBe("POST");
     expect(data.body).toEqual({ message: "hello" });
     expect(data.query.foo).toBe("bar");
@@ -217,8 +218,8 @@ describe("E2E: Full Stack Integration", () => {
     expect(res2.headers.get("x-cache")).toBe("HIT");
 
     // Cached data should be identical
-    const d1 = await res1.json();
-    const d2 = await res2.json();
+    const d1 = await json<{ items: number[] }>(res1);
+    const d2 = await json<{ items: number[] }>(res2);
     expect(d1.items).toEqual(d2.items);
   });
 
@@ -231,7 +232,7 @@ describe("E2E: Full Stack Integration", () => {
     const cookie = createRes.headers.get("set-cookie");
     expect(cookie).toContain("sid=");
 
-    const createData = await createRes.json();
+    const createData = await json<{ sessionId: string }>(createRes);
     expect(createData.sessionId).toBeTruthy();
 
     // Load session with cookie
@@ -239,7 +240,7 @@ describe("E2E: Full Stack Integration", () => {
       headers: { cookie: cookie! },
     });
     expect(loadRes.status).toBe(200);
-    const loadData = await loadRes.json();
+    const loadData = await json<{ data: { user: string } }>(loadRes);
     expect(loadData.data.user).toBe("test-user");
   });
 
@@ -248,14 +249,14 @@ describe("E2E: Full Stack Integration", () => {
   it("enqueues and processes a background task", async () => {
     const enqueueRes = await fetch(url("/api/task"), { method: "POST" });
     expect(enqueueRes.status).toBe(200);
-    const { jobId } = await enqueueRes.json();
+    const { jobId } = await json<{ jobId: string }>(enqueueRes);
     expect(jobId).toBeTruthy();
 
     // Wait for processing (pollInterval set to 50ms above)
     await new Promise((r) => setTimeout(r, 300));
 
     const resultsRes = await fetch(url("/api/task-results"));
-    const { results } = await resultsRes.json();
+    const { results } = await json<{ results: string[] }>(resultsRes);
     expect(results).toContain("processed:test-123");
   });
 
@@ -277,7 +278,7 @@ describe("E2E: Full Stack Integration", () => {
   it("error route returns 500 with JSON", async () => {
     const res = await fetch(url("/api/error"));
     expect(res.status).toBe(500);
-    const data = await res.json();
+    const data = await json<{ error: string; statusCode: number }>(res);
     expect(data.error).toBe("Intentional error");
     expect(data.statusCode).toBe(500);
   });
@@ -303,7 +304,9 @@ describe("E2E: Full Stack Integration", () => {
   // ─── Concurrent Requests ───
 
   it("handles 50 concurrent requests correctly", async () => {
-    const requests = Array.from({ length: 50 }, (_, i) => fetch(url(`/api/users/${i}`)).then((r) => r.json()));
+    const requests = Array.from({ length: 50 }, (_, i) =>
+      fetch(url(`/api/users/${i}`)).then((r) => json<{ userId: string }>(r)),
+    );
 
     const results = await Promise.all(requests);
 

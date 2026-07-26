@@ -1,5 +1,6 @@
 import { CelsianError, createApp } from "@celsian/core";
 import { describe, expect, it, vi } from "vitest";
+import { json } from "../../core/test/helpers/json.js";
 import { MemoryRateLimitStore, rateLimit } from "../src/index.js";
 
 describe("@celsian/rate-limit", () => {
@@ -44,7 +45,7 @@ describe("@celsian/rate-limit", () => {
     // 4th should be blocked
     const response = await app.inject({ url: "/api" });
     expect(response.status).toBe(429);
-    const body = await response.json();
+    const body = await json<{ error: string }>(response);
     expect(body.error).toBe("Too Many Requests");
   });
 

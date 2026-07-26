@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
+import { json } from "./helpers/json.js";
 
 describe("Request Timeout", () => {
   it("should return 504 when handler exceeds timeout", async () => {
@@ -13,7 +14,7 @@ describe("Request Timeout", () => {
 
     const response = await app.inject({ url: "/slow" });
     expect(response.status).toBe(504);
-    const body = await response.json();
+    const body = await json<{ error: string }>(response);
     expect(body.error).toContain("Gateway Timeout");
   });
 
@@ -57,7 +58,7 @@ describe("Request Timeout", () => {
 
     const response = await app.inject({ url: "/timeout-code" });
     expect(response.status).toBe(504);
-    const body = await response.json();
+    const body = await json<{ statusCode: number }>(response);
     expect(body.statusCode).toBe(504);
   });
 
@@ -90,7 +91,7 @@ describe("Request Timeout", () => {
 
     const response = await app.inject({ url: "/long" });
     expect(response.status).toBe(200);
-    const body = await response.json();
+    const body = await json<{ ok: boolean }>(response);
     expect(body.ok).toBe(true);
   });
 });

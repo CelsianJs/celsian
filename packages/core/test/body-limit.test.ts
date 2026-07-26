@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
+import { json } from "./helpers/json.js";
 
 describe("Body Size Limits", () => {
   it("should reject body exceeding content-length limit", async () => {
@@ -29,7 +30,7 @@ describe("Body Size Limits", () => {
       payload: { message: "hello" },
     });
     expect(response.status).toBe(200);
-    const body = await response.json();
+    const body = await json<{ received: { message: string } }>(response);
     expect(body.received).toEqual({ message: "hello" });
   });
 

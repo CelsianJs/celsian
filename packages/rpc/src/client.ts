@@ -108,7 +108,24 @@ export class RPCError extends Error {
 
 // ─── Type-level proxy ───
 
-type RPCClientProxy<T> = {
+/** True only for `any`, which is the one type assignable to both `1 & T` sides. */
+type IsAny<T> = 0 extends 1 & T ? true : false;
+
+/**
+ * Client type for an untyped router. `createRPCClient<any>()` is a documented
+ * escape hatch (JS callers, tests, routers whose type is not imported), but
+ * without this branch `any` satisfies every conditional in `RPCClientProxy`
+ * at once, so the result was a union of all three branches and no property
+ * access on the client compiled at all.
+ */
+type UntypedRPCClientProxy = {
+  query(input?: unknown): Promise<unknown>;
+  mutate(input?: unknown): Promise<unknown>;
+} & { [key: string]: UntypedRPCClientProxy };
+
+type RPCClientProxy<T> = IsAny<T> extends true ? UntypedRPCClientProxy : RPCRouterProxy<T>;
+
+type RPCRouterProxy<T> = {
   [K in keyof T]: T[K] extends { type: "query"; handler: (opts: { input: infer I; ctx: unknown }) => Promise<infer O> }
     ? { query(input: I): Promise<O> }
     : T[K] extends { type: "mutation"; handler: (opts: { input: infer I; ctx: unknown }) => Promise<infer O> }

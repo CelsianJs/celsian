@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
+import { json } from "./helpers/json.js";
 
 describe("Body Parsing Edge Cases", () => {
   it("should return 400 for malformed JSON", async () => {
@@ -15,7 +16,7 @@ describe("Body Parsing Edge Cases", () => {
 
     const response = await app.handle(request);
     expect(response.status).toBe(400);
-    const body = await response.json();
+    const body = await json<{ code: string; error: string }>(response);
     expect(body.code).toBe("INVALID_JSON");
     expect(body.error).toContain("Invalid JSON");
   });
@@ -32,7 +33,7 @@ describe("Body Parsing Edge Cases", () => {
 
     const response = await app.handle(request);
     expect(response.status).toBe(200);
-    const body = await response.json();
+    const body = await json<{ received: string | null }>(response);
     expect(body.received).toBeNull();
   });
 
@@ -48,7 +49,7 @@ describe("Body Parsing Edge Cases", () => {
 
     const response = await app.handle(request);
     expect(response.status).toBe(200);
-    const body = await response.json();
+    const body = await json<{ received: string }>(response);
     expect(body.received).toBe("plain text data");
   });
 
@@ -64,7 +65,7 @@ describe("Body Parsing Edge Cases", () => {
 
     const response = await app.handle(request);
     expect(response.status).toBe(200);
-    const body = await response.json();
+    const body = await json<{ received: string }>(response);
     expect(body.received).toBe("<p>Hello</p>");
   });
 
@@ -74,7 +75,7 @@ describe("Body Parsing Edge Cases", () => {
 
     const response = await app.inject({ url: "/data" });
     expect(response.status).toBe(200);
-    const body = await response.json();
+    const body = await json<{ body: string | null }>(response);
     expect(body.body).toBeNull();
   });
 
@@ -84,7 +85,7 @@ describe("Body Parsing Edge Cases", () => {
 
     const response = await app.inject({ url: "/nonexistent" });
     expect(response.status).toBe(404);
-    const body = await response.json();
+    const body = await json<{ error: string; statusCode: number }>(response);
     expect(body.error).toBe("Not Found");
     expect(body.statusCode).toBe(404);
   });

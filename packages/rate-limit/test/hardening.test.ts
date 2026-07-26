@@ -2,6 +2,7 @@
 
 import { CelsianError, createApp } from "@celsian/core";
 import { describe, expect, it, vi } from "vitest";
+import { json } from "../../core/test/helpers/json.js";
 import {
   createRedisRateLimitStore,
   ipInCidr,
@@ -211,7 +212,7 @@ describe("Retry-After", () => {
       if (response.status === 429) {
         const retryAfter = Number(response.headers.get("retry-after"));
         expect(retryAfter).toBeGreaterThanOrEqual(1);
-        expect((await response.json()).retryAfter).toBeGreaterThanOrEqual(1);
+        expect((await json<{ retryAfter: number }>(response)).retryAfter).toBeGreaterThanOrEqual(1);
         return;
       }
     }

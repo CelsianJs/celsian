@@ -5,6 +5,7 @@ import { createApp } from "../src/app.js";
 import { serializeCookie } from "../src/cookie.js";
 import { parseCronExpression } from "../src/cron.js";
 import { csrf } from "../src/plugins/csrf.js";
+import { json } from "./helpers/json.js";
 
 describe("[1] JSON body prototype-pollution scrub", () => {
   it("strips __proto__ from parsed JSON and does not pollute Object.prototype", async () => {
@@ -22,7 +23,7 @@ describe("[1] JSON body prototype-pollution scrub", () => {
 
     // Prototype must not be polluted
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
-    const body = await response.json();
+    const body = await json<{ received: { polluted?: unknown; safe: number } }>(response);
     expect(body.received.polluted).toBeUndefined();
     expect(body.received.safe).toBe(1);
   });
@@ -38,7 +39,7 @@ describe("[1] JSON body prototype-pollution scrub", () => {
     });
 
     const response = await app.handle(request);
-    const body = await response.json();
+    const body = await json<{ received: { a: Array<{ x?: unknown }>; b: { y?: unknown } } }>(response);
     expect(body.received.a[0].x).toBeUndefined();
     expect(body.received.b.y).toBeUndefined();
     expect(({} as Record<string, unknown>).x).toBeUndefined();
@@ -77,7 +78,7 @@ describe("[3] trustProxy host-header injection guard", () => {
       url: "http://real.example/whoami",
       headers: { "x-forwarded-host": "evil.com" },
     });
-    const body = await res.json();
+    const body = await json<{ url: string }>(res);
     expect(body.url).not.toContain("evil.com");
     expect(body.url).toContain("real.example");
   });
@@ -93,7 +94,7 @@ describe("[3] trustProxy host-header injection guard", () => {
       headers: { "x-forwarded-host": "trusted.example" },
     });
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = await json<{ url: string }>(res);
     expect(body.url).not.toContain("evil.com");
   });
 
@@ -205,7 +206,7 @@ describe("[8] formData enforces byte limit", () => {
 
     const response = await app.handle(request);
     expect(response.status).toBe(200);
-    const body = await response.json();
+    const body = await json<{ name: string }>(response);
     expect(body.name).toBe("celsian");
   });
 });

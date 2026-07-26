@@ -1,8 +1,12 @@
 import { createApp } from "@celsian/core";
 import { describe, expect, it, vi } from "vitest";
+import { json } from "../../core/test/helpers/json.js";
 import { createJWTGuard, type JWTNamespace, type JWTPayload, jwt } from "../src/index.js";
 
 const SECRET = "test-secret-key-for-testing-only-min-32-chars";
+
+/** The guarded routes echo back the verified token payload; the tests only read `sub`. */
+type UserBody = { user: { sub: string } };
 
 describe("@celsian/jwt", () => {
   it("should sign and verify JWT tokens", async () => {
@@ -110,7 +114,7 @@ describe("createJWTGuard", () => {
       headers: { authorization: `Bearer ${token}` },
     });
     expect(withAuth.status).toBe(200);
-    const body = await withAuth.json();
+    const body = await json<UserBody>(withAuth);
     expect(body.user.sub).toBe("user123");
   });
 
@@ -181,7 +185,7 @@ describe("createJWTGuard (lazy, no-arg) honors configured algorithms", () => {
       headers: { authorization: `Bearer ${token}` },
     });
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = await json<UserBody>(res);
     expect(body.user.sub).toBe("hs512-user");
   });
 
@@ -249,11 +253,11 @@ describe("createJWTGuard (lazy, no-arg) binds to its owning app (no cross-app se
     // Each app verifies its own token.
     const aSelf = await appA.inject({ url: "/protected", headers: { authorization: `Bearer ${tokenA}` } });
     expect(aSelf.status).toBe(200);
-    expect((await aSelf.json()).user.sub).toBe("user-A");
+    expect((await json<UserBody>(aSelf)).user.sub).toBe("user-A");
 
     const bSelf = await appB.inject({ url: "/protected", headers: { authorization: `Bearer ${tokenB}` } });
     expect(bSelf.status).toBe(200);
-    expect((await bSelf.json()).user.sub).toBe("user-B");
+    expect((await json<UserBody>(bSelf)).user.sub).toBe("user-B");
 
     // App A must NOT accept a token signed for app B, and vice versa.
     const aRejectsB = await appA.inject({ url: "/protected", headers: { authorization: `Bearer ${tokenB}` } });

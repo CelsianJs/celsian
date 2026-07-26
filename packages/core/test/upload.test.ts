@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { type UploadedFile, upload } from "../src/plugins/upload.js";
+import { json } from "./helpers/json.js";
 
 /**
  * Helper: build a multipart/form-data Request from files and fields.
@@ -8,7 +9,7 @@ import { type UploadedFile, upload } from "../src/plugins/upload.js";
 function multipartRequest(
   url: string,
   parts: {
-    files?: { field: string; name: string; type: string; content: string | Uint8Array }[];
+    files?: { field: string; name: string; type: string; content: string | Uint8Array<ArrayBuffer> }[];
     fields?: Record<string, string>;
   },
 ): Request {
@@ -54,7 +55,7 @@ describe("Upload Plugin", () => {
 
     const response = await app.handle(request);
     expect(response.status).toBe(200);
-    const body = await response.json();
+    const body = await json<{ count: number; name: string; mime: string; text: string }>(response);
     expect(body.count).toBe(1);
     expect(body.name).toBe("photo.png");
     expect(body.mime).toBe("image/png");
@@ -82,7 +83,7 @@ describe("Upload Plugin", () => {
 
     const response = await app.handle(request);
     expect(response.status).toBe(200);
-    const body = await response.json();
+    const body = await json<{ count: number; names: string[] }>(response);
     expect(body.count).toBe(3);
     expect(body.names).toEqual(["a.txt", "b.txt", "c.txt"]);
   });
@@ -107,7 +108,7 @@ describe("Upload Plugin", () => {
 
     const response = await app.handle(request);
     expect(response.status).toBe(413);
-    const body = await response.json();
+    const body = await json<{ code: string }>(response);
     expect(body.code).toBe("FILE_TOO_LARGE");
   });
 
@@ -128,7 +129,7 @@ describe("Upload Plugin", () => {
 
     const response = await app.handle(request);
     expect(response.status).toBe(413);
-    const body = await response.json();
+    const body = await json<{ code: string }>(response);
     expect(body.code).toBe("TOO_MANY_FILES");
   });
 
@@ -145,7 +146,7 @@ describe("Upload Plugin", () => {
 
     const response = await app.handle(request);
     expect(response.status).toBe(415);
-    const body = await response.json();
+    const body = await json<{ code: string }>(response);
     expect(body.code).toBe("UNSUPPORTED_MEDIA_TYPE");
   });
 
@@ -170,7 +171,7 @@ describe("Upload Plugin", () => {
 
     const response = await app.handle(request);
     expect(response.status).toBe(200);
-    const body = await response.json();
+    const body = await json<{ fileCount: number; fileName: string; description: string; category: string }>(response);
     expect(body.fileCount).toBe(1);
     expect(body.fileName).toBe("doc.pdf");
     expect(body.description).toBe("A test document");
@@ -194,7 +195,7 @@ describe("Upload Plugin", () => {
 
     const response = await app.handle(request);
     expect(response.status).toBe(200);
-    const body = await response.json();
+    const body = await json<{ fileCount: number; fieldCount: number }>(response);
     expect(body.fileCount).toBe(0);
     expect(body.fieldCount).toBe(0);
   });
@@ -221,7 +222,7 @@ describe("Upload Plugin", () => {
     );
 
     expect(response.status).toBe(200);
-    const body = await response.json();
+    const body = await json<{ fileCount: number; fieldCount: number; body: { hello: string } }>(response);
     expect(body.fileCount).toBe(0);
     expect(body.fieldCount).toBe(0);
     expect(body.body).toEqual({ hello: "world" });
@@ -246,7 +247,7 @@ describe("Upload Plugin", () => {
 
     const response = await app.handle(request);
     expect(response.status).toBe(200);
-    const body = await response.json();
+    const body = await json<{ size: number; bufferByteLength: number }>(response);
     expect(body.size).toBe(new TextEncoder().encode(content).length);
     expect(body.bufferByteLength).toBe(body.size);
   });

@@ -9,6 +9,7 @@ import {
   transactionLifecycle,
   withTransaction,
 } from "../src/plugins/database.js";
+import { json } from "./helpers/json.js";
 
 function createMockPool(): DatabasePool & { closed: boolean; queries: string[] } {
   const pool = {
@@ -81,7 +82,7 @@ describe("Database Plugin", () => {
 
     const response = await app.inject({ url: "/query" });
     expect(response.status).toBe(200);
-    const body = await response.json();
+    const body = await json<{ result: Array<{ result: number }> }>(response);
     expect(body.result).toEqual([{ result: 1 }]);
     expect(mockPool.queries).toContain("SELECT 1");
   });

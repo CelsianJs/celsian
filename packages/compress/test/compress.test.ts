@@ -113,7 +113,8 @@ describe("@celsian/compress", () => {
 
     // Decompress and verify content
     const ds = new DecompressionStream("gzip");
-    const decompressed = response.body?.pipeThrough(ds);
+    if (!response.body) throw new Error("compressed response had no body to decompress");
+    const decompressed = response.body.pipeThrough(ds);
     const reader = decompressed.getReader();
     const chunks: Uint8Array[] = [];
     while (true) {

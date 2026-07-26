@@ -6,8 +6,8 @@ export { ConfigLoadError, defineConfig, loadConfig } from "./config.js";
 export { EncapsulationContext } from "./context.js";
 export type { CookieOptions } from "./cookie.js";
 export { parseCookies, serializeCookie } from "./cookie.js";
-export type { CronJob } from "./cron.js";
-export { CronScheduler, parseCronExpression, shouldRun } from "./cron.js";
+export type { CronJob, ServerlessCronRuntime } from "./cron.js";
+export { CronScheduler, detectServerlessCronRuntime, parseCronExpression, shouldRun } from "./cron.js";
 export {
   assertDecorationUnique,
   assertPlugin,
@@ -39,8 +39,14 @@ export type { SecurityOptions } from "./plugins/security.js";
 export { security } from "./plugins/security.js";
 export type { UploadedFile, UploadOptions } from "./plugins/upload.js";
 export { upload } from "./plugins/upload.js";
-export type { QueueBackend, QueueMessage } from "./queue.js";
-export { generateQueueId, MemoryQueue } from "./queue.js";
+export type {
+  DeadLetterCapableQueue,
+  DeadLetterEntry,
+  QueueBackend,
+  QueueMessage,
+  TaskFailure,
+} from "./queue.js";
+export { DEFAULT_VISIBILITY_TIMEOUT, generateQueueId, MemoryQueue } from "./queue.js";
 export { createReply } from "./reply.js";
 export { buildRequest } from "./request.js";
 export { Router } from "./router.js";
@@ -48,8 +54,8 @@ export type { ServeOptions, ServeResult } from "./serve.js";
 export { nodeToWebRequest, serve, writeWebResponse } from "./serve.js";
 export type { SSEChannel, SSEEvent, SSEHub, SSEStreamOptions } from "./sse.js";
 export { createSSEHub, createSSEStream } from "./sse.js";
-export type { TaskContext, TaskDefinition, TaskWorkerOptions } from "./task.js";
-export { createEnqueue, TaskRegistry, TaskWorker } from "./task.js";
+export type { TaskContext, TaskDefinition, TaskFailureInfo, TaskWorkerOptions } from "./task.js";
+export { createEnqueue, DEFAULT_TASK_TIMEOUT, TaskRegistry, TaskWorker } from "./task.js";
 export type {
   CelsianAppOptions,
   CelsianReply,

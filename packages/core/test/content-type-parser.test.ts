@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
+import { json } from "./helpers/json.js";
 
 describe("addContentTypeParser", () => {
   it("should use custom parser for exact content-type match", async () => {
@@ -21,7 +22,7 @@ describe("addContentTypeParser", () => {
     );
 
     expect(response.status).toBe(200);
-    const body = await response.json();
+    const body = await json<{ body: { xml: string } }>(response);
     expect(body.body).toEqual({ xml: "<root><item>hello</item></root>" });
   });
 
@@ -44,7 +45,7 @@ describe("addContentTypeParser", () => {
     );
 
     expect(response.status).toBe(200);
-    const body = await response.json();
+    const body = await json<{ body: { xml: string } }>(response);
     expect(body.body).toEqual({ xml: "<data/>" });
   });
 
@@ -67,7 +68,7 @@ describe("addContentTypeParser", () => {
     );
 
     expect(response.status).toBe(200);
-    const body = await response.json();
+    const body = await json<{ body: { key: string } }>(response);
     expect(body.body).toEqual({ key: "value" });
   });
 
@@ -92,7 +93,7 @@ describe("addContentTypeParser", () => {
       }),
     );
 
-    const body = await xmlResponse.json();
+    const body = await json<{ body: { type: string; text: string } }>(xmlResponse);
     expect(body.body).toEqual({ type: "yaml", text: "key: value" });
   });
 });
@@ -133,7 +134,7 @@ describe("custom parser bodyLimit enforcement (CORE-06)", () => {
     );
 
     expect(response.status).toBe(200);
-    expect((await response.json()).body).toEqual({ xml: "<ok/>" });
+    expect((await json<{ body: { xml: string } }>(response)).body).toEqual({ xml: "<ok/>" });
   });
 
   it("does not cap custom parsers when bodyLimit is 0 (disabled)", async () => {
@@ -150,6 +151,6 @@ describe("custom parser bodyLimit enforcement (CORE-06)", () => {
     );
 
     expect(response.status).toBe(200);
-    expect((await response.json()).body).toEqual({ len: 5000 });
+    expect((await json<{ body: { len: number } }>(response)).body).toEqual({ len: 5000 });
   });
 });
