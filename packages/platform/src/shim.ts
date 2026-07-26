@@ -1,5 +1,5 @@
 /**
- * Shared req/reply shim — single source of truth.
+ * Shared req/reply shim -- single source of truth.
  *
  * This shim is injected into bundled worker scripts (CF Workers, Lambda handlers)
  * to provide a CelsianJS-compatible request/reply interface on top of Web Standard

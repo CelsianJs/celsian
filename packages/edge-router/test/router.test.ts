@@ -248,7 +248,7 @@ describe("getProjectId", () => {
 });
 
 // ── URL-decoded params ───────────────────────────────────────────
-describe("matchRoute — URL-decoded params", () => {
+describe("matchRoute -- URL-decoded params", () => {
   it("decodes URI-encoded param values", () => {
     const routes = compileRoutes([{ pattern: "/files/:name", methods: ["GET"], origin: "http://localhost:3000" }]);
     const result = matchRoute(routes, "/files/hello%20world", "GET");
@@ -258,7 +258,7 @@ describe("matchRoute — URL-decoded params", () => {
 });
 
 // ── CORS credentials + wildcard ──────────────────────────────────
-describe("corsHeaders — credentials + wildcard", () => {
+describe("corsHeaders -- credentials + wildcard", () => {
   it("does NOT set credentials header when origin is wildcard", () => {
     const headers = corsHeaders("https://app.com", { origin: "*", credentials: true });
     expect(headers["Access-Control-Allow-Origin"]).toBe("*");

@@ -1,11 +1,11 @@
-// @celsian/core — Configuration
+// @celsian/core -- Configuration
 
 import { CelsianError } from "./errors.js";
 
 /**
  * Thrown when a `celsian.config.*` file exists but fails to load (syntax error,
  * a missing import it depends on, or a runtime throw during module evaluation).
- * A genuinely absent config file is NOT an error — it falls back to defaults.
+ * A genuinely absent config file is NOT an error -- it falls back to defaults.
  */
 export class ConfigLoadError extends CelsianError {
   constructor(file: string, cause: unknown) {
@@ -44,7 +44,7 @@ export function defineConfig(config: CelsianConfig): CelsianConfig {
  * Resolve the default bind host.
  *
  * Honors `process.env.HOST` first. Otherwise binds `0.0.0.0` in production
- * (containers — Docker/Fly/Railway — must accept external connections) and
+ * (containers -- Docker/Fly/Railway -- must accept external connections) and
  * `localhost` in development (avoid exposing the dev server on the LAN).
  */
 export function defaultHost(): string {
@@ -79,7 +79,7 @@ export async function loadConfig(root: string = process.cwd()): Promise<CelsianC
       return mergeConfig(defaults, userConfig);
     } catch (err) {
       if (isConfigFileAbsent(err, configPath, file)) {
-        // No config file with this name here — try the next candidate.
+        // No config file with this name here -- try the next candidate.
         continue;
       }
       // The config file exists but blew up while loading (syntax/runtime error
@@ -96,7 +96,7 @@ export async function loadConfig(root: string = process.cwd()): Promise<CelsianC
  * Distinguish "this config file does not exist" (skip, use defaults) from
  * "this config file exists but failed to load" (surface the error). Only a
  * module-not-found whose missing specifier IS the config file itself counts as
- * absent — a missing *transitive* import inside a real config must surface.
+ * absent -- a missing *transitive* import inside a real config must surface.
  */
 function isConfigFileAbsent(err: unknown, configPath: string, file: string): boolean {
   if (!err || typeof err !== "object") return false;
@@ -109,7 +109,7 @@ function isConfigFileAbsent(err: unknown, configPath: string, file: string): boo
     /module not found|cannot find module|no such file/i.test(message);
   if (!notFound) return false;
   // Only treat as absent when the *missing specifier itself* is our config file
-  // — NOT when a transitive import the config depends on is missing (whose error
+  // -- NOT when a transitive import the config depends on is missing (whose error
   // message also names the config file as the importer, e.g.
   // "Cannot find module '<dep>' imported from '<configPath>'").
   const missingSpecifier = message.match(/['"]([^'"]+)['"]/)?.[1] ?? "";

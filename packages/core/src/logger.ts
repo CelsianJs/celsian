@@ -1,4 +1,4 @@
-// @celsian/core — Structured JSON logger (pino-style)
+// @celsian/core -- Structured JSON logger (pino-style)
 
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
 
@@ -24,7 +24,7 @@ const LEVEL_VALUES: Record<LogLevel, number> = {
 
 export interface LoggerOptions {
   level?: LogLevel;
-  /** Override output for testing — default: process.stdout.write */
+  /** Override output for testing -- default: process.stdout.write */
   destination?: (line: string) => void;
   /** Static bindings merged into every log line */
   bindings?: Record<string, unknown>;
@@ -87,7 +87,7 @@ export function createLogger(options: LoggerOptions = {}): Logger {
     },
 
     child(bindings: Record<string, unknown>): Logger {
-      // Lightweight child — reuse parent's log function and write destination
+      // Lightweight child -- reuse parent's log function and write destination
       const childBindings = { ...baseBindings, ...bindings };
       const childLogger: Logger = {
         get level() {

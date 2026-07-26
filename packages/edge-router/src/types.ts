@@ -23,7 +23,7 @@ export interface CompiledRoute {
 /** Edge router configuration. */
 export interface EdgeRouterConfig {
   routes: RouteEntry[];
-  /** CORS configuration — if set, the router handles preflight automatically */
+  /** CORS configuration -- if set, the router handles preflight automatically */
   cors?: CorsConfig;
   /** Default origin for routes that don't specify one */
   defaultOrigin?: string;

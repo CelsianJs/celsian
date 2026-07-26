@@ -1,6 +1,6 @@
 # CelsianJS Vercel Adapter
 
-Run CelsianJS apps on Vercel — both the **Node.js** serverless runtime and the **Edge** runtime.
+Run CelsianJS apps on Vercel -- both the **Node.js** serverless runtime and the **Edge** runtime.
 
 Part of the [CelsianJS](https://github.com/CelsianJs/celsian) monorepo. See the root README for full framework docs.
 

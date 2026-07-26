@@ -1,6 +1,6 @@
 # CelsianJS AWS Lambda Adapter
 
-Run CelsianJS apps on AWS Lambda. Supports API Gateway **v2 (HTTP API)**, **v1 (REST API)**, and **Application Load Balancer** events — the adapter auto-detects the event shape.
+Run CelsianJS apps on AWS Lambda. Supports API Gateway **v2 (HTTP API)**, **v1 (REST API)**, and **Application Load Balancer** events -- the adapter auto-detects the event shape.
 
 Part of the [CelsianJS](https://github.com/CelsianJs/celsian) monorepo. See the root README for full framework docs.
 

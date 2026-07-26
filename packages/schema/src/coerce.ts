@@ -1,4 +1,4 @@
-// @celsian/schema — Type coercion for query strings and URL params
+// @celsian/schema -- Type coercion for query strings and URL params
 
 export function coerceString(value: string, targetType: "number"): number;
 export function coerceString(value: string, targetType: "boolean"): boolean;

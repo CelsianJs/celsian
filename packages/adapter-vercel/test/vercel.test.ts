@@ -377,7 +377,7 @@ describe("@celsian/adapter-vercel (Edge bundling smoke)", () => {
     );
 
     // node:* externals cover @celsian/core's *lazy* `await import("node:...")`
-    // helpers (sendFile/serve — never executed on the edge request path).
+    // helpers (sendFile/serve -- never executed on the edge request path).
     // Static top-level node: imports would survive as `import` statements in
     // the output, which is exactly what we assert against below.
     const result = await build({
@@ -398,5 +398,8 @@ describe("@celsian/adapter-vercel (Edge bundling smoke)", () => {
 
     // node:crypto must be gone entirely (replaced by Web Crypto)
     expect(output).not.toContain("node:crypto");
-  });
+    // Runs a real esbuild bundle, which does not reliably fit in the 5s default
+    // on a loaded machine. Observed timing out under parallel load and passing
+    // in isolation, so the budget is raised rather than the check dropped.
+  }, 60_000);
 });

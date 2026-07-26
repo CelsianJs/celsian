@@ -1,4 +1,4 @@
-// @celsian/core — Request builder
+// @celsian/core -- Request builder
 
 import type { CelsianRequest } from "./types.js";
 
@@ -14,7 +14,7 @@ const SRC = Symbol("celsian.srcRequest");
 // Shared prototype for fast request wrappers: body-consuming methods and the
 // live body/bodyUsed accessors delegate to the source Request via `this[SRC]`.
 // Using a prototype avoids per-request `.bind()` (×6) and `Object.defineProperty`
-// (×2) — ~10× cheaper to construct than per-request property definition.
+// (×2) -- ~10× cheaper to construct than per-request property definition.
 const REQUEST_PROTO = {
   get body() {
     return (this as Record<symbol, Request>)[SRC].body;
@@ -65,7 +65,7 @@ export function buildRequest(request: Request, url: URL, params: Record<string, 
     }
   }
 
-  // Direct property assignment — avoids per-property getter closures.
+  // Direct property assignment -- avoids per-property getter closures.
   // Delegate only body-consuming methods that need the original Request's `this`.
   const celsianRequest = Object.create(null) as CelsianRequest;
   const req = celsianRequest as Record<string, unknown>;

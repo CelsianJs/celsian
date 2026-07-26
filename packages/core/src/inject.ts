@@ -1,4 +1,4 @@
-// @celsian/core — Test injection utility (no server needed)
+// @celsian/core -- Test injection utility (no server needed)
 
 import type { CelsianApp } from "./app.js";
 import type { RouteMethod } from "./types.js";

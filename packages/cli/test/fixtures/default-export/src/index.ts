@@ -1,4 +1,4 @@
-// Fixture app for `celsian routes` — default export, no serve().
+// Fixture app for `celsian routes` -- default export, no serve().
 
 import { createApp } from "@celsian/core";
 

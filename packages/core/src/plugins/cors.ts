@@ -1,4 +1,4 @@
-// @celsian/core — CORS plugin
+// @celsian/core -- CORS plugin
 
 import { CelsianError } from "../errors.js";
 import type { HookHandler, PluginFunction } from "../types.js";
@@ -46,7 +46,7 @@ export function cors(options: CORSOptions = {}): PluginFunction {
   const opts = { ...DEFAULTS, ...options };
 
   // When the allowed origin is reflected (string/array/function) rather than the
-  // literal "*", responses differ per Origin — caches MUST be told via Vary: Origin
+  // literal "*", responses differ per Origin -- caches MUST be told via Vary: Origin
   // or a CDN can serve one origin's CORS headers to another (cache poisoning).
   const varyByOrigin = opts.origin !== "*";
 
@@ -106,7 +106,7 @@ export function cors(options: CORSOptions = {}): PluginFunction {
       const allowOrigin = resolveOriginHeader(origin, opts);
 
       // Response varies by Origin even when this particular origin is rejected
-      // (a different origin would get CORS headers) — always mark it for caches.
+      // (a different origin would get CORS headers) -- always mark it for caches.
       if (varyByOrigin) {
         reply.header("vary", appendVaryOrigin(reply.headers.vary));
       }

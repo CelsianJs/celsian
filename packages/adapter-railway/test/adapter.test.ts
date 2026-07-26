@@ -1,4 +1,4 @@
-// @celsian/adapter-railway — Adapter tests
+// @celsian/adapter-railway -- Adapter tests
 
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";

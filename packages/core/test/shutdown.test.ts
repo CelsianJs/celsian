@@ -1,4 +1,4 @@
-// @celsian/core — Graceful shutdown tests for CronScheduler and TaskWorker
+// @celsian/core -- Graceful shutdown tests for CronScheduler and TaskWorker
 
 import { describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
@@ -27,7 +27,7 @@ describe("CronScheduler shutdown", () => {
     expect(() => scheduler.stop()).not.toThrow();
   });
 
-  it("start() is idempotent — calling twice does not create duplicate timers", () => {
+  it("start() is idempotent -- calling twice does not create duplicate timers", () => {
     const scheduler = new CronScheduler();
     scheduler.add({
       name: "dup-check",
@@ -125,7 +125,7 @@ describe("TaskWorker shutdown", () => {
     const worker = new TaskWorker(registry, queue, logger, { pollInterval: 50 });
     worker.start();
 
-    // Stop immediately — no jobs were enqueued
+    // Stop immediately -- no jobs were enqueued
     await worker.stop();
     // If we get here, stop resolved successfully
   });
@@ -184,7 +184,7 @@ describe("TaskWorker shutdown", () => {
     // Stop the worker before adding any jobs
     await worker.stop();
 
-    // Now add a job — it should NOT be processed since the worker is stopped
+    // Now add a job -- it should NOT be processed since the worker is stopped
     await queue.push({
       id: "after-stop-1",
       taskName: "track-job",
@@ -241,7 +241,7 @@ describe("TaskWorker shutdown", () => {
 
     expect(processed).toContain("first");
 
-    // Second cycle — restart the worker
+    // Second cycle -- restart the worker
     worker.start();
     await queue.push({
       id: "cycle-2",

@@ -1,4 +1,4 @@
-// @celsian/platform — Vercel deployment provider
+// @celsian/platform -- Vercel deployment provider
 
 import { execSync } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
@@ -8,7 +8,7 @@ import { PlatformError } from "../errors.js";
 export interface VercelDeployOptions {
   /** Working directory (default: process.cwd()) */
   cwd?: string;
-  /** Deploy to production (default: false — deploys to preview) */
+  /** Deploy to production (default: false -- deploys to preview) */
   production?: boolean;
 }
 

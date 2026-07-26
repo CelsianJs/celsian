@@ -1,5 +1,5 @@
 /**
- * @celsian/platform — Deployment orchestration for the Celsian platform.
+ * @celsian/platform -- Deployment orchestration for the Celsian platform.
  *
  * Provides provider-agnostic deployment logic.
  * Supported providers: Cloudflare Workers, AWS Lambda, Fly.io, Vercel, Railway.

@@ -46,7 +46,7 @@ describe("@celsian/jwt", () => {
 
   it("should work without encapsulate: false (default encapsulation)", async () => {
     const app = createApp();
-    // Register JWT without { encapsulate: false } — the common user pattern
+    // Register JWT without { encapsulate: false } -- the common user pattern
     await app.register(jwt({ secret: SECRET }));
 
     // app.jwt should be accessible via getDecoration
@@ -169,7 +169,7 @@ describe("createJWTGuard (lazy, no-arg) honors configured algorithms", () => {
     await app.register(jwt({ secret: SECRET, algorithms: ["HS512"] }), { encapsulate: false });
     const jwtInstance = app.getDecoration("jwt") as JWTNamespace;
 
-    // No-arg guard — must read algorithms from the plugin's per-app config (HS512), not HS256.
+    // No-arg guard -- must read algorithms from the plugin's per-app config (HS512), not HS256.
     const guard = createJWTGuard();
 
     app.route({
@@ -201,7 +201,7 @@ describe("createJWTGuard (lazy, no-arg) honors configured algorithms", () => {
       handler: (_req, reply) => reply.json({ ok: true }),
     });
 
-    // Sign with HS256 using the SAME secret — should be rejected because the guard only allows HS512.
+    // Sign with HS256 using the SAME secret -- should be rejected because the guard only allows HS512.
     const { SignJWT } = await import("jose");
     const hs256Token = await new SignJWT({ sub: "wrong-alg" })
       .setProtectedHeader({ alg: "HS256" })
@@ -235,7 +235,7 @@ describe("createJWTGuard (lazy, no-arg) binds to its owning app (no cross-app se
       handler: (req, reply) => reply.json({ user: (req as { user?: unknown }).user }),
     });
 
-    // App B registers AFTER app A — previously this would rebind app A's lazy guard to app B.
+    // App B registers AFTER app A -- previously this would rebind app A's lazy guard to app B.
     const appB = createApp();
     await appB.register(jwt({ secret: SECRET_B }), { encapsulate: false });
     const jwtB = appB.getDecoration("jwt") as JWTNamespace;

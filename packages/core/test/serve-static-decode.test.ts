@@ -1,4 +1,4 @@
-// @celsian/core — serve() static-file decode hardening (BUG-4) and structured-logger routing (BUG-11)
+// @celsian/core -- serve() static-file decode hardening (BUG-4) and structured-logger routing (BUG-11)
 
 import { createServer } from "node:http";
 import { describe, expect, it, vi } from "vitest";

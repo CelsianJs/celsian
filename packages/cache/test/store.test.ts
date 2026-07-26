@@ -1,4 +1,4 @@
-// @celsian/cache — KV Store tests
+// @celsian/cache -- KV Store tests
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryKVStore } from "../src/store.js";

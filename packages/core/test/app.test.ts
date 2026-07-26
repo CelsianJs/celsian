@@ -394,7 +394,7 @@ describe("CelsianApp", () => {
     const body = await valid.json();
     expect(body).toEqual({ created: { name: "Alice" } });
 
-    // Invalid body — should return 400 from schema validation
+    // Invalid body -- should return 400 from schema validation
     const invalid = await app.handle(
       new Request("http://localhost/users", {
         method: "POST",

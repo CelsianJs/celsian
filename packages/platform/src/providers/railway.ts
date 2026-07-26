@@ -1,4 +1,4 @@
-// @celsian/platform — Railway deployment provider
+// @celsian/platform -- Railway deployment provider
 
 import { execSync } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";

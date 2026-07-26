@@ -1,4 +1,4 @@
-// @celsian/cache — Response cache tests
+// @celsian/cache -- Response cache tests
 
 import { describe, expect, it, vi } from "vitest";
 import { createResponseCache } from "../src/response-cache.js";
@@ -26,13 +26,13 @@ describe("Response Cache", () => {
       return jsonResponse({ value: callCount });
     };
 
-    // First call — MISS
+    // First call -- MISS
     const res1 = await cache.cached(makeRequest("/data"), handler);
     expect(res1.headers.get("x-cache")).toBe("MISS");
     expect(await res1.json()).toEqual({ value: 1 });
     expect(callCount).toBe(1);
 
-    // Second call — HIT (handler not called)
+    // Second call -- HIT (handler not called)
     const res2 = await cache.cached(makeRequest("/data"), handler);
     expect(res2.headers.get("x-cache")).toBe("HIT");
     expect(await res2.json()).toEqual({ value: 1 });
@@ -238,13 +238,13 @@ describe("Response Cache", () => {
       return jsonResponse({ n: callCount });
     };
 
-    // Same URL, different Accept-Language — should be cached separately
+    // Same URL, different Accept-Language -- should be cached separately
     await cache.cached(makeRequest("/data", "GET", { "accept-language": "en" }), handler);
     await cache.cached(makeRequest("/data", "GET", { "accept-language": "fr" }), handler);
 
     expect(callCount).toBe(2);
 
-    // Same language as first request — should be a HIT
+    // Same language as first request -- should be a HIT
     const res = await cache.cached(makeRequest("/data", "GET", { "accept-language": "en" }), handler);
     expect(res.headers.get("x-cache")).toBe("HIT");
     expect(callCount).toBe(2);
@@ -634,7 +634,7 @@ describe("Response Cache", () => {
     };
 
     // Different Accept-Language headers but no varyHeaders configured
-    // — should share the same cache entry
+    // -- should share the same cache entry
     await cache.cached(makeRequest("/data", "GET", { "accept-language": "en" }), handler);
     const res = await cache.cached(makeRequest("/data", "GET", { "accept-language": "fr" }), handler);
 

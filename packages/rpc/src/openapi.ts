@@ -1,4 +1,4 @@
-// @celsian/rpc — OpenAPI 3.1 generation
+// @celsian/rpc -- OpenAPI 3.1 generation
 
 import type { OpenAPISpec, ProcedureDefinition } from "./types.js";
 

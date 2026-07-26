@@ -7,7 +7,7 @@ import type { RouteEntry } from "../src/types.js";
 import { handleUpdateRoutes } from "../src/update-routes.js";
 
 // ── SSRF: isInternalUrl ────────────────────────────────────────
-describe("isInternalUrl — SSRF protection", () => {
+describe("isInternalUrl -- SSRF protection", () => {
   it("blocks 127.0.0.1 (IPv4 loopback)", () => {
     expect(isInternalUrl(new URL("http://127.0.0.1:3000"))).toBe(true);
   });
@@ -64,7 +64,7 @@ describe("isInternalUrl — SSRF protection", () => {
 });
 
 // ── SSRF: proxyRequest rejects internal origins ────────────────
-describe("proxyRequest — SSRF blocking", () => {
+describe("proxyRequest -- SSRF blocking", () => {
   it("returns 403 for internal origin", async () => {
     const entry: RouteEntry = { pattern: "/api", methods: ["GET"], origin: "http://127.0.0.1:3000" };
     const compiled = compileRoute(entry);
@@ -99,7 +99,7 @@ describe("proxyRequest — SSRF blocking", () => {
 });
 
 // ── ReDoS: regex escaping ──────────────────────────────────────
-describe("compileRoute — regex escaping", () => {
+describe("compileRoute -- regex escaping", () => {
   it("escapes dots in patterns so they match literally", () => {
     const entry: RouteEntry = { pattern: "/api/v1.0/users", methods: ["GET"], origin: "https://api.example.com" };
     const compiled = compileRoute(entry);
@@ -152,7 +152,7 @@ describe("compileRoute — regex escaping", () => {
 });
 
 // ── Route validation ───────────────────────────────────────────
-describe("handleUpdateRoutes — validation", () => {
+describe("handleUpdateRoutes -- validation", () => {
   function makeRequest(routes: unknown[]): Request {
     return new Request("https://edge.example.com/__routes", {
       method: "POST",
@@ -248,13 +248,13 @@ describe("handleUpdateRoutes — validation", () => {
 });
 
 // ── XFF default ────────────────────────────────────────────────
-describe("proxyRequest — XFF default", () => {
+describe("proxyRequest -- XFF default", () => {
   it("does not default X-Forwarded-For to 127.0.0.1", async () => {
     // We can't easily test the full proxy (it calls fetch), but we can verify
     // by checking the proxyRequest with an internal origin (which returns 403
     // before the fetch). For a real origin, we'd need to mock fetch.
     // Instead, test indirectly: the code uses "unknown" as fallback.
-    // We verify by reading the source — this is a structural assertion.
+    // We verify by reading the source -- this is a structural assertion.
 
     // Create a route with a public origin and test with a request that has
     // no CF-Connecting-IP and no X-Forwarded-For headers.

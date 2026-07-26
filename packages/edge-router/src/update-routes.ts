@@ -53,7 +53,7 @@ function validateRouteEntry(route: RouteEntry): string | null {
 }
 
 /**
- * Handle a POST to /__routes — updates the routing table at runtime.
+ * Handle a POST to /__routes -- updates the routing table at runtime.
  *
  * Expects JSON body: { routes: RouteEntry[] }
  * Optionally protected by an API key via the `apiKey` parameter.

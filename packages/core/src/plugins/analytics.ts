@@ -1,4 +1,4 @@
-// @celsian/core — Database analytics wrapper
+// @celsian/core -- Database analytics wrapper
 // Instruments every query with timing, surfaces DB vs server time
 
 import { CelsianError } from "../errors.js";

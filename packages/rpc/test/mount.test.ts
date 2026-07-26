@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 // Relative import: @celsian/core is not a dependency of @celsian/rpc (the
 // handler is framework-agnostic), but the mount() helper targets CelsianApp
-// structurally — so the integration test pulls core straight from the workspace.
+// structurally -- so the integration test pulls core straight from the workspace.
 import { createApp } from "../../core/src/index.js";
 import { json } from "../../core/test/helpers/json.js";
 import { procedure } from "../src/procedure.js";

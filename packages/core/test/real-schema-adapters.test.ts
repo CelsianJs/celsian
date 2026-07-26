@@ -58,7 +58,7 @@ describe.each(cases)("live route validation with real $label schemas", ({ schema
     const response = await app.inject({
       method: "POST",
       url: "/people",
-      // name should be a string, age should be a non-negative number — both wrong.
+      // name should be a string, age should be a non-negative number -- both wrong.
       payload: { name: 5, age: -1 },
     });
 

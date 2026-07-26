@@ -1,4 +1,4 @@
-// Fixture app for `celsian routes` — named `app` export, calls serve() like
+// Fixture app for `celsian routes` -- named `app` export, calls serve() like
 // the scaffolded templates do (the loader must still exit cleanly).
 
 import { createApp, serve } from "@celsian/core";

@@ -1,4 +1,4 @@
-// @celsian/core — Request timeout tests
+// @celsian/core -- Request timeout tests
 
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";

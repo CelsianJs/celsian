@@ -1,4 +1,4 @@
-// @celsian/adapter-lambda — AWS Lambda adapter (API Gateway v2, v1/REST, and ALB)
+// @celsian/adapter-lambda -- AWS Lambda adapter (API Gateway v2, v1/REST, and ALB)
 
 import type { CelsianApp } from "@celsian/core";
 
@@ -8,7 +8,7 @@ export interface APIGatewayProxyEventV2 {
   routeKey: string;
   rawPath: string;
   rawQueryString: string;
-  /** Request cookies — APIGW v2 strips `cookie` from headers and delivers them here. */
+  /** Request cookies -- APIGW v2 strips `cookie` from headers and delivers them here. */
   cookies?: string[];
   headers: Record<string, string | undefined>;
   queryStringParameters?: Record<string, string | undefined>;
@@ -106,7 +106,7 @@ function decodeBody(
   if (body === undefined || body === null || body === "") return undefined;
   if (isBase64Encoded) {
     const buffer = Buffer.from(body, "base64");
-    // Pass raw bytes through — utf-8 decoding corrupts binary payloads
+    // Pass raw bytes through -- utf-8 decoding corrupts binary payloads
     return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
   }
   return body;

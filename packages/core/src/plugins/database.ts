@@ -1,4 +1,4 @@
-// @celsian/core — Database connection pool plugin
+// @celsian/core -- Database connection pool plugin
 
 import { CelsianError } from "../errors.js";
 import type { HookHandler, PluginFunction } from "../types.js";
@@ -67,7 +67,7 @@ export function withTransaction(options?: { poolName?: string }): HookHandler {
     const tx = await pool.beginTransaction();
     (request as Record<string, unknown>).tx = tx;
 
-    // Store a cleanup flag — the onResponse hook will commit/rollback
+    // Store a cleanup flag -- the onResponse hook will commit/rollback
     (request as Record<string, unknown>)._txPending = true;
   };
 }

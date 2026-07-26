@@ -1,4 +1,4 @@
-// @celsian/platform — Fly.io deployment provider
+// @celsian/platform -- Fly.io deployment provider
 
 import { execSync } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";

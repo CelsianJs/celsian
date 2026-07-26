@@ -1,14 +1,14 @@
-// @celsian/core — Fast response payload (Node write fast-path)
+// @celsian/core -- Fast response payload (Node write fast-path)
 //
 // reply.json()/html()/send() and the auto-serializer build a fully valid Web
 // `Response`, but they ALSO stash the already-serialized body + plain headers on
 // it via a non-enumerable symbol. The Node adapter reads that payload and writes
-// the response in a single `res.writeHead() + res.end(body)` — skipping the
+// the response in a single `res.writeHead() + res.end(body)` -- skipping the
 // `response.body.getReader()` stream drain (and the extra socket write) that a
 // generic Response requires.
 //
 // This is purely additive: the Response is still spec-correct, so Bun/Deno/CF
-// and any user code that inspects `response.body` are unaffected — only the Node
+// and any user code that inspects `response.body` are unaffected -- only the Node
 // adapter opts into the fast path.
 
 /** Already-serialized response parts, captured at creation time. */

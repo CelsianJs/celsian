@@ -1,4 +1,4 @@
-// @celsian/cli — `celsian routes` integration tests
+// @celsian/cli -- `celsian routes` integration tests
 // Runs the real loader (temp .mts file + npx tsx) against fixture apps.
 
 import { join } from "node:path";
@@ -7,7 +7,7 @@ import { routesCommand } from "../src/commands/routes.js";
 
 const FIXTURES = join(import.meta.dirname, "fixtures");
 
-// Spawning `npx tsx` per test is slow — allow generous timeouts.
+// Spawning `npx tsx` per test is slow -- allow generous timeouts.
 const SPAWN_TIMEOUT = 120_000;
 
 describe("routes command (integration)", () => {

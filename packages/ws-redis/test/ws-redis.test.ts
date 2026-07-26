@@ -108,7 +108,7 @@ describe("RedisWSAdapter", () => {
     await adapter.subscribePath("/chat");
     await adapter.subscribePath("/chat");
 
-    // Count only subscribe calls for this path's channel — the adapter also
+    // Count only subscribe calls for this path's channel -- the adapter also
     // subscribes to the dedicated fan-out channel ("ws:__all__") on construction.
     const chatSubs = sub.instance.subscribe.mock.calls.filter((c) => c[0] === "ws:/chat");
     expect(chatSubs).toHaveLength(1);
@@ -149,7 +149,7 @@ describe("RedisWSAdapter", () => {
     });
     sub.simulateMessage("ws:/chat", msg);
 
-    // Should NOT forward — already sent locally
+    // Should NOT forward -- already sent locally
     expect(conn.send).not.toHaveBeenCalled();
   });
 
@@ -281,7 +281,7 @@ describe("RedisWSAdapter", () => {
     pub.instance.publish.mockClear();
     await adapter.broadcastAll("global message");
 
-    // Exactly one publish, on the fan-out channel — regardless of how many
+    // Exactly one publish, on the fan-out channel -- regardless of how many
     // per-path channels are subscribed locally.
     expect(pub.instance.publish).toHaveBeenCalledTimes(1);
     const [channel, payload] = pub.instance.publish.mock.calls[0] as [string, string];
@@ -299,7 +299,7 @@ describe("RedisWSAdapter", () => {
     registry.addConnection("/chat", chatConn);
     registry.addConnection("/alerts", alertConn);
 
-    // This node only subscribed to /chat — the fan-out channel must still reach
+    // This node only subscribed to /chat -- the fan-out channel must still reach
     // /alerts connections (the previous per-path fan-out would have missed it).
     await adapter.subscribePath("/chat");
 
@@ -326,7 +326,7 @@ describe("RedisWSAdapter", () => {
   });
 });
 
-describe("RedisWSAdapter — owned-client error handling", () => {
+describe("RedisWSAdapter -- owned-client error handling", () => {
   it("attaches an 'error' listener to owned clients and does not crash when one fires", () => {
     // Item 2: owned ioredis clients must have an 'error' listener so a
     // connection error degrades (logs) instead of crashing the process.
@@ -341,7 +341,7 @@ describe("RedisWSAdapter — owned-client error handling", () => {
       const errCall = inst.on.mock.calls.find((c) => c[0] === "error");
       expect(errCall).toBeDefined();
       const handler = errCall?.[1] as (e: Error) => void;
-      // ioredis would emit 'error' on connection failure — handling must not throw.
+      // ioredis would emit 'error' on connection failure -- handling must not throw.
       expect(() => handler(new Error("ECONNREFUSED"))).not.toThrow();
     }
     expect(onError).toHaveBeenCalled();

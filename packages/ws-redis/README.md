@@ -59,7 +59,7 @@ const wsRedis = createRedisWSAdapter('redis://localhost:6379')(app.wsRegistry);
 
 Key methods: `subscribePath(path)`, `broadcast(path, data, exclude?)`, `broadcastAll(data, exclude?)` (cross-node `*` fan-out), and `close()` to tear down the Redis connections.
 
-> WebSocket serving requires a runtime that supports it. On Node, install `ws` (`npm i ws`); Bun serves WebSockets natively. This adapter only relays broadcasts between nodes — it does not change which runtimes can accept connections.
+> WebSocket serving requires a runtime that supports it. On Node, install `ws` (`npm i ws`); Bun serves WebSockets natively. This adapter only relays broadcasts between nodes -- it does not change which runtimes can accept connections.
 
 ## License
 

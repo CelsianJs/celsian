@@ -1,4 +1,4 @@
-// celsian — Meta-package re-exports
+// celsian -- Meta-package re-exports
 
 export type {
   CelsianAppOptions,

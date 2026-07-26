@@ -1,4 +1,4 @@
-// @celsian/platform — AWS Lambda deployment provider
+// @celsian/platform -- AWS Lambda deployment provider
 
 import { execSync } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
@@ -99,7 +99,7 @@ export async function deployLambda(opts: LambdaDeployOptions = {}): Promise<{ ap
     const isFirstDeploy = !existsSync(samconfigPath);
 
     if (isFirstDeploy) {
-      // First deploy — use guided mode
+      // First deploy -- use guided mode
       execSync(`sam deploy --guided --stack-name ${stackName} --region ${region} --capabilities CAPABILITY_IAM`, {
         cwd,
         stdio: "inherit",

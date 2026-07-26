@@ -1,4 +1,4 @@
-// @celsian/cache — KV store, response caching, and session management
+// @celsian/cache -- KV store, response caching, and session management
 
 export type { CachedResponse, ResponseCacheOptions } from "./response-cache.js";
 export { createResponseCache } from "./response-cache.js";

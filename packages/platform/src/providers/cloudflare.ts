@@ -1,4 +1,4 @@
-// @celsian/platform — Cloudflare Workers deployment provider
+// @celsian/platform -- Cloudflare Workers deployment provider
 
 import { execSync } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";

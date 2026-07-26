@@ -1,4 +1,4 @@
-// @celsian/schema — Schema-specific error class
+// @celsian/schema -- Schema-specific error class
 
 /**
  * Error thrown by schema detection and adapter operations.

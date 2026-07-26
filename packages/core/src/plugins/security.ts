@@ -1,4 +1,4 @@
-// @celsian/core — Security headers plugin (Helmet-style)
+// @celsian/core -- Security headers plugin (Helmet-style)
 
 import type { CelsianReply, CelsianRequest, HookHandler, PluginFunction } from "../types.js";
 
@@ -7,7 +7,7 @@ export interface SecurityOptions {
   contentTypeOptions?: boolean;
   /** X-Frame-Options (default: 'DENY') */
   frameOptions?: "DENY" | "SAMEORIGIN" | false;
-  /** X-XSS-Protection: 0 (default: true — disables broken legacy filter) */
+  /** X-XSS-Protection: 0 (default: true -- disables broken legacy filter) */
   xssProtection?: boolean;
   /** Strict-Transport-Security (default: max-age=31536000; includeSubDomains) */
   hsts?: { maxAge?: number; includeSubDomains?: boolean; preload?: boolean } | false;
@@ -19,7 +19,7 @@ export interface SecurityOptions {
   dnsPrefetchControl?: "on" | "off" | false;
   /** X-Download-Options (default: 'noopen') */
   downloadOptions?: string | false;
-  /** Content-Security-Policy (default: none — too app-specific) */
+  /** Content-Security-Policy (default: none -- too app-specific) */
   contentSecurityPolicy?: string | false;
 }
 

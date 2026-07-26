@@ -1,4 +1,4 @@
-// @celsian/platform — Platform-specific error class
+// @celsian/platform -- Platform-specific error class
 
 /**
  * Error thrown by platform deployment providers.

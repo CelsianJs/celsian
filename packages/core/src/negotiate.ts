@@ -1,4 +1,4 @@
-// @celsian/core — Content negotiation utilities
+// @celsian/core -- Content negotiation utilities
 
 interface AcceptEntry {
   type: string;

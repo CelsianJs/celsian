@@ -39,7 +39,7 @@ describe("decorateReply", () => {
 
   it("should not overwrite built-in reply properties", async () => {
     const app = createApp();
-    // 'status' is a built-in method — decoration should not overwrite
+    // 'status' is a built-in method -- decoration should not overwrite
     app.decorateReply("status", "custom");
 
     app.get("/test", (_req, reply) => {

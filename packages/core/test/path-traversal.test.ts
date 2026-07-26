@@ -1,4 +1,4 @@
-// @celsian/core — Path traversal prevention tests
+// @celsian/core -- Path traversal prevention tests
 // Tests the containment check pattern used in serve.ts and adapter-node
 
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -18,7 +18,7 @@ async function tryStaticFile(pathname: string, staticDir: string): Promise<strin
   const resolvedRoot = resolve(staticDir);
   const filePath = resolve(join(staticDir, decodedPath));
 
-  // Containment check — resolved path must stay within static root
+  // Containment check -- resolved path must stay within static root
   if (!filePath.startsWith(`${resolvedRoot}/`) && filePath !== resolvedRoot) {
     return null;
   }

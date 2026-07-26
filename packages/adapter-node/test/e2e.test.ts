@@ -1,4 +1,4 @@
-// @celsian/adapter-node — E2E tests with real HTTP server
+// @celsian/adapter-node -- E2E tests with real HTTP server
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -203,7 +203,7 @@ describe("E2E: Full Stack Integration", () => {
     expect(res.headers.get("access-control-allow-origin")).toBeNull();
   });
 
-  // ─── Rate Limiting (removed with @celsian/server — now in @celsian/rate-limit) ───
+  // ─── Rate Limiting (removed with @celsian/server -- now in @celsian/rate-limit) ───
 
   // ─── Response Cache ───
 

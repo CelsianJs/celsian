@@ -1,4 +1,4 @@
-// @celsian/cli — CLI command tests
+// @celsian/cli -- CLI command tests
 
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -56,7 +56,7 @@ describe("generateRoute", () => {
       const filePath = join(TMP_DIR, "src", "routes", "items.ts");
       const originalContent = readFileSync(filePath, "utf8");
 
-      // Call again — should not overwrite
+      // Call again -- should not overwrite
       generateRoute("items");
       const contentAfter = readFileSync(filePath, "utf8");
       expect(contentAfter).toBe(originalContent);
@@ -152,7 +152,7 @@ describe("generateRpc", () => {
       const filePath = join(TMP_DIR, "src", "routes", "payments.ts");
       const originalContent = readFileSync(filePath, "utf8");
 
-      // Call again — should not overwrite
+      // Call again -- should not overwrite
       generateRpc("payments");
       const contentAfter = readFileSync(filePath, "utf8");
       expect(contentAfter).toBe(originalContent);

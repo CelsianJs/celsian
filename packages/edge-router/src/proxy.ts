@@ -31,7 +31,7 @@ export function isInternalUrl(url: URL): boolean {
 
   // IPv6 private (fc00::/7 covers fc00:: and fd00::)
   if (hostname.toLowerCase().startsWith("fd") || hostname.toLowerCase().startsWith("fc")) {
-    // More precise: check fc00::/7 — first two hex chars are fc or fd
+    // More precise: check fc00::/7 -- first two hex chars are fc or fd
     const lower = hostname.toLowerCase();
     if (lower.startsWith("fd00:") || lower.startsWith("fc00:") || lower === "fd00" || lower === "fc00") return true;
     // Also catch any fd.../fc... IPv6 address

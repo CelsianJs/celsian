@@ -1,4 +1,4 @@
-// @celsian/adapter-deno — Deno runtime smoke (CI). Proves the adapter loads and
+// @celsian/adapter-deno -- Deno runtime smoke (CI). Proves the adapter loads and
 // serves a real Request->Response under Deno. Run after `pnpm build`:
 //   deno run -A packages/adapter-deno/deno-smoke.ts
 import { createApp } from "../core/dist/index.js";

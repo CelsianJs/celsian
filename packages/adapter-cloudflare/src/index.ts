@@ -1,4 +1,4 @@
-// @celsian/adapter-cloudflare — Cloudflare Workers adapter
+// @celsian/adapter-cloudflare -- Cloudflare Workers adapter
 
 import type { CelsianApp } from "@celsian/core";
 import { CelsianError } from "@celsian/core";

@@ -302,7 +302,7 @@ describe("@celsian/adapter-lambda", () => {
 
   // ADP-02: base64 bodies must not be round-tripped through utf-8
   it("should round-trip binary base64 bodies byte-exact (PNG header)", async () => {
-    // PNG magic bytes — 0x89 is invalid utf-8 and corrupts to U+FFFD if decoded
+    // PNG magic bytes -- 0x89 is invalid utf-8 and corrupts to U+FFFD if decoded
     const pngHeader = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff, 0xfe]);
 
     const app = createApp();

@@ -1,4 +1,4 @@
-// @celsian/core — Production-hardening regression tests (workstream A)
+// @celsian/core -- Production-hardening regression tests (workstream A)
 
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";

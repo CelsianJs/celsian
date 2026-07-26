@@ -1,4 +1,4 @@
-// @celsian/adapter-vercel — Vercel deployment adapter
+// @celsian/adapter-vercel -- Vercel deployment adapter
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { CelsianApp } from "@celsian/core";
@@ -51,7 +51,7 @@ export function createVercelEdgeHandler(app: CelsianApp) {
 /**
  * Timing-safe string comparison using Web Crypto (works on Node, Edge, Workers).
  * Hashes both inputs to fixed-length digests, then compares in constant time.
- * No `node:crypto` import — keeps the module bundleable for edge runtimes.
+ * No `node:crypto` import -- keeps the module bundleable for edge runtimes.
  */
 async function timingSafeEqualWeb(a: string, b: string): Promise<boolean> {
   const encoder = new TextEncoder();
@@ -122,7 +122,7 @@ export function createVercelCronHandler(app: CelsianApp, cronSecret?: string, op
   return async (request: Request): Promise<Response> => {
     const secret = (cronSecret ?? process.env.CRON_SECRET ?? "").trim();
     if (!secret) {
-      console.error("[celsian] CRON_SECRET not set — rejecting all cron requests");
+      console.error("[celsian] CRON_SECRET not set -- rejecting all cron requests");
       return new Response(JSON.stringify({ error: "Service Unavailable", statusCode: 503 }), {
         status: 503,
         headers: { "content-type": "application/json; charset=utf-8" },

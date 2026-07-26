@@ -1,4 +1,4 @@
-// @celsian/core — Structured error classes
+// @celsian/core -- Structured error classes
 
 const isDev =
   typeof process !== "undefined"

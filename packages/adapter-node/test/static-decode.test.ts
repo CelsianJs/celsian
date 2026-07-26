@@ -1,4 +1,4 @@
-// @celsian/adapter-node — static-file decode hardening (BUG-4)
+// @celsian/adapter-node -- static-file decode hardening (BUG-4)
 
 import { createServer, type Server } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";

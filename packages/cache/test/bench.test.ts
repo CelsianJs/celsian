@@ -1,4 +1,4 @@
-// @celsian/cache — Performance Micro-benchmarks
+// @celsian/cache -- Performance Micro-benchmarks
 // Measures KV store throughput, TTL overhead, response cache hit/miss, and session management.
 // Thresholds are set conservatively for CI runners (~2x slower than local machines).
 
@@ -323,7 +323,7 @@ describe("Bench: Response Cache hit/miss", () => {
     console.log(`  p99: ${(p99 * 1000).toFixed(2)} us`);
     console.log(`  ~${reqPerSec} req/sec`);
 
-    // Cache hits should be fast — at least 5k req/sec (conservative for CI)
+    // Cache hits should be fast -- at least 5k req/sec (conservative for CI)
     expect(reqPerSec).toBeGreaterThan(5000);
 
     store.destroy();

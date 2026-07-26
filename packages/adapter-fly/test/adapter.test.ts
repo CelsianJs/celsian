@@ -1,4 +1,4 @@
-// @celsian/adapter-fly — Adapter tests
+// @celsian/adapter-fly -- Adapter tests
 
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";

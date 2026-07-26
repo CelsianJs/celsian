@@ -20,7 +20,7 @@ import { createCloudflareHandler } from '@celsian/adapter-cloudflare';
 const app = createApp();
 app.get('/', (req, reply) => reply.json({ ok: true }));
 
-// Returns { fetch, scheduled } — both Worker entry points.
+// Returns { fetch, scheduled } -- both Worker entry points.
 export default createCloudflareHandler(app);
 ```
 
@@ -33,7 +33,7 @@ Configure triggers in `wrangler.toml`:
 crons = ["0 3 * * *"]
 ```
 
-`app.task()` workers do not run on Workers — back durable jobs with
+`app.task()` workers do not run on Workers -- back durable jobs with
 `@celsian/queue-redis` and a long-running worker. See the root deployment docs.
 
 ## License

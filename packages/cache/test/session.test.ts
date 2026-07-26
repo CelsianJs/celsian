@@ -1,4 +1,4 @@
-// @celsian/cache — Session tests
+// @celsian/cache -- Session tests
 
 import { describe, expect, it, vi } from "vitest";
 import { createSessionManager } from "../src/session.js";

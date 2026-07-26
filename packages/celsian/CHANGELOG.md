@@ -42,7 +42,7 @@
 
 - 05eb2b4: Core hardening (0.5.2).
 
-  **Behavior changes — read before upgrading:**
+  **Behavior changes -- read before upgrading:**
 
   - **Production now binds `0.0.0.0`.** `serve()` previously always bound `localhost`
     (IPv6 `::1`), making the server unreachable from a Docker/Fly/Railway port map.
@@ -51,7 +51,7 @@
     loopback-only binding in production, set `host`/`HOST` to `127.0.0.1` explicitly.
   - **CSRF `excludePaths` now match by path segment.** An entry like `/api` previously
     matched only the exact path `/api`; it now also exempts `/api/...` (but not
-    `/apix`). This widens existing exclusions — review your `excludePaths` lists.
+    `/apix`). This widens existing exclusions -- review your `excludePaths` lists.
 
   **Also fixed:** options-object route handlers (`app.post(url, { schema, handler })`),
   serverless-safety warnings now surface through the default (noop) logger, CORS
@@ -65,7 +65,7 @@
 - 05eb2b4: Docs: fix every crashing documentation sample and inaccuracy (Track 5).
 
   - ESM-only: README + quickstart manual setup now set `"type": "module"` (top-level await in `@celsian/schema` crashes under CommonJS).
-  - Rate limiting: every sample now passes `trustProxy: true` (or a `keyGenerator`) — `rateLimit()` throws at registration without one. Scoped rate limits inside a feature plugin now correctly use `{ encapsulate: false }`; the plugins doc's scoped-registration table no longer documents a pattern that silently disables limiting.
+  - Rate limiting: every sample now passes `trustProxy: true` (or a `keyGenerator`) -- `rateLimit()` throws at registration without one. Scoped rate limits inside a feature plugin now correctly use `{ encapsulate: false }`; the plugins doc's scoped-registration table no longer documents a pattern that silently disables limiting.
   - Fastify migration guide: corrected adapter handler names (`createLambdaHandler`, `createVercelHandler`/`createVercelEdgeHandler`), the hook mapping (`preParsing`/`preValidation`/`preSerialization` all exist), `inject()` returning a Web `Response` (`status` + `await json()`), `reply.status(n).json()` (the second `json()` arg is ignored), and `req.parsedBody` for the validated body.
   - SECURITY.md: replaced the dead `security@celsianjs.dev` address with GitHub private vulnerability reporting; updated supported versions to 0.5.x.
   - README: single reconciled benchmark table, install→build→test contributing steps, workspace-aware demo run instructions, the 8-adapter table, and a WebSocket note (`npm i ws` on Node; Node + Bun only today).

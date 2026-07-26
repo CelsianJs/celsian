@@ -154,7 +154,7 @@ describe("CronScheduler same-minute dedupe (CORE-10)", () => {
     }
   });
 
-  it("dedupes per job, not globally — both jobs still fire in the minute", async () => {
+  it("dedupes per job, not globally -- both jobs still fire in the minute", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T11:00:00.500Z"));
     try {

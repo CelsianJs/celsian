@@ -9,7 +9,7 @@ const CHANNEL_PREFIX = "ws:";
 /**
  * Dedicated channel used for cross-node `broadcastAll('*')` fan-out. Every
  * adapter instance subscribes to this on construction so a global broadcast
- * reaches all connections on all nodes — including paths that only exist on
+ * reaches all connections on all nodes -- including paths that only exist on
  * remote nodes (which a per-path fan-out would miss).
  */
 const FANOUT_CHANNEL = `${CHANNEL_PREFIX}__all__`;
@@ -39,7 +39,7 @@ interface RedisWSMessage {
   nodeId: string;
   /** The path this message was broadcast on */
   path: string;
-  /** Message data (string only — ArrayBuffer is base64-encoded) */
+  /** Message data (string only -- ArrayBuffer is base64-encoded) */
   data: string;
   /** Whether data is base64-encoded binary */
   binary: boolean;
@@ -86,7 +86,7 @@ export class RedisWSAdapter {
 
     // Attach 'error' listeners to BOTH owned clients so a connection failure
     // degrades (logs) instead of emitting an unhandled 'error' event that would
-    // crash the process. Skipped for external clients — the caller owns those.
+    // crash the process. Skipped for external clients -- the caller owns those.
     if (this.ownsClients) {
       const onError =
         options.onError ??
@@ -153,7 +153,7 @@ export class RedisWSAdapter {
    * Cross-node fan-out goes over a single dedicated channel ({@link FANOUT_CHANNEL})
    * that every adapter subscribes to on construction. Each receiving node then
    * calls `registry.broadcastAll`, so the message reaches every connection on
-   * every node — including paths that exist only on remote nodes. (The previous
+   * every node -- including paths that exist only on remote nodes. (The previous
    * implementation re-published to the originating node's per-path channels,
    * which silently missed paths not subscribed locally.)
    */
@@ -220,13 +220,13 @@ export class RedisWSAdapter {
       const data = parsed.binary ? base64ToBuffer(parsed.data) : parsed.data;
 
       if (channel === FANOUT_CHANNEL) {
-        // Global fan-out from another node — deliver to every local connection.
+        // Global fan-out from another node -- deliver to every local connection.
         this.registry.broadcastAll(data, parsed.exclude);
       } else {
         this.registry.broadcast(parsed.path, data, parsed.exclude);
       }
     } catch {
-      // Malformed message — ignore
+      // Malformed message -- ignore
     }
   }
 }

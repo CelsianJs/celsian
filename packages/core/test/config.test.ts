@@ -67,6 +67,14 @@ describe("loadConfig host defaults (CORE-01)", () => {
   });
 });
 
+// Every test below dynamically imports a config file out of a fresh temp
+// directory, so each one pays real Node module-resolution cost. On a loaded
+// machine that lands within a second or two of the 5s default and the suite
+// flakes on timeouts alone, with nothing actually broken. Observed failing
+// under parallel load and passing in isolation, so the timeout is raised rather
+// than the tests being weakened.
+const CONFIG_LOAD_TIMEOUT = 30_000;
+
 describe("loadConfig surfaces broken config files (CORE-config-fail-loud)", () => {
   let dir: string;
 
@@ -74,34 +82,50 @@ describe("loadConfig surfaces broken config files (CORE-config-fail-loud)", () =
     if (dir) rmSync(dir, { recursive: true, force: true });
   });
 
-  it("returns defaults when no config file exists (missing file is not an error)", async () => {
-    dir = mkdtempSync(join(tmpdir(), "celsian-cfg-none-"));
-    const config = await loadConfig(dir);
-    expect(config.server?.port).toBe(3000);
-  });
+  it(
+    "returns defaults when no config file exists (missing file is not an error)",
+    async () => {
+      dir = mkdtempSync(join(tmpdir(), "celsian-cfg-none-"));
+      const config = await loadConfig(dir);
+      expect(config.server?.port).toBe(3000);
+    },
+    CONFIG_LOAD_TIMEOUT,
+  );
 
-  it("loads and merges a valid config file", async () => {
-    dir = mkdtempSync(join(tmpdir(), "celsian-cfg-ok-"));
-    writeFileSync(join(dir, "celsian.config.mjs"), "export default { server: { port: 8080 } };\n");
-    const config = await loadConfig(dir);
-    expect(config.server?.port).toBe(8080);
-  });
+  it(
+    "loads and merges a valid config file",
+    async () => {
+      dir = mkdtempSync(join(tmpdir(), "celsian-cfg-ok-"));
+      writeFileSync(join(dir, "celsian.config.mjs"), "export default { server: { port: 8080 } };\n");
+      const config = await loadConfig(dir);
+      expect(config.server?.port).toBe(8080);
+    },
+    CONFIG_LOAD_TIMEOUT,
+  );
 
-  it("throws ConfigLoadError when the config file exists but throws at load time", async () => {
-    // Regression: a bare `catch {}` used to swallow a real config error and
-    // silently fall back to defaults (port 3000), so a typo in celsian.config.*
-    // meant the user's settings were silently ignored with no diagnostic.
-    dir = mkdtempSync(join(tmpdir(), "celsian-cfg-boom-"));
-    writeFileSync(join(dir, "celsian.config.mjs"), "throw new Error('boom in user config');\n");
+  it(
+    "throws ConfigLoadError when the config file exists but throws at load time",
+    async () => {
+      // Regression: a bare `catch {}` used to swallow a real config error and
+      // silently fall back to defaults (port 3000), so a typo in celsian.config.*
+      // meant the user's settings were silently ignored with no diagnostic.
+      dir = mkdtempSync(join(tmpdir(), "celsian-cfg-boom-"));
+      writeFileSync(join(dir, "celsian.config.mjs"), "throw new Error('boom in user config');\n");
 
-    await expect(loadConfig(dir)).rejects.toBeInstanceOf(ConfigLoadError);
-    await expect(loadConfig(dir)).rejects.toThrow(/celsian\.config\.mjs/);
-    await expect(loadConfig(dir)).rejects.toThrow(/boom in user config/);
-  });
+      await expect(loadConfig(dir)).rejects.toBeInstanceOf(ConfigLoadError);
+      await expect(loadConfig(dir)).rejects.toThrow(/celsian\.config\.mjs/);
+      await expect(loadConfig(dir)).rejects.toThrow(/boom in user config/);
+    },
+    CONFIG_LOAD_TIMEOUT,
+  );
 
-  it("surfaces a missing transitive import inside an existing config (not treated as absent)", async () => {
-    dir = mkdtempSync(join(tmpdir(), "celsian-cfg-badimport-"));
-    writeFileSync(join(dir, "celsian.config.mjs"), "import './does-not-exist-anywhere.mjs';\nexport default {};\n");
-    await expect(loadConfig(dir)).rejects.toBeInstanceOf(ConfigLoadError);
-  });
+  it(
+    "surfaces a missing transitive import inside an existing config (not treated as absent)",
+    async () => {
+      dir = mkdtempSync(join(tmpdir(), "celsian-cfg-badimport-"));
+      writeFileSync(join(dir, "celsian.config.mjs"), "import './does-not-exist-anywhere.mjs';\nexport default {};\n");
+      await expect(loadConfig(dir)).rejects.toBeInstanceOf(ConfigLoadError);
+    },
+    CONFIG_LOAD_TIMEOUT,
+  );
 });
