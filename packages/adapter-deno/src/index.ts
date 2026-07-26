@@ -1,4 +1,4 @@
-// @celsian/adapter-deno — Deno.serve adapter for CelsianJS
+// @celsian/adapter-deno, Deno.serve adapter for CelsianJS
 //
 // Deno.serve uses Web Standard Request/Response natively, so this adapter is thin:
 // it wraps app.handle(request) and returns a Deno.serve-compatible handler.
@@ -18,7 +18,7 @@ export interface DenoAdapterOptions {
 }
 
 /**
- * Deno.serve handler shape — accepts a Request and returns a Response.
+ * Deno.serve handler shape, accepts a Request and returns a Response.
  */
 export type DenoFetchHandler = (request: Request) => Response | Promise<Response>;
 
@@ -88,7 +88,7 @@ export function serveDeno(app: CelsianApp, options: DenoAdapterOptions = {}): vo
 
   const handler = createDenoHandler(app);
 
-  // Call Deno.serve — we use globalThis to avoid needing Deno types at compile time
+  // Call Deno.serve, we use globalThis to avoid needing Deno types at compile time
   const Deno = (globalThis as Record<string, unknown>).Deno as
     | {
         serve: (opts: DenoServeOptions, handler: DenoFetchHandler) => void;
@@ -97,7 +97,7 @@ export function serveDeno(app: CelsianApp, options: DenoAdapterOptions = {}): vo
 
   if (!Deno?.serve) {
     throw new CelsianError(
-      "Deno.serve is not available. @celsian/adapter-deno requires the Deno runtime — " +
+      "Deno.serve is not available. @celsian/adapter-deno requires the Deno runtime, " +
         "on Node.js use serve() from @celsian/core (or @celsian/adapter-node), and on Bun use @celsian/adapter-bun.",
     );
   }

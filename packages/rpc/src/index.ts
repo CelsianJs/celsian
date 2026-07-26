@@ -1,4 +1,4 @@
-// @celsian/rpc — Type-safe RPC
+// @celsian/rpc, Type-safe RPC
 
 export type { RPCClientOptions } from "./client.js";
 export { createRPCClient, RPCError } from "./client.js";

@@ -1,7 +1,7 @@
-// @celsian/adapter-bun — request/response translation and WebSocket bridging
+// @celsian/adapter-bun, request/response translation and WebSocket bridging
 //
 // This package previously shipped with zero tests, which is why nobody noticed
-// that createBunServeOptions() never set the `websocket` key — making the
+// that createBunServeOptions() never set the `websocket` key, making the
 // documented "native WebSocket support" impossible: Bun's server.upgrade()
 // cannot succeed without it.
 
@@ -48,7 +48,7 @@ function fakeWS(data: BunWSData): BunWebSocket & { sent: Array<string | ArrayBuf
   };
 }
 
-describe("createBunHandler — HTTP", () => {
+describe("createBunHandler, HTTP", () => {
   it("translates a request and returns the app's response", async () => {
     const app = createApp();
     app.get("/hello", () => ({ message: "world" }));
@@ -186,7 +186,7 @@ describe("createBunServeOptions", () => {
   });
 });
 
-describe("createBunHandler — WebSocket upgrade gate", () => {
+describe("createBunHandler, WebSocket upgrade gate", () => {
   function upgradeRequest(origin: string | null, host = "victim.app", path = "/live"): Request {
     const headers = new Headers({ host, upgrade: "websocket", connection: "Upgrade" });
     if (origin) headers.set("origin", origin);
@@ -277,7 +277,7 @@ describe("createBunHandler — WebSocket upgrade gate", () => {
   });
 });
 
-describe("createBunWebSocketHandler — registry bridge", () => {
+describe("createBunWebSocketHandler, registry bridge", () => {
   const data = (ip = "1.2.3.4"): BunWSData => ({
     pathname: "/live",
     ip,

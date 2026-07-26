@@ -1,4 +1,4 @@
-// @celsian/rate-limit — Dependency-free IP / CIDR parsing for the proxy trust boundary
+// @celsian/rate-limit, Dependency-free IP / CIDR parsing for the proxy trust boundary
 
 /**
  * A parsed IP address as a fixed-width big-endian bit string is overkill; we
@@ -11,14 +11,14 @@ export type ParsedIp = { version: 4; value: number } | { version: 6; groups: num
 /** Strip the decorations that show up around addresses in real headers. */
 function normalize(raw: string): string {
   let value = raw.trim();
-  // `[2001:db8::1]:443` — bracketed IPv6 with a port.
+  // `[2001:db8::1]:443`, bracketed IPv6 with a port.
   const bracketed = /^\[(.+)\](?::\d+)?$/.exec(value);
   if (bracketed) return bracketed[1]!;
-  // `1.2.3.4:443` — IPv4 with a port. A bare IPv6 has more than one colon.
+  // `1.2.3.4:443`, IPv4 with a port. A bare IPv6 has more than one colon.
   if (value.includes(".") && value.split(":").length === 2) {
     value = value.split(":")[0]!;
   }
-  // `::ffff:1.2.3.4` — IPv4-mapped IPv6 is the same host as the IPv4 address.
+  // `::ffff:1.2.3.4`, IPv4-mapped IPv6 is the same host as the IPv4 address.
   const mapped = /^::ffff:((?:\d{1,3}\.){3}\d{1,3})$/i.exec(value);
   if (mapped) return mapped[1]!;
   return value;

@@ -1,4 +1,4 @@
-// @celsian/cli — Deploy command tests
+// @celsian/cli, Deploy command tests
 
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";

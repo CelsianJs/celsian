@@ -1,4 +1,4 @@
-// @celsian/adapter-node — writeWebResponse header fidelity
+// @celsian/adapter-node, writeWebResponse header fidelity
 //
 // Regression: writeWebResponse() iterated response.headers.entries(), which
 // collapses repeated Set-Cookie into a single comma-joined value. Any cookie

@@ -1,4 +1,4 @@
-// @celsian/adapter-node — public surface honesty test
+// @celsian/adapter-node, public surface honesty test
 
 import { describe, expect, it } from "vitest";
 import * as adapterNode from "../src/index.js";

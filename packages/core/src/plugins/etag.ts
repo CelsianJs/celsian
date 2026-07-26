@@ -1,4 +1,4 @@
-// @celsian/core — ETag utility for conditional requests
+// @celsian/core, ETag utility for conditional requests
 
 export interface ETagOptions {
   /** Use weak ETags (default: true) */

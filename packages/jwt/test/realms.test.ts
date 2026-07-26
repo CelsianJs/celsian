@@ -1,4 +1,4 @@
-// @celsian/jwt — two auth realms on ONE app must not cross-authenticate (CRIT-3)
+// @celsian/jwt, two auth realms on ONE app must not cross-authenticate (CRIT-3)
 
 import { createApp } from "@celsian/core";
 import { describe, expect, it } from "vitest";

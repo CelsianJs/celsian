@@ -1,4 +1,4 @@
-// @celsian/compress — cookie preservation, Vary, content negotiation, filters, thresholds
+// @celsian/compress, cookie preservation, Vary, content negotiation, filters, thresholds
 
 import { createApp } from "@celsian/core";
 import { describe, expect, it } from "vitest";
@@ -25,7 +25,7 @@ describe("Set-Cookie survives compression (H-6)", () => {
     // The exploit: POST /logout calls reply.clearCookie('session') with a body
     // over the threshold. Building headers from `reply.headers` dropped every
     // Set-Cookie, so no gzip-capable client (i.e. every browser) was ever
-    // logged out — the session stayed live.
+    // logged out, the session stayed live.
     const app = createApp();
     await app.register(compress({ threshold: 100 }), { encapsulate: false });
 

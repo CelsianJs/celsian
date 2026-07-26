@@ -1,7 +1,7 @@
-// @celsian/rpc — Server-side error classes
+// @celsian/rpc, Server-side error classes
 
 /**
- * Thrown by {@link decode} when a wire payload cannot be safely decoded —
+ * Thrown by {@link decode} when a wire payload cannot be safely decoded,
  * currently, when it nests deeper than the decoder's depth cap.
  *
  * Both `handle()` call sites wrap decoding in try/catch and turn any throw into

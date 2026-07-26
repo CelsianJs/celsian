@@ -1,4 +1,4 @@
-// @celsian/core — Server-Sent Events (SSE) support
+// @celsian/core, Server-Sent Events (SSE) support
 
 export interface SSEEvent {
   /** Event type (maps to `event:` field) */
@@ -20,7 +20,7 @@ export interface SSEStreamOptions {
   onClose?: () => void;
 }
 
-// Module-level singleton — avoids per-channel allocation
+// Module-level singleton, avoids per-channel allocation
 const encoder = new TextEncoder();
 
 /**
@@ -54,7 +54,7 @@ function formatSSEEvent(event: SSEEvent): string {
     result += `retry: ${Math.trunc(Number(event.retry))}\n`;
   }
 
-  // Data can be multi-line — each line needs its own `data:` prefix
+  // Data can be multi-line, each line needs its own `data:` prefix
   const data = typeof event.data === "string" ? event.data : JSON.stringify(event.data);
   const lines = data.split("\n");
   for (const line of lines) {
@@ -66,7 +66,7 @@ function formatSSEEvent(event: SSEEvent): string {
 }
 
 /**
- * SSE channel — a controller for sending events to a client.
+ * SSE channel, a controller for sending events to a client.
  *
  * Usage in route handlers:
  * ```ts
@@ -174,7 +174,7 @@ export function createSSEStream(request: Request, options?: SSEStreamOptions): S
 }
 
 /**
- * SSE broadcast hub — fan-out events to multiple connected clients.
+ * SSE broadcast hub, fan-out events to multiple connected clients.
  *
  * Usage:
  * ```ts
@@ -198,7 +198,7 @@ export interface SSEHubOptions {
 }
 
 export interface SSEHub {
-  /** Subscribe a new client — returns the SSEChannel for that client */
+  /** Subscribe a new client, returns the SSEChannel for that client */
   subscribe(request: Request, options?: SSEStreamOptions): SSEChannel;
   /** Broadcast an event to all connected clients */
   broadcast(event: SSEEvent): void;

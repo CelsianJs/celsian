@@ -1,4 +1,4 @@
-// @celsian/queue-redis — client-ownership and error-handling unit tests
+// @celsian/queue-redis, client-ownership and error-handling unit tests
 //
 // There is deliberately NO in-memory fake of Redis here any more. The previous
 // fake hand-reimplemented the Lua scripts in JavaScript, so the real Lua in
@@ -43,7 +43,7 @@ describe("RedisQueue client ownership", () => {
     expect(errCall).toBeDefined();
 
     // Invoking the registered handler (as ioredis would on a connection error)
-    // must be handled gracefully — it routes to onError, never throwing.
+    // must be handled gracefully, it routes to onError, never throwing.
     const handler = errCall?.[1] as (e: Error) => void;
     expect(() => handler(new Error("ECONNREFUSED"))).not.toThrow();
     expect(onError).toHaveBeenCalledWith(expect.any(Error));

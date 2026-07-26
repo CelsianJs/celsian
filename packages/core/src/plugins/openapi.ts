@@ -1,4 +1,4 @@
-// @celsian/core — OpenAPI 3.1 documentation plugin for REST routes
+// @celsian/core, OpenAPI 3.1 documentation plugin for REST routes
 
 import { fromSchema, type StandardSchema } from "@celsian/schema";
 import type { InternalRoute, PluginFunction } from "../types.js";
@@ -66,7 +66,7 @@ function extractJsonSchema(schema: unknown): Record<string, unknown> | null {
     return s.toJsonSchema() as Record<string, unknown>;
   }
 
-  // TypeBox / plain JSON Schema — has `type` at the top level
+  // TypeBox / plain JSON Schema, has `type` at the top level
   if ("type" in s) {
     return s;
   }
@@ -84,7 +84,7 @@ function extractJsonSchema(schema: unknown): Record<string, unknown> | null {
       return wrapped.toJsonSchema() as Record<string, unknown>;
     }
   } catch {
-    // Not a recognized schema library — fall through
+    // Not a recognized schema library, fall through
   }
 
   return null;

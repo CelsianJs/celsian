@@ -1,4 +1,4 @@
-// @celsian/core — Type definitions
+// @celsian/core, Type definitions
 
 import type { InferOutput } from "@celsian/schema";
 
@@ -136,8 +136,8 @@ export type RouteMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" |
  *
  * A `Response` is sent as-is, `undefined` produces a 204, a string is sent as
  * `text/plain`, and anything else is JSON-serialized. Deliberately permissive so
- * that returning plain data — `app.get('/x', () => ({ message: 'world' }))`, the
- * pattern used throughout the docs — type-checks.
+ * that returning plain data, `app.get('/x', () => ({ message: 'world' }))`, the
+ * pattern used throughout the docs, type-checks.
  */
 export type RouteResult = Response | void | unknown;
 
@@ -162,7 +162,7 @@ export type ResponseSchemaMap = Record<number, unknown> & { default?: unknown };
  *
  * When no querystring schema is supplied the generic is inferred as `unknown`,
  * in which case the handler keeps the raw string record. Written as
- * `unknown extends TQuery` because that is true only for `unknown`/`any` —
+ * `unknown extends TQuery` because that is true only for `unknown`/`any`,
  * `TQuery extends unknown` is true for *every* type and made the typed branch
  * unreachable.
  */
@@ -188,7 +188,7 @@ export interface RouteSchemaOptions<TBody = unknown, TQuery = unknown, TParams =
 
 /**
  * CelsianRequest with typed parsedBody and parsedQuery inferred from schemas.
- * Extends the base CelsianRequest — used in typed route overloads.
+ * Extends the base CelsianRequest, used in typed route overloads.
  */
 export interface TypedCelsianRequest<
   TParams = Record<string, string>,
@@ -263,7 +263,7 @@ export interface InternalRoute {
 }
 
 export interface RouteHooks {
-  /** Carries the route's {@link ResolvedScope} — see {@link ROUTE_SCOPE}. */
+  /** Carries the route's {@link ResolvedScope}, see {@link ROUTE_SCOPE}. */
   onRequest: RouteHookChain;
   preHandler: HookHandler[];
   preSerialization: HookHandler[];

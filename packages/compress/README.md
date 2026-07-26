@@ -42,7 +42,7 @@ An explicitly set `Content-Type` is never overwritten.
 Compressing a response is not free of risk. **BREACH** recovers a secret from a
 compressed response when that response contains BOTH a secret (a CSRF token, an
 API key, part of a session identifier) AND attacker-influenced content that is
-reflected back — compression ratio then leaks the secret a byte at a time.
+reflected back, compression ratio then leaks the secret a byte at a time.
 
 Use `filter` to exclude any route whose response mixes a secret with reflected
 input:
@@ -74,7 +74,7 @@ gzip client (or the reverse).
 
 Compressed responses preserve every `Set-Cookie`, including repeated ones. The
 plugin builds the real response through the reply's own builder and then wraps
-it, rather than re-deriving headers — cookies do not live in `reply.headers`, so
+it, rather than re-deriving headers, cookies do not live in `reply.headers`, so
 re-deriving silently dropped them (a compressed `clearCookie()` logout never
 logged anyone out).
 

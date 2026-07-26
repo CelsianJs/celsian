@@ -1,4 +1,4 @@
-// @celsian/core — Cron scheduling (5-field unix cron, no deps)
+// @celsian/core, Cron scheduling (5-field unix cron, no deps)
 
 import { CelsianError } from "./errors.js";
 
@@ -212,7 +212,7 @@ export class CronScheduler {
 
   private tick(): void {
     const now = new Date();
-    // Absolute epoch minute — unlike hours*60+minutes it never repeats across
+    // Absolute epoch minute, unlike hours*60+minutes it never repeats across
     // days, so the guard cannot be fooled at day boundaries.
     const epochMinute = Math.floor(now.getTime() / 60_000);
 
@@ -226,7 +226,7 @@ export class CronScheduler {
         // even if ticks race or the scheduler restarts mid-minute.
         if (this.lastFiredEpochMinute.get(job.name) === epochMinute) continue;
         this.lastFiredEpochMinute.set(job.name, epochMinute);
-        // Fire and forget — log errors instead of silently swallowing
+        // Fire and forget, log errors instead of silently swallowing
         Promise.resolve(job.handler()).catch((err) => {
           console.error("[celsian] Cron job error:", err);
         });

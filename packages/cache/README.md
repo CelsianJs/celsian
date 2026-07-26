@@ -52,7 +52,7 @@ The default key is `${method}:${host}:${pathname}${normalizedQuery}`.
 > **A shared cache is unsafe in front of a handler that personalizes on an
 > unkeyed header.** A response personalized on `X-Forwarded-For`, for example,
 > is stored and replayed to a different IP. That is correct shared-cache
-> semantics, not a bug — do not put such a handler behind this cache.
+> semantics, not a bug, do not put such a handler behind this cache.
 
 ```typescript
 const cache = createResponseCache({
@@ -129,7 +129,7 @@ outside the RFC 6265 cookie-octet set, and decoded on read, so it round-trips.
 `MemoryKVStore` is single-process. `maxEntries` (default 10 000) bounds it with
 LRU eviction; reads and writes both count as use. `incr`/`decr` perform the
 whole read-modify-write synchronously, so concurrent increments cannot lose
-updates — a distributed implementation must use a native atomic primitive
+updates, a distributed implementation must use a native atomic primitive
 (Redis `INCRBY`), never a GET followed by a SET.
 
 ## Documentation

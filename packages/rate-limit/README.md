@@ -24,7 +24,7 @@ await app.register(rateLimit({
 ```
 
 Registration **throws** if you provide neither a `keyGenerator` nor a declared
-proxy trust boundary — a limiter that cannot identify clients is a limiter that
+proxy trust boundary, a limiter that cannot identify clients is a limiter that
 does nothing, and it fails closed at startup rather than in production.
 
 ## Keying on the client IP
@@ -55,8 +55,8 @@ right **without verifying that a proxy appended it**.
 
 > **Deployment warning.** This is correct only when the hop count is fixed and
 > every request genuinely traverses your proxies. If a request can reach the app
-> directly — a misrouted health check, a leaked origin address, an internal
-> caller — the attacker controls the entry at that position and rate limiting is
+> directly, a misrouted health check, a leaked origin address, an internal
+> caller, the attacker controls the entry at that position and rate limiting is
 > bypassed. Prefer `trustedProxies` or a `keyGenerator`.
 
 ### `X-Real-IP`
@@ -69,7 +69,7 @@ bucket by claiming the victim's IP (a targeted lockout, e.g. on `/login`).
 ## Fixed window, not sliding
 
 A fixed window resets all at once. A client can therefore send `max` requests at
-the end of one window and `max` more immediately at the start of the next —
+the end of one window and `max` more immediately at the start of the next, 
 **up to 2x `max` across a boundary**. Size the window with that in mind.
 
 ## Multi-instance deployments
@@ -105,7 +105,7 @@ Eviction prefers expired entries, then the **least-established** live entry
 (lowest count, tie-broken by soonest reset). Insertion-order eviction was the
 bug: a flood is always the newest traffic, so it evicted the very clients being
 throttled and reset their counters. The store warns once when the cap is first
-hit — that almost always means the limiter is keyed on an attacker-controlled
+hit, that almost always means the limiter is keyed on an attacker-controlled
 value.
 
 ## Documentation

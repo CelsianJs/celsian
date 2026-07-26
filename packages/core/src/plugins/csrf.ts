@@ -1,4 +1,4 @@
-// @celsian/core — CSRF protection plugin (double-submit cookie pattern)
+// @celsian/core, CSRF protection plugin (double-submit cookie pattern)
 
 import { parseCookies, serializeCookie } from "../cookie.js";
 import type { CelsianReply, CelsianRequest, HookHandler, PluginFunction } from "../types.js";

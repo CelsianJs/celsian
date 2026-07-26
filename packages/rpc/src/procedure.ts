@@ -1,4 +1,4 @@
-// @celsian/rpc — Procedure builder
+// @celsian/rpc, Procedure builder
 
 import type { StandardSchema } from "@celsian/schema";
 import { fromSchema } from "@celsian/schema";
@@ -70,21 +70,21 @@ class ProcedureBuilder<TInput = unknown, TOutput = unknown> {
   /** Finalize as a read-only query procedure (GET). */
   query(
     handler: (opts: { input: TInput; ctx: RPCContext }) => Promise<TOutput> | TOutput,
-  ): ProcedureDefinition<TInput, TOutput> {
+  ): ProcedureDefinition<TInput, TOutput, "query"> {
     return this._build("query", handler);
   }
 
   /** Finalize as a write mutation procedure (POST). */
   mutation(
     handler: (opts: { input: TInput; ctx: RPCContext }) => Promise<TOutput> | TOutput,
-  ): ProcedureDefinition<TInput, TOutput> {
+  ): ProcedureDefinition<TInput, TOutput, "mutation"> {
     return this._build("mutation", handler);
   }
 
-  private _build(
-    type: ProcedureType,
+  private _build<TType extends ProcedureType>(
+    type: TType,
     handler: (opts: { input: TInput; ctx: RPCContext }) => Promise<TOutput> | TOutput,
-  ): ProcedureDefinition<TInput, TOutput> {
+  ): ProcedureDefinition<TInput, TOutput, TType> {
     return {
       type,
       inputSchema: this._inputSchema,

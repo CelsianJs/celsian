@@ -1,4 +1,4 @@
-// @celsian/rpc — Router + handler execution
+// @celsian/rpc, Router + handler execution
 
 import { generateOpenAPI } from "./openapi.js";
 import type {
@@ -39,9 +39,9 @@ export interface RPCLogger {
 /**
  * When to serve `/_rpc/openapi.json` and `/_rpc/manifest.json`.
  *
- * - `"development"` (default) — served unless `NODE_ENV`/`CELSIAN_ENV` is `production`
- * - `true` — always served (pair with `introspectionMiddlewares`)
- * - `false` — never served
+ * - `"development"` (default), served unless `NODE_ENV`/`CELSIAN_ENV` is `production`
+ * - `true`, always served (pair with `introspectionMiddlewares`)
+ * - `false`, never served
  */
 export type IntrospectionMode = boolean | "development";
 
@@ -62,7 +62,7 @@ export interface RPCHandlerOptions {
   /**
    * Middleware run before the introspection endpoints are served. The
    * per-procedure chains cannot apply here, because these endpoints belong to
-   * no procedure — use this to require auth for the schema dump.
+   * no procedure, use this to require auth for the schema dump.
    *
    * A middleware guards the endpoint by throwing (e.g. an `HttpError`) instead
    * of calling `next()`.
@@ -139,7 +139,7 @@ export class RPCHandler {
 
   /**
    * Mount this handler on a Celsian app (or any compatible router). Registers
-   * BOTH `GET` and `POST` wildcard routes — the RPC client uses GET for
+   * BOTH `GET` and `POST` wildcard routes, the RPC client uses GET for
    * queries and POST for mutations, and `CelsianApp` has no `.all()` method.
    * This is the recommended way to wire up the handler.
    *
@@ -218,7 +218,7 @@ export class RPCHandler {
       return this.errorResponse(403, "CROSS_ORIGIN_DENIED", "Cross-origin request rejected");
     }
 
-    // Neither header — not a browser (curl, server-to-server, native client),
+    // Neither header, not a browser (curl, server-to-server, native client),
     // so there are no ambient cookies for an attacker to ride.
     return null;
   }
@@ -309,7 +309,7 @@ export class RPCHandler {
     }
 
     // Validate input. A schema adapter can throw (a misconfigured or async
-    // schema), so this is inside the same error mapping as the handler —
+    // schema), so this is inside the same error mapping as the handler,
     // otherwise the rejection escapes handle() entirely.
     let ctx: RPCContext;
     try {
@@ -390,7 +390,7 @@ export class RPCHandler {
     }
 
     // In production, unexpected (5xx-equivalent) errors must not leak
-    // internals — raw error messages/codes can disclose stack details, file
+    // internals, raw error messages/codes can disclose stack details, file
     // paths, or query fragments. Mirrors @celsian/core's error-handler
     // sanitization. Intentional HTTP-style errors (statusCode < 500, e.g.
     // thrown HttpErrors) pass through unchanged.

@@ -1,4 +1,4 @@
-// @celsian/queue-redis — integration tests against a REAL Redis server.
+// @celsian/queue-redis, integration tests against a REAL Redis server.
 //
 // These are the only tests that execute the Lua in src/index.ts. They must not
 // be allowed to skip silently: in CI a missing Redis is a hard failure, because

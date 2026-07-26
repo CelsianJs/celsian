@@ -1,4 +1,4 @@
-// @celsian/compress — Response compression plugin
+// @celsian/compress, Response compression plugin
 
 import type { CelsianReply, CelsianRequest, HookHandler, PluginFunction } from "@celsian/core";
 
@@ -16,7 +16,7 @@ export interface CompressOptions {
   /**
    * Per-response opt-out. Receives the request, the reply, and the resolved
    * content-type. Return `false` to send the response uncompressed. Defaults to
-   * {@link isCompressibleContentType} — a conservative allow-list of textual
+   * {@link isCompressibleContentType}, a conservative allow-list of textual
    * types. See the BREACH note in the README before widening it.
    */
   filter?: CompressFilter;
@@ -46,8 +46,8 @@ interface AcceptedEncoding {
 /**
  * Parse an `Accept-Encoding` header into (coding, q) pairs.
  *
- * A naive `header.includes('gzip')` treats `gzip;q=0, deflate` — an explicit
- * RFC 9110 refusal of gzip — as a request FOR gzip.
+ * A naive `header.includes('gzip')` treats `gzip;q=0, deflate`, an explicit
+ * RFC 9110 refusal of gzip, as a request FOR gzip.
  */
 function parseAcceptEncoding(header: string): AcceptedEncoding[] {
   const result: AcceptedEncoding[] = [];
@@ -203,7 +203,7 @@ export function compress(options: CompressOptions = {}): PluginFunction {
         const headers = copyHeadersPreservingCookies(response.headers);
         headers.set("content-encoding", encoding);
         headers.delete("content-length");
-        // Do NOT overwrite an explicitly set content-type — an image/png must
+        // Do NOT overwrite an explicitly set content-type, an image/png must
         // not become text/plain just because it went through reply.send().
         if (!headers.has("content-type")) headers.set("content-type", contentType);
 

@@ -1,4 +1,4 @@
-// @celsian/rate-limit — trust boundary, eviction fairness, key bounds, Redis store
+// @celsian/rate-limit, trust boundary, eviction fairness, key bounds, Redis store
 
 import { CelsianError, createApp } from "@celsian/core";
 import { describe, expect, it, vi } from "vitest";
@@ -266,7 +266,7 @@ describe("Redis store", () => {
     expect((await appA.inject({ url: "/api" })).status).toBe(200);
     expect((await appB.inject({ url: "/api" })).status).toBe(200);
     expect((await appA.inject({ url: "/api" })).status).toBe(200);
-    // The 4th request across BOTH instances is blocked — the per-process
+    // The 4th request across BOTH instances is blocked, the per-process
     // memory store would have allowed `max` per instance.
     expect((await appB.inject({ url: "/api" })).status).toBe(429);
   });

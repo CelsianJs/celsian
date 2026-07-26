@@ -1,4 +1,4 @@
-// @celsian/core — Cookie parsing and serialization
+// @celsian/core, Cookie parsing and serialization
 
 import { CelsianError } from "./errors.js";
 
@@ -25,7 +25,7 @@ export function parseCookies(header: string): Record<string, string> {
     const key = pair.slice(0, idx).trim();
     const value = pair.slice(idx + 1).trim();
     if (key && !BLOCKED_KEYS.has(key)) {
-      // Malformed percent-escapes (e.g. `%ZZ`) throw URIError — fall back to the
+      // Malformed percent-escapes (e.g. `%ZZ`) throw URIError, fall back to the
       // raw value rather than letting one bad cookie crash request parsing.
       try {
         cookies[key] = decodeURIComponent(value);
@@ -77,7 +77,7 @@ export function serializeCookie(name: string, value: string, options: CookieOpti
     throw new CelsianError(`Invalid cookie path: ${JSON.stringify(options.path)} (contains illegal characters)`);
   }
 
-  // Secure defaults — user-provided options override via spread.
+  // Secure defaults, user-provided options override via spread.
   // `secure` defaults to true regardless of NODE_ENV: containers routinely run
   // without NODE_ENV set, and inferring "not production" from a missing env var
   // shipped session cookies without Secure. Local HTTP dev must opt out

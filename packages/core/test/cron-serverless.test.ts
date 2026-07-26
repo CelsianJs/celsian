@@ -1,4 +1,4 @@
-// @celsian/core — Cron cannot work on request-scoped serverless runtimes
+// @celsian/core, Cron cannot work on request-scoped serverless runtimes
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CronScheduler, detectServerlessCronRuntime } from "../src/cron.js";

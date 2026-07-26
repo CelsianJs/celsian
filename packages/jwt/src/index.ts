@@ -1,4 +1,4 @@
-// @celsian/jwt — JWT authentication plugin
+// @celsian/jwt, JWT authentication plugin
 
 import {
   CelsianError,
@@ -20,7 +20,7 @@ const REQUEST_CONFIG_KEY = Symbol("@celsian/jwt/config");
  *
  * The context-scoped {@link REQUEST_CONFIG_KEY} above is the authority. This
  * key exists only so that the ONE-realm-per-app case keeps working while
- * plugin-scoped request decorations are hoisted to the root context — it is
+ * plugin-scoped request decorations are hoisted to the root context, it is
  * last-writer-wins by construction and is therefore consulted ONLY when the
  * context-scoped config is absent. With more than one realm on a single app
  * you must pass an explicit `{ secret }` to `createJWTGuard()`, or use the
@@ -119,7 +119,7 @@ const DEFAULT_JWKS_CACHE_MAX_AGE_MS = 600_000;
 const DEFAULT_JWKS_TIMEOUT_MS = 5_000;
 
 /**
- * Warn (without throwing — non-breaking) when an HS* secret is shorter than
+ * Warn (without throwing, non-breaking) when an HS* secret is shorter than
  * 32 bytes. Short HMAC secrets can be brute-forced offline from any captured
  * token. Deliberately uses console.warn rather than the app logger: the
  * default Celsian logger is a silent no-op, and a security warning must not
@@ -129,7 +129,7 @@ function warnIfWeakHmacSecret(secretKey: Uint8Array, algorithms: string[]): void
   if (secretKey.byteLength < MIN_HMAC_SECRET_BYTES && algorithms.some((alg) => alg.startsWith("HS"))) {
     console.warn(
       `[@celsian/jwt] The configured HS* secret is only ${secretKey.byteLength} bytes. ` +
-        `HMAC secrets should be at least ${MIN_HMAC_SECRET_BYTES} bytes (256 bits) of random data — ` +
+        `HMAC secrets should be at least ${MIN_HMAC_SECRET_BYTES} bytes (256 bits) of random data, ` +
         "short secrets can be brute-forced offline from a captured token. Generate one with: " +
         `node -e "console.log(crypto.randomBytes(${MIN_HMAC_SECRET_BYTES}).toString('hex'))"`,
     );
@@ -204,7 +204,7 @@ function resolveConfig(options: JWTOptions): ResolvedJWTConfig {
   }
   if (sources > 1) {
     throw new CelsianError(
-      "[@celsian/jwt] `secret`, `publicKey`, and `jwksUri` are mutually exclusive — configure exactly one.",
+      "[@celsian/jwt] `secret`, `publicKey`, and `jwksUri` are mutually exclusive, configure exactly one.",
     );
   }
 
@@ -342,7 +342,7 @@ export interface JWTNamespace {
 
 /**
  * A registered JWT realm: a plugin function that also exposes a guard bound to
- * this exact realm. Use `.guard()` whenever an app runs more than one realm —
+ * this exact realm. Use `.guard()` whenever an app runs more than one realm,
  * it never depends on ambient request state, so it cannot resolve to a
  * neighbouring realm's key material.
  */
@@ -365,7 +365,7 @@ export interface JWTPlugin extends PluginFunction {
  * const token = await app.jwt.sign({ sub: userId });
  * app.addHook('preHandler', createJWTGuard());
  *
- * // Multiple realms on one app — bind each guard to its realm explicitly
+ * // Multiple realms on one app, bind each guard to its realm explicitly
  * const tenantA = jwt({ secret: process.env.TENANT_A_SECRET!, issuer: 'tenant-a' });
  * await app.register(tenantA, { prefix: '/tenant-a' });
  * app.addHook('preHandler', tenantA.guard());
@@ -405,7 +405,7 @@ export function jwt(options: JWTOptions): JWTPlugin {
 
 /**
  * Shared guard body. `resolve` returns the realm config for this request, or
- * throws when none can be determined — the guard never falls back to "some"
+ * throws when none can be determined, the guard never falls back to "some"
  * realm, because guessing is how one tenant's token authenticates another's.
  */
 function createGuardForConfig(resolve: (request: CelsianRequest) => ResolvedJWTConfig): HookHandler {
@@ -433,17 +433,17 @@ function createGuardForConfig(resolve: (request: CelsianRequest) => ResolvedJWTC
  * Create a preHandler hook that verifies Bearer tokens and populates `request.user`.
  *
  * When called without arguments, the realm is resolved from the request at
- * request time. That is unambiguous only while the app runs a SINGLE realm —
+ * request time. That is unambiguous only while the app runs a SINGLE realm,
  * with two or more, pass an explicit `{ secret }` here or use the realm-bound
  * `jwt(...).guard()`.
  *
  * @example
  * ```ts
- * // Option 1: No args — single-realm apps
+ * // Option 1: No args, single-realm apps
  * await app.register(jwt({ secret: process.env.JWT_SECRET! }));
  * app.addHook('preHandler', createJWTGuard());
  *
- * // Option 2: Explicit config — required when several realms share one app
+ * // Option 2: Explicit config, required when several realms share one app
  * app.addHook('preHandler', createJWTGuard({ secret: process.env.JWT_SECRET!, issuer: 'api' }));
  * ```
  */
@@ -453,7 +453,7 @@ export function createJWTGuard(options?: JWTOptions): HookHandler {
     return createGuardForConfig(() => config);
   }
 
-  // No options — resolve the realm from the REQUEST. The context-scoped
+  // No options, resolve the realm from the REQUEST. The context-scoped
   // decoration is authoritative; the app-wide fallback covers the single-realm
   // case. There is deliberately no module-global fallback: an undecorated
   // request must fail closed rather than inherit another app's secret.

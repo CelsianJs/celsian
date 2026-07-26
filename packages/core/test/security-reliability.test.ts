@@ -1,4 +1,4 @@
-// @celsian/core — Security and reliability improvement tests
+// @celsian/core, Security and reliability improvement tests
 
 import { describe, expect, it, vi } from "vitest";
 import { CronScheduler } from "../src/cron.js";
@@ -224,7 +224,7 @@ describe("TaskWorker stop timeout", () => {
     // Let the worker pick up the task
     await new Promise((r) => setTimeout(r, 150));
 
-    // Stop with a short timeout — should not wait forever
+    // Stop with a short timeout, should not wait forever
     const startTime = Date.now();
     await worker.stop(200);
     const elapsed = Date.now() - startTime;

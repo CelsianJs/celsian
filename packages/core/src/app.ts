@@ -1,4 +1,4 @@
-// @celsian/core — CelsianApp: hook-based server with plugin encapsulation
+// @celsian/core, CelsianApp: hook-based server with plugin encapsulation
 
 import { fromSchema, type InferOutput, type StandardSchema } from "@celsian/schema";
 import { parseBody } from "./body-parser.js";
@@ -74,7 +74,7 @@ export class CelsianApp {
   private pluginContext: PluginContext;
   /** Shared registry that resolves every route's hook chain from its context chain. */
   private readonly scopes: ScopeRegistry;
-  /** Scope of the root context — used by requests that never matched a route. */
+  /** Scope of the root context, used by requests that never matched a route. */
   private readonly rootScope: ResolvedScope;
   private pendingPlugins: Promise<void>[] = [];
   private readyPromise: Promise<void> | null = null;
@@ -315,7 +315,7 @@ export class CelsianApp {
     const resolvedHandler = handler ?? opts.handler;
     if (typeof resolvedHandler !== "function") {
       throw new CelsianError(
-        `Route ${method} ${url} has no handler. Pass it as the last argument — app.${method.toLowerCase()}(url, opts, handler) — or as opts.handler.`,
+        `Route ${method} ${url} has no handler. Pass it as the last argument, app.${method.toLowerCase()}(url, opts, handler), or as opts.handler.`,
       );
     }
     this.pluginContext.route({
@@ -581,7 +581,7 @@ export class CelsianApp {
 
     let pathname: string;
     let queryString: string;
-    let fullUrl: URL | null = null; // Lazy — only created if needed
+    let fullUrl: URL | null = null; // Lazy, only created if needed
 
     if (rawUrl.charCodeAt(0) === 47 /* '/' */) {
       // Path-only URL (e.g., "/json" or "/json?q=1")
@@ -608,7 +608,7 @@ export class CelsianApp {
         }
       }
       if (pathStart === -1) {
-        // No path component (e.g., "http://host") — default to "/"
+        // No path component (e.g., "http://host"), default to "/"
         pathname = "/";
         queryString = "";
       } else {
@@ -646,7 +646,7 @@ export class CelsianApp {
         match = this.router.match("GET" as import("./types.js").RouteMethod, pathname);
       }
     } catch (matchError) {
-      // Malformed URI in a param/wildcard segment (HttpError 400) — return a
+      // Malformed URI in a param/wildcard segment (HttpError 400), return a
       // structured error response instead of crashing the request.
       const missContext = await this.createMissContext(request, rawUrl, fullUrl);
       const response = await this.handleError(
@@ -751,7 +751,7 @@ export class CelsianApp {
       }
     }
 
-    // Run lifecycle — inline timeout logic to avoid closure allocation
+    // Run lifecycle, inline timeout logic to avoid closure allocation
     const timeout = this.cachedRequestTimeout;
     const isHead = method === "HEAD";
 
@@ -936,7 +936,7 @@ export class CelsianApp {
       await runHooks(scope.preSerialization, request, reply);
     }
 
-    // 10. onSend hooks — the resolved chain already runs root → plugin → route
+    // 10. onSend hooks, the resolved chain already runs root → plugin → route
     if (scope.onSend.length > 0) {
       const headersBefore = new Map<string, string>();
       for (const [k, v] of Object.entries(reply.headers)) {
@@ -1048,7 +1048,7 @@ export class CelsianApp {
       if (!result.success) {
         throw new ValidationError(result.issues ?? []);
       }
-      // Write the validated output back to `request.query` too — reading the
+      // Write the validated output back to `request.query` too, reading the
       // ergonomic property must never hand back the raw, uncoerced input.
       // `parsedQuery` stays as an alias for the explicitly-typed accessor.
       const validatedQuery = result.data as Record<string, string | string[]>;
@@ -1083,7 +1083,7 @@ export class CelsianApp {
 
     let payload: unknown;
     if (handlerResult !== null && handlerResult !== undefined && !(handlerResult instanceof Response)) {
-      // Auto-serialized return value — validate it before it was stringified.
+      // Auto-serialized return value, validate it before it was stringified.
       payload = handlerResult;
     } else {
       // The handler built its own Response (reply.json(...), reply.send(...)).
@@ -1091,7 +1091,7 @@ export class CelsianApp {
       try {
         payload = await response.clone().json();
       } catch {
-        // Unreadable or non-JSON body (streams, already-consumed) — nothing to check.
+        // Unreadable or non-JSON body (streams, already-consumed), nothing to check.
         return response;
       }
     }

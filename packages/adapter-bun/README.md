@@ -24,7 +24,7 @@ Bun.serve(createBunServeOptions(app, { port: 3000 }));
 `createBunServeOptions()` returns `{ port, hostname, fetch, websocket }`. The
 `websocket` key is required by Bun: `server.upgrade()` cannot succeed without it.
 If you assemble the options yourself, pair `createBunHandler(app)` with
-`createBunWebSocketHandler(app)` — one without the other will not serve WebSockets.
+`createBunWebSocketHandler(app)`, one without the other will not serve WebSockets.
 
 ## WebSocket upgrades are gated
 
@@ -34,9 +34,9 @@ attach your app's cookies. That is cross-site WebSocket hijacking (CSWSH).
 
 This adapter therefore gates every upgrade **before** calling `server.upgrade()`:
 
-1. **Origin check** — same-origin by default (the handshake's `Origin` must match
+1. **Origin check**, same-origin by default (the handshake's `Origin` must match
    its `Host`). A handshake with **no** `Origin` header is rejected by default.
-2. **Root `onRequest` hooks** — JWT guards, rate limiters, and any other root-level
+2. **Root `onRequest` hooks**, JWT guards, rate limiters, and any other root-level
    `onRequest` hooks run on the handshake. A hook that returns a `Response` rejects it.
 3. **Per-IP connection cap** and a **max payload size**.
 
@@ -45,7 +45,7 @@ Bun.serve(
   createBunServeOptions(app, {
     port: 3000,
     allowedOrigins: ["https://app.example.com", "https://admin.example.com"],
-    // allowedOrigins: "*"                 // any origin — opt in deliberately
+    // allowedOrigins: "*"                 // any origin, opt in deliberately
     // allowedOrigins: (origin) => ...     // predicate
     allowMissingOrigin: false,  // default; true permits non-browser clients (CLIs, service-to-service)
     maxPayload: 1024 * 1024,    // default 1 MiB
@@ -55,7 +55,7 @@ Bun.serve(
 );
 ```
 
-Route-level hooks still do not run — a `.ws()` path is not an HTTP route — so
+Route-level hooks still do not run, a `.ws()` path is not an HTTP route, so
 per-connection authorization is best done in the `open` handler, which receives
 the upgrade request:
 

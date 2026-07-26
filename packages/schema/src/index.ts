@@ -1,4 +1,4 @@
-// @celsian/schema — Standard Schema adapters for TypeBox, Zod, Valibot
+// @celsian/schema, Standard Schema adapters for TypeBox, Zod, Valibot
 
 export { fromTypeBox, type TypeBoxAdapterOptions } from "./adapters/typebox.js";
 export { fromValibot } from "./adapters/valibot.js";

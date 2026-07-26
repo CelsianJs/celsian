@@ -1,4 +1,4 @@
-// @celsian/core — QA Regression Tests for All 13 Bugs
+// @celsian/core, QA Regression Tests for All 13 Bugs
 // Each bug has at least one test to prevent regressions.
 
 import { describe, expect, it } from "vitest";

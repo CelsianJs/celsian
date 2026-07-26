@@ -182,7 +182,7 @@ export async function parseBody(
   // Check custom content-type parsers (exact match then prefix match).
   // bodyLimit is enforced for custom parsers too: the body is pre-read through
   // the capped reader (413 on overflow) and the parser receives a reconstructed
-  // Request carrying the already-bounded bytes — its body methods are all capped.
+  // Request carrying the already-bounded bytes, its body methods are all capped.
   if (contentTypeParsers.size > 0) {
     for (const [registeredType, parser] of contentTypeParsers) {
       if (contentType === registeredType || contentType.startsWith(registeredType)) {
@@ -213,7 +213,7 @@ export async function parseBody(
     } else if (contentType.includes("text/")) {
       request.parsedBody = await readBodyText(request, bodyLimit);
     } else if (!contentType) {
-      // No Content-Type header — skip parsing.
+      // No Content-Type header, skip parsing.
       // Callers must set Content-Type to get automatic body parsing.
       return;
     }

@@ -7,7 +7,7 @@
 
 Secure WebSocket upgrades, wire Bun WebSockets, remove the unimplemented Node build adapter.
 
-**@celsian/core — WebSocket upgrades are now gated (security fix).**
+**@celsian/core, WebSocket upgrades are now gated (security fix).**
 `serve()` accepted every WebSocket handshake that matched an `app.ws()` path: no
 Origin check, and no `onRequest` hook ever ran. Because WebSocket handshakes are
 exempt from the same-origin policy and CORS, any page could open an authenticated
@@ -23,7 +23,7 @@ BREAKING: cross-origin and Origin-less handshakes that previously succeeded are
 now rejected with 403. Set `allowedOrigins` for cross-origin browser clients and
 `allowMissingOrigin: true` for non-browser clients.
 
-**@celsian/core — process safety and logging.** `serve()` installs
+**@celsian/core, process safety and logging.** `serve()` installs
 `unhandledRejection`/`uncaughtException` handlers that log with full context,
 drain in-flight requests, and exit non-zero (opt out with
 `handleFatalErrors: false`), and detaches all of its process listeners on close.
@@ -31,7 +31,7 @@ The startup line is no longer printed twice: the plain-text line is emitted only
 when the structured logger is disabled. `ws` is now declared as an optional peer
 dependency, and the missing-`ws` warning names the exact install command.
 
-**@celsian/adapter-bun — WebSocket support now actually works.**
+**@celsian/adapter-bun, WebSocket support now actually works.**
 `createBunServeOptions()` never set the `websocket` key, so `server.upgrade()`
 could not succeed and the documented Bun WebSocket support was inoperative. The
 adapter now provides a full Bun `websocket` handler (`open`/`message`/`close`/
@@ -41,7 +41,7 @@ and returns `undefined` after a successful upgrade as Bun requires.
 BREAKING: `BunFetchHandler` may now return `undefined`; `createBunHandler` takes
 an optional options argument.
 
-**@celsian/adapter-node — removed the unimplemented build adapter.**
+**@celsian/adapter-node, removed the unimplemented build adapter.**
 The default export (`buildEnd()`, `entryTemplate`) targeted a `@celsian/build`
 pipeline that does not exist; `buildEnd()` could only throw. It has been removed
 along with the dead server-entry template, and the README no longer documents it

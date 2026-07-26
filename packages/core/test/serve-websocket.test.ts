@@ -1,4 +1,4 @@
-// @celsian/core — serve() WebSocket upgrade, end to end over a real socket
+// @celsian/core, serve() WebSocket upgrade, end to end over a real socket
 //
 // Regression suite for H-5. Before the fix, serve()'s upgrade handler resolved a
 // handler and called wss.handleUpgrade() with no Origin check and without running
@@ -53,7 +53,7 @@ function connect(url: string, options?: { origin?: string }): Promise<WebSocket>
   });
 }
 
-describe("serve() WebSocket upgrade — Origin gate", () => {
+describe("serve() WebSocket upgrade, Origin gate", () => {
   it("rejects a cross-origin handshake with 403", async () => {
     const app = createApp();
     let opened = 0;
@@ -91,7 +91,7 @@ describe("serve() WebSocket upgrade — Origin gate", () => {
     app.ws("/chat", {});
     const { url } = await start(app);
 
-    // The `ws` client omits Origin unless asked — the non-browser client case.
+    // The `ws` client omits Origin unless asked, the non-browser client case.
     await expect(connect(url("/chat"))).rejects.toThrow(/403/);
   });
 
@@ -118,7 +118,7 @@ describe("serve() WebSocket upgrade — Origin gate", () => {
   });
 });
 
-describe("serve() WebSocket upgrade — hooks", () => {
+describe("serve() WebSocket upgrade, hooks", () => {
   it("runs root onRequest hooks so an auth guard can reject the handshake", async () => {
     const app = createApp();
     app.addHook("onRequest", (req) => {
@@ -165,7 +165,7 @@ describe("serve() WebSocket upgrade — hooks", () => {
   });
 });
 
-describe("serve() WebSocket upgrade — connection cap", () => {
+describe("serve() WebSocket upgrade, connection cap", () => {
   it("rejects connections beyond maxConnectionsPerIP", async () => {
     const app = createApp();
     app.ws("/chat", {});

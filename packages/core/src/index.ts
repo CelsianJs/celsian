@@ -1,4 +1,4 @@
-// @celsian/core — Server runtime
+// @celsian/core, Server runtime
 
 export { CelsianApp, createApp } from "./app.js";
 export type { CelsianConfig } from "./config.js";

@@ -1,4 +1,4 @@
-// @celsian/adapter-deno — request/response translation and serveDeno() wiring
+// @celsian/adapter-deno, request/response translation and serveDeno() wiring
 //
 // This package previously shipped to npm with zero tests and 0% executed lines.
 

@@ -301,12 +301,12 @@ describe("Schema-based route type inference", () => {
 
   it("old two-arg signature still compiles and works alongside new three-arg", () => {
     const app = createApp();
-    // Old API — still works
+    // Old API, still works
     app.post("/old-way", (req, reply) => {
       expectTypeOf(req.parsedBody).toEqualTypeOf<unknown>();
       return reply.json({ ok: true });
     });
-    // New API — typed
+    // New API, typed
     app.post(
       "/new-way",
       {
@@ -442,7 +442,7 @@ describe("app.route() typed schema inference", () => {
 //
 // These assertions guard TASK-1.8: the CelsianApp route-method overloads used to
 // declare TBody/TQuery and then never reference them, and the query type was
-// written as `TQuery extends unknown ? raw : InferOutput<TQuery>` — always true,
+// written as `TQuery extends unknown ? raw : InferOutput<TQuery>`, always true,
 // so the typed branch was unreachable and no schema could ever type parsedQuery.
 
 describe("parsedBody and parsedQuery inference (Zod)", () => {

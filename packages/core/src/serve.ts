@@ -1,4 +1,4 @@
-// @celsian/core — Built-in server (Node.js / Bun / Deno runtime detection)
+// @celsian/core, Built-in server (Node.js / Bun / Deno runtime detection)
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { CelsianApp } from "./app.js";
@@ -82,7 +82,7 @@ export async function serve(app: CelsianApp, options: ServeOptions = {}): Promis
     configHost = config.server?.host ?? configHost;
   } catch (err) {
     // A genuinely broken celsian.config.* (syntax/runtime error, or a missing
-    // import it depends on) must surface — silently binding defaults hides the
+    // import it depends on) must surface, silently binding defaults hides the
     // user's settings. loadConfig only throws ConfigLoadError for real failures;
     // an absent config file returns defaults without throwing.
     const { ConfigLoadError } = await import("./config.js");
@@ -137,7 +137,7 @@ function announce(app: CelsianApp, message: string, level: "log" | "warn" = "log
  *
  * Node's default on an unhandled rejection is to crash immediately, dropping
  * in-flight requests. These handlers log the failure with full context, drain,
- * and then exit non-zero — they never swallow the error, because a silently
+ * and then exit non-zero, they never swallow the error, because a silently
  * swallowed rejection leaves the process in an unknown state.
  */
 function installFatalErrorHandlers(app: CelsianApp, options: ServeOptions, shutdown: () => Promise<void>): () => void {
@@ -152,13 +152,13 @@ function installFatalErrorHandlers(app: CelsianApp, options: ServeOptions, shutd
     handling = true;
 
     const err = error instanceof Error ? error : new Error(String(error));
-    app.log.fatal(`${kind} — shutting down`, {
+    app.log.fatal(`${kind}, shutting down`, {
       type: kind,
       error: err.message,
       stack: err.stack,
     });
     // Always surface to stderr: a fatal must never be invisible, even with a noop logger.
-    console.error(`[celsian] ${kind} — shutting down:`, err);
+    console.error(`[celsian] ${kind}, shutting down:`, err);
 
     void shutdown()
       .catch((shutdownErr) => {
@@ -175,7 +175,7 @@ function installFatalErrorHandlers(app: CelsianApp, options: ServeOptions, shutd
   process.on("unhandledRejection", onRejection);
   process.on("uncaughtException", onException);
 
-  // Returned so shutdown can detach them — long-lived test processes (and any
+  // Returned so shutdown can detach them, long-lived test processes (and any
   // caller that starts several servers) would otherwise accumulate listeners.
   return () => {
     process.removeListener("unhandledRejection", onRejection);
@@ -238,13 +238,13 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
 
     inFlight++;
 
-    // Static files — only parse URL when staticDir is configured
+    // Static files, only parse URL when staticDir is configured
     if (hasStaticDir) {
       const url = new URL(req.url ?? "/", baseUrl);
       const { resolve } = await import("node:path");
       const staticRoot = resolve(options.staticDir!);
       // Decode URI and normalize to prevent path traversal (e.g., /../../../etc/passwd).
-      // Malformed percent-encoding (e.g. "/%ZZ") throws URIError — respond 400
+      // Malformed percent-encoding (e.g. "/%ZZ") throws URIError, respond 400
       // rather than letting it crash the async server callback.
       let decodedPath: string;
       try {
@@ -258,7 +258,7 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
       const filePath = resolve(join(staticRoot, decodedPath));
       // Ensure the resolved path is within the static directory
       if (!filePath.startsWith(`${staticRoot}/`) && filePath !== staticRoot) {
-        // Path traversal attempt — fall through to app handler
+        // Path traversal attempt, fall through to app handler
       } else {
         try {
           const s = await stat(filePath);
@@ -335,7 +335,7 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
       const { createWSConnection } = await import("./websocket.js");
       const { buildRequest } = await import("./request.js");
       const WSS = wsMod.WebSocketServer ?? (wsMod as any).default?.WebSocketServer;
-      // `ws` defaults maxPayload to 100 MB — far too generous for a default.
+      // `ws` defaults maxPayload to 100 MB, far too generous for a default.
       const wss = new WSS({ noServer: true, maxPayload: options.maxPayload ?? 1024 * 1024 });
       const limiter = new WSConnectionLimiter(options.maxConnectionsPerIP ?? 64);
 
@@ -419,11 +419,11 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
 
       app.log.info("WebSocket upgrade handler enabled");
     } catch {
-      // 'ws' package not installed — WebSocket routes would silently 404 otherwise.
+      // 'ws' package not installed, WebSocket routes would silently 404 otherwise.
       // It is declared as an OPTIONAL peer dependency of @celsian/core so the
       // requirement is discoverable without adding a runtime dep to core.
       console.warn(
-        "[celsian] WebSocket routes are registered but the optional peer dependency 'ws' is not installed — " +
+        "[celsian] WebSocket routes are registered but the optional peer dependency 'ws' is not installed, " +
           "WebSocket upgrades are disabled on Node.js. Install it with one of:\n" +
           "  npm install ws\n" +
           "  pnpm add ws\n" +
@@ -461,12 +461,12 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
   // JSON log stream never gets a stray plain-text line on boot.
   announce(app, `[celsian] Server running at http://${displayHost}:${boundPort}${familyNote}`);
 
-  // Loopback binds are unreachable from outside a container — almost always a
+  // Loopback binds are unreachable from outside a container, almost always a
   // misconfiguration in production (Docker/Fly/Railway health checks fail).
   const LOOPBACK = new Set(["127.0.0.1", "::1", "localhost"]);
   if (process.env.NODE_ENV === "production" && (LOOPBACK.has(boundAddress) || LOOPBACK.has(host))) {
     const note =
-      `[celsian] note: production server is bound to loopback (${boundAddress}) — ` +
+      `[celsian] note: production server is bound to loopback (${boundAddress}), ` +
       "it will be unreachable from outside this machine/container. Set HOST=0.0.0.0 (or serve({ host: '0.0.0.0' })) to accept external traffic.";
     app.log.warn(note);
     announce(app, note, "warn");
@@ -537,7 +537,7 @@ function serveDeno(app: CelsianApp, port: number, host: string, options: ServeOp
     detachFatal();
   };
 
-  // Register signal listeners — wrap in try/catch since Deno permissions may not allow signal listening
+  // Register signal listeners, wrap in try/catch since Deno permissions may not allow signal listening
   try {
     (globalThis as any).Deno.addSignalListener?.("SIGTERM", () => handleShutdown());
   } catch {
@@ -582,7 +582,7 @@ function warnWSUnsupported(app: CelsianApp, runtime: string): void {
         ? " On Bun, serve WebSockets via the @celsian/adapter-bun handler (Bun.serve with native upgrades) instead of serve()."
         : "";
     console.warn(
-      `[celsian] WebSocket routes are not supported on ${runtime} via serve() yet — ` +
+      `[celsian] WebSocket routes are not supported on ${runtime} via serve() yet, ` +
         `registered .ws() handlers will not receive connections on this runtime.${hint}`,
     );
   }
@@ -626,7 +626,7 @@ function nodeToWebRequestFast(req: IncomingMessage, rawPath: string, baseUrl: st
   let headers: Headers | Record<string, string> = raw as unknown as Record<string, string>;
   for (const k in raw) {
     if (Array.isArray(raw[k])) {
-      // An array-valued header (e.g. set-cookie) — build Headers explicitly.
+      // An array-valued header (e.g. set-cookie), build Headers explicitly.
       const h = new Headers();
       for (const key in raw) {
         const value = raw[key];
@@ -655,7 +655,7 @@ function nodeToWebRequestFast(req: IncomingMessage, rawPath: string, baseUrl: st
 export async function writeWebResponse(res: ServerResponse, response: Response): Promise<void> {
   // Fast path: responses built by reply.json()/send()/html() or the auto-serializer
   // carry their already-serialized body + plain headers. Write them in a single
-  // writeHead()+end() — no ReadableStream reader, no async drain, no second socket
+  // writeHead()+end(), no ReadableStream reader, no async drain, no second socket
   // write, and with an explicit Content-Length (avoids chunked encoding).
   const fast = getFastPayload(response);
   if (fast !== undefined) {

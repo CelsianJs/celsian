@@ -1,4 +1,4 @@
-// @celsian/adapter-node — Standalone Node.js server adapter
+// @celsian/adapter-node, Standalone Node.js server adapter
 
 import { readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -49,7 +49,7 @@ export function serve(app: CelsianApp, options: NodeAdapterOptions = {}): void {
     // Try static files
     if (staticDir) {
       // Decode URI and resolve to prevent path traversal (e.g., /../../../etc/passwd).
-      // Malformed percent-encoding (e.g. "/%ZZ") throws URIError — respond 400
+      // Malformed percent-encoding (e.g. "/%ZZ") throws URIError, respond 400
       // instead of letting it escape the async server callback.
       let decodedPath: string;
       try {

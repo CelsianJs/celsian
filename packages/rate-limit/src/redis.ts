@@ -1,4 +1,4 @@
-// @celsian/rate-limit — Redis-backed store for multi-instance deployments
+// @celsian/rate-limit, Redis-backed store for multi-instance deployments
 
 import { CelsianError } from "@celsian/core";
 import type { RateLimitStore } from "./index.js";
@@ -26,7 +26,7 @@ export interface RedisRateLimitStoreOptions {
  *
  * The whole read-modify-write happens inside one Lua script, so it is atomic
  * across every instance sharing this Redis. A GET-then-SET from the app would
- * lose updates under concurrency and let the limiter be bypassed — which is
+ * lose updates under concurrency and let the limiter be bypassed, which is
  * exactly what the {@link RateLimitStore} contract forbids.
  *
  * KEYS[1] = counter key, ARGV[1] = window in ms.
@@ -48,7 +48,7 @@ return {count, ttl}
 
 /**
  * Redis-backed fixed-window store. Use this whenever more than one instance
- * serves the app — the in-memory store is per-process, so N instances multiply
+ * serves the app, the in-memory store is per-process, so N instances multiply
  * the effective limit by N.
  *
  * @example

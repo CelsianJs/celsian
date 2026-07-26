@@ -294,7 +294,7 @@ describe("M-12: introspection endpoints must be gated", () => {
       for (const path of ["manifest.json", "openapi.json"]) {
         const res = await handler.handle(new Request(`http://localhost/_rpc/${path}`));
         expect(res.status).toBe(404);
-        // Indistinguishable from an unknown procedure — no confirmation that
+        // Indistinguishable from an unknown procedure, no confirmation that
         // introspection merely got switched off.
         expect((await res.json()).error.code).toBe("NOT_FOUND");
       }

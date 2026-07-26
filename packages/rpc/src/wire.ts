@@ -1,4 +1,4 @@
-// @celsian/rpc — Wire protocol: tagged encoding for native types
+// @celsian/rpc, Wire protocol: tagged encoding for native types
 
 import { WireDecodeError } from "./errors.js";
 import type { TaggedValue } from "./types.js";
@@ -16,14 +16,14 @@ const TAG_REGEXP = "RegExp";
  * `JSON.parse` keeps `__proto__` as an own *enumerable* property, so copying it
  * into a plain `{}` fires `Object.prototype.__proto__`'s setter and silently
  * re-parents the result object. `Object.keys(input)` then omits the injected
- * fields while `input.isAdmin` reads `true` — precisely what defeats allow-list
+ * fields while `input.isAdmin` reads `true`, precisely what defeats allow-list
  * guards written as `Object.keys(input).forEach(...)` or `for…in` +
  * `hasOwnProperty`, and what makes a downstream `{...input}` or ORM write carry
  * attacker-chosen fields.
  *
  * Kept byte-identical to `@celsian/core`'s body-parser scrub. Core only covers
  * the parsed request body, which leaves the RPC `GET ?input=` path and any
- * standalone `RPCHandler.handle()` call unprotected — hence this copy. See the
+ * standalone `RPCHandler.handle()` call unprotected, hence this copy. See the
  * README note about promoting it to a shared core export.
  */
 const BLOCKED_KEYS = new Set(["__proto__", "constructor", "prototype"]);

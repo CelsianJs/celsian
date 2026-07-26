@@ -1,4 +1,4 @@
-// @celsian/schema — Zod adapter
+// @celsian/schema, Zod adapter
 
 import type { SchemaResult, StandardSchema } from "../standard.js";
 
@@ -41,7 +41,7 @@ export function fromZod<T>(zodSchema: ZodLike): StandardSchema<T, T> {
         if (isZodAsyncError(error)) {
           return {
             success: false,
-            issues: [{ message: "Async Zod schemas are not supported by validate() — use a synchronous schema." }],
+            issues: [{ message: "Async Zod schemas are not supported by validate(), use a synchronous schema." }],
           };
         }
         throw error;

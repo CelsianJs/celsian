@@ -1,4 +1,4 @@
-// @celsian/rpc — Type definitions
+// @celsian/rpc, Type definitions
 
 import type { StandardSchema } from "@celsian/schema";
 
@@ -18,8 +18,8 @@ export type ContextFactory = (request: Request) => RPCContext | Promise<RPCConte
 export type ProcedureType = "query" | "mutation";
 
 /** Fully resolved procedure with type, schemas, handler, and middleware chain. */
-export interface ProcedureDefinition<TInput = unknown, TOutput = unknown> {
-  type: ProcedureType;
+export interface ProcedureDefinition<TInput = unknown, TOutput = unknown, TType extends ProcedureType = ProcedureType> {
+  type: TType;
   inputSchema?: StandardSchema<TInput>;
   outputSchema?: StandardSchema<TOutput>;
   handler: (opts: { input: TInput; ctx: RPCContext }) => Promise<TOutput>;

@@ -104,8 +104,8 @@ documented example that previously crashed. `pnpm test`: 1539 passing.
   does not gate on it. Only the Deno job blocks.*
 
 ### Fixed
-- **CRITICAL — core:** `serve()` loopback-only bind (see behavior changes); now logs the bound address.
-- **CRITICAL — cli:** `celsian routes` crashed in every project (tsx `--eval` top-level-await under CJS); rewritten to a temp `.mts` loader that surfaces real errors.
+- **CRITICAL, core:** `serve()` loopback-only bind (see behavior changes); now logs the bound address.
+- **CRITICAL, cli:** `celsian routes` crashed in every project (tsx `--eval` top-level-await under CJS); rewritten to a temp `.mts` loader that surfaces real errors.
 - **adapter-lambda:** request cookies dropped (`event.cookies` now read) and binary request bodies corrupted (base64 kept as bytes, no UTF-8 round-trip).
 - **adapter-vercel:** `createVercelEdgeHandler` could not bundle for edge (module-level `node:crypto`); timing-safe compare moved to Web Crypto.
 - **core:** CSRF `excludePaths` now match by path segment (`/_rpc` excludes `/_rpc/x` but not `/_rpcx`); CORS sets `Vary: Origin` on reflected origins; custom content-type parsers respect `bodyLimit`; cron no longer double-fires within a minute; binary `reply.send()` emits `application/octet-stream`; serverless-safety warnings surface through the default logger; `serve()` resolves only after listening and reports the OS-assigned port.
@@ -126,7 +126,7 @@ Performance and benchmark-honesty release. No behavior changes.
 
 ### Changed
 - **benchmarks:** honest, isolated memory benchmark (`benchmarks/mem.ts`) replaces the previous shared-process RSS-delta measurement, which was order-biased and overstated memory for whichever framework ran first. Retained heap is on par with Express and below Fastify. Added `benchmarks/soak.ts` for sustained-load leak checks. Multi-runtime serving verified on Node, Bun, Deno, Cloudflare Workers, and AWS Lambda.
-- **site:** updated marketing site for 0.5.1 — current performance numbers, version, all 8 adapters, fixed `/docs` link.
+- **site:** updated marketing site for 0.5.1, current performance numbers, version, all 8 adapters, fixed `/docs` link.
 
 ## [0.5.0] - 2026-06-07
 
@@ -142,7 +142,7 @@ and `@celsian/adapter-deno` `1.0.0` publishes are superseded by `0.5.0` (and sho
 - **cache:** response cache no longer replays per-user `Set-Cookie`/`Authorization` across users
   (credential-header denylist; security/representation headers preserved).
 - **rate-limit:** fails closed for unidentifiable clients (was bypassable to unlimited throughput).
-- **jwt:** lazy `createJWTGuard()` resolves each app's secret/algorithms from the request — fixes
+- **jwt:** lazy `createJWTGuard()` resolves each app's secret/algorithms from the request, fixes
   cross-app secret bleed and honors configured algorithms.
 
 ### Fixed
@@ -151,7 +151,7 @@ and `@celsian/adapter-deno` `1.0.0` publishes are superseded by `0.5.0` (and sho
   400/413; errors route through the structured logger.
 - **queue-redis:** atomic pop (Lua) with an in-flight reaper honoring `visibilityTimeout`; ioredis
   `error` listeners prevent process crashes during a Redis outage. (Key schema `:inflight` →
-  `:processing`/`:stamps` — drain in-flight messages before upgrading.)
+  `:processing`/`:stamps`, drain in-flight messages before upgrading.)
 - **ws-redis:** real cross-node `broadcastAll('*')` fan-out; ioredis `error` listeners.
 - **schema:** StandardSchema-first detection (modern Zod/Valibot); TypeBox via its Kind symbol.
 - **create-celsian:** templates pin a valid unified range and `export const app` so `celsian routes`

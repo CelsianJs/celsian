@@ -1,4 +1,4 @@
-// @celsian/core — Queue backend interface + in-memory implementation
+// @celsian/core, Queue backend interface + in-memory implementation
 
 /** Default visibility timeout: how long a popped message stays leased to one worker. */
 export const DEFAULT_VISIBILITY_TIMEOUT = 30_000;

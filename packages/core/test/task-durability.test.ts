@@ -1,4 +1,4 @@
-// @celsian/core — TaskWorker dead-lettering, timeout cancellation and lease handling
+// @celsian/core, TaskWorker dead-lettering, timeout cancellation and lease handling
 
 import { describe, expect, it, vi } from "vitest";
 import { CelsianError } from "../src/errors.js";
@@ -214,7 +214,7 @@ describe("TaskWorker timeouts", () => {
   });
 
   it("aborts the handler's signal on timeout instead of letting it run on", async () => {
-    // Regression: the timeout only won a Promise.race — the handler kept
+    // Regression: the timeout only won a Promise.race, the handler kept
     // running while the worker nacked the job for a retry, so the task
     // executed concurrently with itself.
     const queue = new MemoryQueue();

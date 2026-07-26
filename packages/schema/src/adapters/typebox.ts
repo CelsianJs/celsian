@@ -1,4 +1,4 @@
-// @celsian/schema — TypeBox adapter (first-class)
+// @celsian/schema, TypeBox adapter (first-class)
 // Uses top-level await to load TypeBox dynamically (ESM-safe, no require())
 
 import { SchemaError } from "../errors.js";
@@ -12,7 +12,7 @@ try {
   const mod = await import("@sinclair/typebox/value");
   Value = mod.Value;
 } catch {
-  // @sinclair/typebox not installed — will error at validate time
+  // @sinclair/typebox not installed, will error at validate time
 }
 
 /** Options for {@link fromTypeBox}. */
@@ -45,7 +45,7 @@ export function fromTypeBox<T>(typeboxSchema: any, options?: TypeBoxAdapterOptio
         const errors = [...Value.Errors(typeboxSchema, input)];
         if (errors.length === 0) {
           // Cast is only ever reached once Errors() is empty, so it upcasts a
-          // value already known to conform — it never rescues invalid input.
+          // value already known to conform, it never rescues invalid input.
           const cast = Value.Cast(typeboxSchema, input);
           if (!stripUnknown) {
             return { success: true, data: cast };

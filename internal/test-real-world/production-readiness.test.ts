@@ -341,8 +341,10 @@ describe("Cookie security", () => {
     app.get("/redir", (_req, reply) => reply.redirect("//evil.com/phish"));
 
     const res = await app.inject({ url: "/redir" });
-    // Should not redirect — should error
-    expect(res.status).toBe(500);
+    // Must not redirect. Rejected as a client error (400), not a 500: the bad
+    // value is attacker-supplied input, and a 500 would misreport it as our bug.
+    expect(res.status).toBe(400);
+    expect(res.headers.get("location")).toBeNull();
   });
 
   it("reply.sendFile() path traversal with encoded dots should be blocked", async () => {

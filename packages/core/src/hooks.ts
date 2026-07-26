@@ -1,4 +1,4 @@
-// @celsian/core — Hook store + execution
+// @celsian/core, Hook store + execution
 
 import type { CelsianReply, CelsianRequest, HookHandler, OnErrorHandler } from "./types.js";
 
@@ -91,7 +91,7 @@ export function runHooksFireAndForget(
       }
     } catch (err) {
       // A synchronous throw must not abort the remaining hooks, but it is still
-      // a bug — report it through the same path as an async rejection instead of
+      // a bug, report it through the same path as an async rejection instead of
       // letting it vanish.
       reportHookError(err, logger);
     }

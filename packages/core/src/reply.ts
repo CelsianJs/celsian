@@ -1,4 +1,4 @@
-// @celsian/core — CelsianReply implementation
+// @celsian/core, CelsianReply implementation
 
 import { type CookieOptions, serializeCookie } from "./cookie.js";
 import { HttpError } from "./errors.js";
@@ -69,7 +69,7 @@ async function resolveConfinedPath(filePath: string, options: SendFileOptions | 
 
   const resolvedRoot = resolve(options?.root ?? currentDir());
   // `resolve` normalizes ".." segments but constrains nothing on its own, and an
-  // absolute filePath replaces root entirely — the containment check below is
+  // absolute filePath replaces root entirely, the containment check below is
   // what actually enforces confinement.
   const resolvedPath = resolve(resolvedRoot, filePath);
   if (!isInside(resolvedPath, resolvedRoot)) {
@@ -223,14 +223,14 @@ export function createReply(): CelsianReply {
       if (data instanceof Response) {
         return data;
       }
-      // No-body status codes (204, 304) or empty data — no content-type added
+      // No-body status codes (204, 304) or empty data, no content-type added
       if (statusCode === 204 || statusCode === 304 || data === null || data === undefined) {
         return fastResponse(null, statusCode, { ...headers }, setCookies);
       }
       if (typeof data === "string") {
         return fastResponse(data, statusCode, { "content-type": "text/plain; charset=utf-8", ...headers }, setCookies);
       }
-      // Binary payloads (Uint8Array covers Node Buffer) — send raw bytes, never
+      // Binary payloads (Uint8Array covers Node Buffer), send raw bytes, never
       // JSON.stringify (which would produce {"0":137,...}). Default content-type
       // is application/octet-stream; an explicitly set content-type header wins.
       if (data instanceof Uint8Array) {
@@ -300,7 +300,7 @@ export function createReply(): CelsianReply {
     async sendFile(filePath: string, options?: SendFileOptions): Promise<Response> {
       sent = true;
       try {
-        // Lazy import — keeps reply.ts edge-compatible when sendFile isn't used
+        // Lazy import, keeps reply.ts edge-compatible when sendFile isn't used
         const { readFile, stat } = await import("node:fs/promises");
         const { extname } = await import("node:path");
 
@@ -323,7 +323,7 @@ export function createReply(): CelsianReply {
     async download(filePath: string, filenameOrOptions?: string | DownloadOptions): Promise<Response> {
       sent = true;
       try {
-        // Lazy import — keeps reply.ts edge-compatible when download isn't used
+        // Lazy import, keeps reply.ts edge-compatible when download isn't used
         const { readFile, stat } = await import("node:fs/promises");
         const { extname, basename } = await import("node:path");
 

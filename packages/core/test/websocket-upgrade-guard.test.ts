@@ -1,4 +1,4 @@
-// @celsian/core — WebSocket upgrade authorization (CSWSH defence)
+// @celsian/core, WebSocket upgrade authorization (CSWSH defence)
 //
 // Regression suite for H-5: upgrades used to bypass every hook and had no Origin
 // check at all, so evil.com could open an authenticated socket with the victim's
@@ -18,7 +18,7 @@ function handshake(init: { origin?: string | null; host?: string; url?: string }
   return new Request(init.url ?? "http://victim.app/chat", { method: "GET", headers });
 }
 
-describe("checkWSOrigin — default same-origin policy", () => {
+describe("checkWSOrigin, default same-origin policy", () => {
   it("rejects a cross-origin handshake", async () => {
     const decision = await checkWSOrigin(handshake({ origin: "https://evil.com" }));
     expect(decision.allowed).toBe(false);
@@ -59,7 +59,7 @@ describe("checkWSOrigin — default same-origin policy", () => {
   });
 });
 
-describe("checkWSOrigin — configured allow-lists", () => {
+describe("checkWSOrigin, configured allow-lists", () => {
   it("accepts an allow-listed cross-origin handshake", async () => {
     const decision = await checkWSOrigin(handshake({ origin: "https://app.example.com" }), {
       allowedOrigins: ["https://app.example.com", "https://admin.example.com"],
@@ -102,7 +102,7 @@ describe("checkWSOrigin — configured allow-lists", () => {
   });
 });
 
-describe("authorizeWSUpgrade — hooks run on the handshake", () => {
+describe("authorizeWSUpgrade, hooks run on the handshake", () => {
   it("runs root onRequest hooks and lets a guard reject the upgrade", async () => {
     const app = createApp();
     const seen: string[] = [];

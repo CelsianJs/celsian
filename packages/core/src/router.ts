@@ -1,4 +1,4 @@
-// @celsian/core — Radix tree router with URL pattern matching
+// @celsian/core, Radix tree router with URL pattern matching
 
 import { CelsianError, HttpError } from "./errors.js";
 import type { InternalRoute, RouteHandler, RouteHooks, RouteMatch, RouteMethod } from "./types.js";
@@ -145,7 +145,7 @@ export class Router {
     if (duplicate) {
       throw new CelsianError(
         `Duplicate route: ${method} "${url}" is already registered as ${method} "${duplicate.url}". ` +
-          `Remove one registration — the second would silently replace the first.`,
+          `Remove one registration, the second would silently replace the first.`,
       );
     }
     node.routes.set(method, route);
@@ -181,7 +181,7 @@ export class Router {
           route,
         };
       }
-      // Method not found in static map — but the path might also match a
+      // Method not found in static map, but the path might also match a
       // param/wildcard route registered on the same tree branch, so fall through.
     }
 
@@ -196,7 +196,7 @@ export class Router {
     const route = result.routes.get(method);
     if (!route) return null;
 
-    // `params` was freshly created above — no need to copy with `{ ...params }`
+    // `params` was freshly created above, no need to copy with `{ ...params }`
     return {
       handler: route.handler,
       params,
@@ -257,7 +257,7 @@ export class Router {
       if (node.wildcardChild.routes.has(method)) {
         const raw = segments.slice(index).join("/");
         // A wildcard legitimately spans separators, so strictParams does not
-        // apply here — decode as before.
+        // apply here, decode as before.
         params[node.wildcardName] = decodeSegment(raw);
         rawParams[node.wildcardName] = raw;
         return node.wildcardChild;
@@ -287,7 +287,7 @@ export class Router {
     const staticChild = node.children.get(seg);
     if (staticChild && this._hasPath(staticChild, segments, index + 1)) return true;
     if (node.paramChild && this._hasPath(node.paramChild, segments, index + 1)) return true;
-    // Intentionally exclude wildcardChild — a catch-all like OPTIONS /*path
+    // Intentionally exclude wildcardChild, a catch-all like OPTIONS /*path
     // should not cause non-existent paths to return 405 instead of 404
     return false;
   }

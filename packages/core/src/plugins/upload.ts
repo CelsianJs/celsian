@@ -10,7 +10,7 @@ const DEFAULT_MAX_FILES = 10;
 /**
  * Magic-byte signatures for content types worth verifying. Used to catch a
  * client that declares an allowed Content-Type on bytes that are something
- * else entirely — the declared part header is trivially spoofed.
+ * else entirely, the declared part header is trivially spoofed.
  */
 const MAGIC_SIGNATURES: { mime: string; offset: number; bytes: number[] }[] = [
   { mime: "image/png", offset: 0, bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] },
@@ -71,7 +71,7 @@ export interface UploadedFile {
   fieldName: string;
   /**
    * Sanitized file name: basename only, with path separators, NUL and leading
-   * dots stripped. Safe to join onto a directory. Still not unique — collisions
+   * dots stripped. Safe to join onto a directory. Still not unique, collisions
    * are the caller's problem.
    */
   fileName: string;
@@ -111,7 +111,7 @@ export function upload(options: UploadOptions = {}): PluginFunction {
     app.addHook("preHandler", async (request: CelsianRequest, _reply: CelsianReply) => {
       const contentType = request.headers.get("content-type") ?? "";
       if (!contentType.includes("multipart/form-data")) {
-        // Not a multipart request — initialize empty arrays/objects so consumers can safely check
+        // Not a multipart request, initialize empty arrays/objects so consumers can safely check
         (request as Record<string, unknown>).files = [];
         (request as Record<string, unknown>).fields = Object.create(null);
         return;
@@ -133,7 +133,7 @@ export function upload(options: UploadOptions = {}): PluginFunction {
         try {
           formData = await request.formData();
         } catch {
-          // Could not parse — treat as empty
+          // Could not parse, treat as empty
           (request as Record<string, unknown>).files = files;
           (request as Record<string, unknown>).fields = fields;
           return;

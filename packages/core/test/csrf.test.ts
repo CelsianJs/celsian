@@ -1,4 +1,4 @@
-// @celsian/core — CSRF middleware tests
+// @celsian/core, CSRF middleware tests
 
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";

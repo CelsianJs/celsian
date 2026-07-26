@@ -1,4 +1,4 @@
-// @celsian/schema — Auto-detect schema library by duck-typing
+// @celsian/schema, Auto-detect schema library by duck-typing
 
 import { fromTypeBox, type TypeBoxAdapterOptions } from "./adapters/typebox.js";
 import { fromValibot } from "./adapters/valibot.js";

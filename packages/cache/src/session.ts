@@ -1,4 +1,4 @@
-// @celsian/cache — Session middleware
+// @celsian/cache, Session middleware
 
 import type { KVStore } from "./store.js";
 
@@ -16,7 +16,7 @@ export class CacheError extends Error {
 
 /**
  * RFC 6265 cookie-octet set: %x21 / %x23-2B / %x2D-3A / %x3C-5B / %x5D-7E.
- * Excludes whitespace, control chars, `"`, `,`, `;`, and `\` — i.e. exactly
+ * Excludes whitespace, control chars, `"`, `,`, `;`, and `\`, i.e. exactly
  * the characters that could break out of the value into cookie attributes
  * (e.g. injecting `; HttpOnly` or CRLF). A value matching this is safe to emit
  * verbatim; anything else is percent-encoded as a defensive fallback so a
@@ -144,7 +144,7 @@ export function createSessionManager(options: SessionOptions) {
         const newId = generateId();
         const dataCopy = { ...sessionData };
         const newSession = makeSession(newId, dataCopy);
-        // Save new session first, then delete old — no race window
+        // Save new session first, then delete old, no race window
         await newSession.save();
         await store.delete(prefix + id);
         return newSession;
@@ -169,7 +169,7 @@ export function createSessionManager(options: SessionOptions) {
   /**
    * Create a new session.
    *
-   * The session is persisted only once it holds data — call `save()` after
+   * The session is persisted only once it holds data, call `save()` after
    * putting something in it. Creating an empty session writes nothing, so a
    * crawler hitting cookie-less routes cannot fill (and LRU-evict) the store.
    */

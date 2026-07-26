@@ -1,4 +1,4 @@
-// @celsian/adapter-bun — Bun.serve adapter for CelsianJS
+// @celsian/adapter-bun, Bun.serve adapter for CelsianJS
 //
 // Bun.serve uses Web Standard Request/Response natively, so the HTTP side is thin:
 // it wraps app.handle(request). WebSocket upgrades are bridged to the app's WS
@@ -38,7 +38,7 @@ export interface BunAdapterOptions {
 
 /**
  * Bun.serve fetch handler. Returns `undefined` after a successful
- * `server.upgrade()` — Bun requires that, not a synthetic 101 response.
+ * `server.upgrade()`, Bun requires that, not a synthetic 101 response.
  */
 export type BunFetchHandler = (
   request: Request,
@@ -88,7 +88,7 @@ function isWebSocketUpgrade(request: Request): boolean {
 
 /**
  * Create the Bun `websocket` handler that bridges Bun's ServerWebSocket to the
- * app's WS registry. Must be passed to `Bun.serve({ websocket })` — without it
+ * app's WS registry. Must be passed to `Bun.serve({ websocket })`, without it
  * `server.upgrade()` cannot succeed.
  */
 export function createBunWebSocketHandler(app: CelsianApp, options: BunAdapterOptions = {}): BunWebSocketHandler {

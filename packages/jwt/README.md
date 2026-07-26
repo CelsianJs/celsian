@@ -29,7 +29,7 @@ app.addHook('preHandler', createJWTGuard());
 ## Claim verification
 
 Verification is not just a signature check. Configure the claims your API
-actually requires — otherwise any token signed with the same key authenticates,
+actually requires, otherwise any token signed with the same key authenticates,
 including one minted by a different service that happens to share the secret
 (a monolith split or a prod/staging pair reusing one `JWT_SECRET`).
 
@@ -113,7 +113,7 @@ jwt({
 ```
 
 The key set is cached, refreshed on rotation, and selected by the token's `kid`.
-The URL **must** be `https:` — a plaintext or `file:`/other-scheme key source
+The URL **must** be `https:`, a plaintext or `file:`/other-scheme key source
 would let whoever controls that channel choose the key that validates tokens.
 The key set is fetched lazily on first verification, not at registration.
 

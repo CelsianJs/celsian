@@ -10,7 +10,7 @@ This package is part of the [CelsianJS](https://github.com/CelsianJs/celsian) mo
 npm install @celsian/queue-redis
 ```
 
-`ioredis` is included as a dependency — no separate install needed.
+`ioredis` is included as a dependency, no separate install needed.
 
 ## Usage
 
@@ -48,8 +48,8 @@ serve(app, { port: 3000 }); // worker starts here
 
 | Option | Type | Default | Description |
 | ------ | ---- | ------- | ----------- |
-| `url` | `string` | — | Redis connection URL (`redis://...`). Provide this or `client`. |
-| `client` | `Redis` | — | An existing `ioredis` client to reuse instead of `url`. |
+| `url` | `string` |, | Redis connection URL (`redis://...`). Provide this or `client`. |
+| `client` | `Redis` |, | An existing `ioredis` client to reuse instead of `url`. |
 | `prefix` | `string` | `'celsian:queue'` | Key prefix for all queue keys. |
 | `visibilityTimeout` | `number` | `30000` | How long (ms) a popped message stays leased to one worker before it is reclaimed and redelivered. |
 | `maxDeadLetters` | `number` | `10000` | Maximum dead-letter entries retained; the oldest are trimmed away. |

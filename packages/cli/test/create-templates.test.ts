@@ -1,4 +1,4 @@
-// @celsian/cli — `celsian create` template behavior tests
+// @celsian/cli, `celsian create` template behavior tests
 // Validates the shared create-celsian templates against the actual core
 // runtime in this repo (CSRF semantics, schema validation).
 
@@ -7,7 +7,7 @@ import { Type } from "@sinclair/typebox";
 import { templates } from "create-celsian";
 import { describe, expect, it } from "vitest";
 
-describe("celsian create — template registry", () => {
+describe("celsian create, template registry", () => {
   it("exposes all 4 templates (including full)", () => {
     expect(Object.keys(templates).sort()).toEqual(["basic", "full", "rest-api", "rpc-api"]);
   });
@@ -36,7 +36,7 @@ describe("celsian create — template registry", () => {
   });
 });
 
-describe("rest-api template — user creation passes validation", () => {
+describe("rest-api template, user creation passes validation", () => {
   // Recreate the exact schema the template scaffolds (pattern is extracted
   // from the template source, so this fails if the template regresses).
   function templateEmailSchema() {
@@ -83,7 +83,7 @@ describe("rest-api template — user creation passes validation", () => {
   });
 });
 
-describe("full template — CSRF excludes work against core's exact matching", () => {
+describe("full template, CSRF excludes work against core's exact matching", () => {
   function templateExcludePaths(): string[] {
     const security = templates.full["src/plugins/security.ts"];
     const arrayMatch = security.match(/excludePaths: \[([^\]]*)\]/) ?? [];

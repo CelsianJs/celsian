@@ -1,4 +1,4 @@
-// @celsian/core — Task system: define background tasks, enqueue, and process
+// @celsian/core, Task system: define background tasks, enqueue, and process
 
 import { CelsianError } from "./errors.js";
 import type { Logger } from "./logger.js";

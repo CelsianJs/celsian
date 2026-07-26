@@ -1,4 +1,4 @@
-// @celsian/cache — HTTP response caching
+// @celsian/cache, HTTP response caching
 
 import type { KVStore } from "./store.js";
 
@@ -28,7 +28,7 @@ export interface ResponseCacheOptions {
   queryParams?: string[];
   /**
    * Maximum cache key length in characters (default: 512). A longer key
-   * bypasses the cache entirely — it is neither read nor written — so an
+   * bypasses the cache entirely, it is neither read nor written, so an
    * attacker cannot inflate stored key size.
    */
   maxKeyLength?: number;
@@ -82,7 +82,7 @@ const HOST_REWRITE_HEADERS = [
  * A response cache replays a single stored response to many users, so any
  * header carrying a user's identity or credentials would leak to everyone
  * hitting the cache. We deny exactly those headers and preserve everything
- * else — representation headers (`content-type`, `etag`, ...), CORS headers,
+ * else, representation headers (`content-type`, `etag`, ...), CORS headers,
  * and importantly the security headers (`x-content-type-options`,
  * `x-frame-options`, `content-security-policy`, `strict-transport-security`,
  * ...) that `onSend`/security plugins attach and that a cached response must
@@ -366,7 +366,7 @@ export function createResponseCache(options: ResponseCacheOptions) {
 
     /**
      * Execute the origin handler and store the result. Published on `inFlight`
-     * as a WHOLE — including the `store.set` — so a coalescing caller that
+     * as a WHOLE, including the `store.set`, so a coalescing caller that
      * awaits it is guaranteed to see the entry when it re-reads.
      */
     async function executeAndStore(): Promise<Response> {
@@ -426,7 +426,7 @@ export function createResponseCache(options: ResponseCacheOptions) {
     try {
       return await execution;
     } finally {
-      // Only clear our own entry — a later request may already have replaced it.
+      // Only clear our own entry, a later request may already have replaced it.
       if (inFlight.get(cacheKey) === execution) inFlight.delete(cacheKey);
     }
   }

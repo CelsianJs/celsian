@@ -1,4 +1,4 @@
-// @celsian/core — MemoryQueue lease, redelivery and dead-letter semantics
+// @celsian/core, MemoryQueue lease, redelivery and dead-letter semantics
 
 import { describe, expect, it } from "vitest";
 import { MemoryQueue, type QueueMessage } from "../src/queue.js";
@@ -23,7 +23,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 describe("MemoryQueue at-least-once delivery", () => {
   it("redelivers a message whose lease expired without an ack", async () => {
     // Regression: popped messages used to move to inFlight and stay there
-    // forever — nothing reclaimed them, making the DEFAULT backend at-most-once.
+    // forever, nothing reclaimed them, making the DEFAULT backend at-most-once.
     const queue = new MemoryQueue({ visibilityTimeout: 50 });
     await queue.push(makeMessage("lease-1"));
 

@@ -20,7 +20,7 @@ const rpc = new RPCHandler(appRouter);
 rpc.mount(app); // serves /_rpc/* (pass a prefix to mount elsewhere: rpc.mount(app, '/api/rpc'))
 ```
 
-`mount()` registers both `GET` and `POST` wildcard routes — the RPC client uses
+`mount()` registers both `GET` and `POST` wildcard routes, the RPC client uses
 GET for queries and POST for mutations. (Note: `CelsianApp` has no `.all()`
 method.) If you prefer to register the routes yourself:
 
@@ -87,7 +87,7 @@ against `request.url`'s origin, which may not be your public origin.
 `/_rpc/openapi.json` and `/_rpc/manifest.json` list every procedure path
 (including `admin.*` and `internal.*`) with full input/output JSON Schemas. They
 are served before procedure lookup, so per-procedure `middlewares` never applied
-to them. They now default to development-only and `404` otherwise —
+to them. They now default to development-only and `404` otherwise, 
 indistinguishable from an unknown procedure.
 
 ```typescript
@@ -114,7 +114,7 @@ new RPCHandler(appRouter, { logger: app.log });
 ## Wire protocol notes
 
 `decode()` never copies `__proto__`, `constructor`, or `prototype` out of a
-payload, on any path — including `GET ?input=` and standalone `handle()` calls,
+payload, on any path, including `GET ?input=` and standalone `handle()` calls,
 neither of which passes through `@celsian/core`'s body-parser scrub. It also
 caps nesting at 32 levels; deeper payloads become a clean `400 PARSE_ERROR`.
 

@@ -1,4 +1,4 @@
-// @celsian/jwt — claim verification, expiry policy, forgery rejection, asymmetric keys and JWKS
+// @celsian/jwt, claim verification, expiry policy, forgery rejection, asymmetric keys and JWKS
 
 import { createApp } from "@celsian/core";
 import * as jose from "jose";
@@ -255,7 +255,7 @@ describe("JWKS", () => {
 
     const realm = jwt({ jwksUri: "https://idp.example/.well-known/jwks.json", algorithms: ["RS256"] });
 
-    // Signed with the SECOND key — resolution must follow `kid`, not order.
+    // Signed with the SECOND key, resolution must follow `kid`, not order.
     const token = await new jose.SignJWT({ sub: "idp-user" })
       .setProtectedHeader({ alg: "RS256", kid: "key-2" })
       .setIssuedAt()

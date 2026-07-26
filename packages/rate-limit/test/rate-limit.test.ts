@@ -210,7 +210,7 @@ describe("MemoryRateLimitStore", () => {
     expect(r2.count).toBe(3);
 
     // k1 was evicted: incrementing it starts a fresh bucket (count 1).
-    // (This insert itself evicts the then-oldest key — the cap holds at 3.)
+    // (This insert itself evicts the then-oldest key, the cap holds at 3.)
     const r1 = await store.increment("k1", 60_000);
     expect(r1.count).toBe(1);
 
@@ -276,7 +276,7 @@ describe("rate-limit XFF key generation", () => {
     app.get("/api", (_req, reply) => reply.json({ ok: true }));
 
     // With trustedProxyHops=1 (default), the LAST entry is what the single
-    // trusted proxy appended — the real client IP "10.0.0.1".
+    // trusted proxy appended, the real client IP "10.0.0.1".
     const r1 = await app.inject({
       url: "/api",
       headers: { "x-forwarded-for": "spoofed-a, 10.0.0.1" },
@@ -420,7 +420,7 @@ describe("rate-limit XFF key generation", () => {
 
     const statuses: number[] = [];
     for (let i = 0; i < 10; i++) {
-      // No x-forwarded-for / x-real-ip — all requests are unidentified.
+      // No x-forwarded-for / x-real-ip, all requests are unidentified.
       const res = await app.inject({ url: "/api" });
       statuses.push(res.status);
     }

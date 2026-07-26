@@ -1,4 +1,4 @@
-// @celsian/rate-limit — Fixed-window rate limiter with pluggable store
+// @celsian/rate-limit, Fixed-window rate limiter with pluggable store
 
 import type { CelsianReply, CelsianRequest, HookHandler, PluginFunction } from "@celsian/core";
 import { CelsianError } from "@celsian/core";
@@ -22,7 +22,7 @@ export interface RateLimitOptions {
   /**
    * Declare the reverse proxies in front of this app, as IPs or CIDR blocks
    * (e.g. `['10.0.0.0/8', '2001:db8::/32']`). The client IP is then the
-   * rightmost `X-Forwarded-For` entry that is NOT one of these — the standard
+   * rightmost `X-Forwarded-For` entry that is NOT one of these, the standard
    * untrusted-hop algorithm. This is the safe way to key on a proxy header:
    * every value to the left of your own proxies is client-supplied and
    * spoofable, and this is the only option that actually verifies which entries
@@ -70,7 +70,7 @@ export interface RateLimitOptions {
  * Pluggable store for rate limit counters (implement for Redis, etc.).
  *
  * CONTRACT: `increment` MUST be atomic. Concurrent calls for the same key must
- * never lose updates — if N calls run for a key within one window, the final
+ * never lose updates, if N calls run for a key within one window, the final
  * observed count must reach N. The in-process {@link MemoryRateLimitStore}
  * achieves this by doing the read-modify-write synchronously (no `await` gap).
  * A distributed implementation (e.g. Redis) MUST use an atomic primitive such
@@ -90,7 +90,7 @@ interface WindowEntry {
 export interface MemoryRateLimitStoreOptions {
   /**
    * Maximum number of distinct keys held at once. When the cap is reached, an
-   * expired entry — or failing that, the LEAST-established entry — is evicted
+   * expired entry, or failing that, the LEAST-established entry, is evicted
    * to make room. This bounds memory even when an attacker floods the limiter
    * with spoofed keys. Default: 100_000.
    */
@@ -104,7 +104,7 @@ const DEFAULT_MAX_KEY_LENGTH = 256;
 /**
  * Bucket every over-long key here. Hashing would be smaller but two distinct
  * attacker keys could then collide onto a victim; one shared bucket is fail
- * closed — abusive oversized keys throttle each other and nobody else.
+ * closed, abusive oversized keys throttle each other and nobody else.
  */
 const OVERSIZED_KEY = "__oversized__";
 const EVICTION_SCAN_LIMIT = 16;
@@ -177,13 +177,13 @@ export class MemoryRateLimitStore implements RateLimitStore {
 
   /**
    * Evict one entry to make room. Prefer an expired entry; otherwise evict the
-   * LEAST-ESTABLISHED live entry — lowest count, tie-broken by soonest reset.
+   * LEAST-ESTABLISHED live entry, lowest count, tie-broken by soonest reset.
    *
    * Insertion-order eviction was itself the attack: a flood of fresh keys is
    * always "newest", so the victim being throttled was always the one evicted,
    * and their counter reset. Count-ordered eviction discards the flood's own
    * count-1 entries instead, which is exactly what you want to drop. The scan
-   * is bounded so eviction stays O(1) per insert — an unbounded sweep here
+   * is bounded so eviction stays O(1) per insert, an unbounded sweep here
    * would be its own DoS.
    */
   private evictOne(now: number): void {
@@ -240,7 +240,7 @@ function clientIpFromTrustedProxies(req: CelsianRequest, trusted: Cidr[]): strin
     const candidate = entries[i]!;
     if (!isTrustedProxy(candidate, trusted)) return candidate;
   }
-  // Every entry was one of our proxies — there is no client address to key on.
+  // Every entry was one of our proxies, there is no client address to key on.
   return null;
 }
 
@@ -265,7 +265,7 @@ function createDefaultKeyGenerator(options: {
   if (!trustedProxies && !trustProxy) {
     throw new CelsianError(
       "[@celsian/rate-limit] No way to identify clients. Rate limiting needs a key. In order of preference: " +
-        "(1) pass a `keyGenerator` keyed on an authenticated user or API-key id — attacker-controlled headers are not " +
+        "(1) pass a `keyGenerator` keyed on an authenticated user or API-key id, attacker-controlled headers are not " +
         "a trust boundary; (2) declare `trustedProxies: ['10.0.0.0/8', ...]` so the client IP is the rightmost " +
         "X-Forwarded-For entry that is not one of your proxies; (3) as a last resort set `trustProxy: true` with a " +
         "fixed `trustedProxyHops`. Registration fails rather than silently rate limiting nothing.",
@@ -297,7 +297,7 @@ function createDefaultKeyGenerator(options: {
 /**
  * Validate that a numeric option is a positive finite number at registration
  * time. A missing/NaN/non-positive `window` would make every bucket's resetAt
- * NaN — every request would see a "fresh" window and the limiter silently
+ * NaN, every request would see a "fresh" window and the limiter silently
  * fails OPEN. Fail closed instead.
  */
 function assertPositiveNumber(name: string, value: number): void {
@@ -333,7 +333,7 @@ function parseTrustedProxies(values: string[] | undefined): Cidr[] | null {
  * when exceeded.
  *
  * A fixed window resets all at once, so a client can send `max` requests at the
- * end of one window and `max` more at the start of the next — up to 2x `max`
+ * end of one window and `max` more at the start of the next, up to 2x `max`
  * across a window boundary. Size the window accordingly.
  *
  * @example
@@ -396,7 +396,7 @@ export function rateLimit(options: RateLimitOptions): PluginFunction {
       reply.header("x-ratelimit-reset", String(Math.ceil(resetAt / 1000)));
 
       if (count > max) {
-        // Never emit `Retry-After: 0` — a well-behaved client would retry
+        // Never emit `Retry-After: 0`, a well-behaved client would retry
         // immediately, which is the opposite of what a 429 asks for.
         const retryAfter = Math.max(1, Math.ceil((resetAt - Date.now()) / 1000));
         return reply.status(429).header("retry-after", String(retryAfter)).json({

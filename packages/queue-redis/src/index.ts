@@ -1,4 +1,4 @@
-// @celsian/queue-redis — Redis-backed queue for CelsianJS task system
+// @celsian/queue-redis, Redis-backed queue for CelsianJS task system
 
 import type { QueueBackend, QueueMessage } from "@celsian/core";
 import Redis from "ioredis";
@@ -29,7 +29,7 @@ export interface RedisQueueOptions {
   client?: Redis;
   /** Key prefix for all queue keys (default: 'celsian:queue') */
   prefix?: string;
-  /** Visibility timeout in ms — how long a popped message stays in-flight before auto-nack (default: 30000) */
+  /** Visibility timeout in ms, how long a popped message stays in-flight before auto-nack (default: 30000) */
   visibilityTimeout?: number;
   /** Maximum dead-letter entries retained; oldest are trimmed away (default: 10000) */
   maxDeadLetters?: number;
@@ -77,7 +77,7 @@ return entry
  * KEYS[1] = processing list, KEYS[2] = leases hash
  * ARGV[1] = lease prefix (`token|`)
  *
- * Returns the removed entry, or false when this lease no longer owns anything —
+ * Returns the removed entry, or false when this lease no longer owns anything,
  * which is exactly what stops a worker whose lease already expired from acking
  * away the delivery that another worker now owns.
  */
@@ -140,7 +140,7 @@ return 0
  * requires rewriting the message's attempt counter, and that rewrite must
  * happen in JavaScript: Redis' cjson cannot round-trip arbitrary user payloads
  * (an empty array re-encodes as an empty object). A crash mid-reclaim therefore
- * leaves entries parked in staging, and the next reap drains them — no loss.
+ * leaves entries parked in staging, and the next reap drains them, no loss.
  */
 const REAP_SCRIPT = `
 local entries = redis.call('LRANGE', KEYS[1], 0, -1)
@@ -248,12 +248,12 @@ export class RedisQueue implements QueueBackend {
   readonly visibilityTimeoutMs: number;
 
   // Redis key names
-  private pendingKey: string; // LIST — pending messages
-  private processingKey: string; // LIST — in-flight entries, `<leaseToken>|<raw>`
-  private leasesKey: string; // HASH — in-flight entry -> lease expiry (ms)
-  private delayedKey: string; // SORTED SET — delayed messages (score = availableAt)
-  private reclaimKey: string; // LIST — staging area for expired leases
-  private deadKey: string; // LIST — dead-letter entries (newest first)
+  private pendingKey: string; // LIST, pending messages
+  private processingKey: string; // LIST, in-flight entries, `<leaseToken>|<raw>`
+  private leasesKey: string; // HASH, in-flight entry -> lease expiry (ms)
+  private delayedKey: string; // SORTED SET, delayed messages (score = availableAt)
+  private reclaimKey: string; // LIST, staging area for expired leases
+  private deadKey: string; // LIST, dead-letter entries (newest first)
 
   constructor(options: RedisQueueOptions = {}) {
     const onError =
@@ -265,7 +265,7 @@ export class RedisQueue implements QueueBackend {
     if (options.client) {
       this.redis = options.client;
       this.ownsClient = false;
-      // We don't own external clients, so we don't attach our own error handler —
+      // We don't own external clients, so we don't attach our own error handler,
       // the caller is responsible for handling 'error' on a client they created.
     } else {
       this.redis = new Redis(options.url ?? "redis://localhost:6379", {
@@ -300,10 +300,10 @@ export class RedisQueue implements QueueBackend {
     const serialized = JSON.stringify(message);
 
     if (message.availableAt > Date.now()) {
-      // Delayed message — add to sorted set
+      // Delayed message, add to sorted set
       await this.redis.zadd(this.delayedKey, message.availableAt, serialized);
     } else {
-      // Immediately available — push to list
+      // Immediately available, push to list
       await this.redis.lpush(this.pendingKey, serialized);
     }
   }
@@ -455,7 +455,7 @@ export class RedisQueue implements QueueBackend {
         await this.redis.lpush(this.pendingKey, JSON.stringify(resetForRedrive(entry.message)));
         moved++;
       } catch {
-        // Unparseable entry — drop it rather than spinning on it forever.
+        // Unparseable entry, drop it rather than spinning on it forever.
       }
     }
     return moved;

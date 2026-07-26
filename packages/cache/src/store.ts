@@ -1,4 +1,4 @@
-// @celsian/cache — KV Store abstraction
+// @celsian/cache, KV Store abstraction
 
 /**
  * Universal key-value store interface.
@@ -64,7 +64,7 @@ const DEFAULT_MAX_ENTRIES = 10_000;
  * To bound memory use, entries are capped at `maxEntries` (default 10_000) with
  * simple LRU eviction: on overflow the least-recently-used key is evicted.
  * Reads and writes count as "use". Pass `maxEntries: 0` to disable the cap
- * (unbounded — only do this if you control how many keys are written). TTL
+ * (unbounded, only do this if you control how many keys are written). TTL
  * cleanup still runs independently of the LRU cap.
  */
 export class MemoryKVStore implements KVStore {

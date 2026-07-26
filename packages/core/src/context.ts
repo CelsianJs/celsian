@@ -1,4 +1,4 @@
-// @celsian/core — Encapsulation context for plugin isolation
+// @celsian/core, Encapsulation context for plugin isolation
 
 import { assertDecorationUnique, CelsianError } from "./errors.js";
 import { createHookStore, type HookStore } from "./hooks.js";
@@ -22,7 +22,7 @@ import {
 type LocalHooks = Pick<ResolvedScope, "onRequest" | "preHandler" | "preSerialization" | "onSend">;
 
 interface RouteBinding {
-  /** The context the route was registered in — the leaf of its encapsulation chain. */
+  /** The context the route was registered in, the leaf of its encapsulation chain. */
   ctx: EncapsulationContext;
   local: LocalHooks;
   scope: ResolvedScope;
@@ -280,7 +280,7 @@ export class EncapsulationContext {
 
     // Options-object signature support: app.post(url, { schema, handler }).
     // A trailing handler argument takes precedence over opts.handler; registering
-    // a route with no resolvable handler is a programming error — fail fast.
+    // a route with no resolvable handler is a programming error, fail fast.
     const resolveHandler = (
       method: RouteMethod,
       url: string,
@@ -290,7 +290,7 @@ export class EncapsulationContext {
       const resolved = handler ?? opts.handler;
       if (typeof resolved !== "function") {
         throw new CelsianError(
-          `Route ${method} ${url} has no handler. Pass it as the last argument — app.${method.toLowerCase()}(url, opts, handler) — or as opts.handler.`,
+          `Route ${method} ${url} has no handler. Pass it as the last argument, app.${method.toLowerCase()}(url, opts, handler), or as opts.handler.`,
         );
       }
       return resolved as RouteHandler;
@@ -384,7 +384,7 @@ export class EncapsulationContext {
           (ctx.hooks[name] as HookHandler[]).push(handler as HookHandler);
         }
         // Hooks are resolved per route from the context chain, so a hook added
-        // after a route was registered still applies to it — and a hook added in
+        // after a route was registered still applies to it, and a hook added in
         // an encapsulated plugin applies only to that plugin's routes.
         ctx.scopes.invalidate();
       },

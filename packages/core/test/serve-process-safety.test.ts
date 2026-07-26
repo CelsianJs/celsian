@@ -1,4 +1,4 @@
-// @celsian/core — serve() process-level behaviour
+// @celsian/core, serve() process-level behaviour
 //
 // Covers:
 //  - the startup line was logged twice (app.log.info + a bare console.log), which

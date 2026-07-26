@@ -1,4 +1,4 @@
-// @celsian/cache — host keying, poisoning vectors, stampede protection, store & session integrity
+// @celsian/cache, host keying, poisoning vectors, stampede protection, store & session integrity
 
 import { describe, expect, it, vi } from "vitest";
 import { createResponseCache } from "../src/response-cache.js";

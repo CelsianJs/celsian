@@ -1,4 +1,4 @@
-// @celsian/schema — Standard Schema interface
+// @celsian/schema, Standard Schema interface
 
 export interface SchemaResult<T = unknown> {
   success: boolean;
@@ -15,7 +15,7 @@ export interface SchemaIssue {
  * Celsian's internal schema-adapter interface.
  *
  * NOTE: despite the name, this is a homegrown interface local to
- * `@celsian/schema` — it is NOT the `@standard-schema/spec` standard (which
+ * `@celsian/schema`, it is NOT the `@standard-schema/spec` standard (which
  * uses a `~standard` property). Zod, TypeBox, and Valibot schemas are adapted
  * *into* this shape by {@link fromSchema}; libraries implementing the real
  * spec are detected via their `~standard` property, not by this type.
@@ -35,10 +35,10 @@ export interface StandardSchema<Input = unknown, Output = Input> {
  * Infer the output type from a schema.
  *
  * Supported carriers, in order:
- * - {@link StandardSchema} (our adapters) — `_output`
- * - Zod v3 — `_output`
- * - legacy TypeBox / misc — `_type`
- * - TypeBox (0.30+, incl. 0.34) — `static`
+ * - {@link StandardSchema} (our adapters), `_output`
+ * - Zod v3, `_output`
+ * - legacy TypeBox / misc, `_type`
+ * - TypeBox (0.30+, incl. 0.34), `static`
  *
  * The `static` branch matters because TypeBox is the schema library the default
  * `create-celsian` template installs: without it, every TypeBox-typed route and

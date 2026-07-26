@@ -1,4 +1,4 @@
-// @celsian/core — WebSocket support (handler registry + upgrade authorization)
+// @celsian/core, WebSocket support (handler registry + upgrade authorization)
 
 import { runHooks } from "./hooks.js";
 import { createReply } from "./reply.js";
@@ -110,14 +110,14 @@ export class WSRegistry {
 
 /**
  * Origin allow-list for WebSocket upgrades. Accepts a single origin, a list of
- * origins, the literal `"*"` (any origin — opt in deliberately), or a predicate.
+ * origins, the literal `"*"` (any origin, opt in deliberately), or a predicate.
  */
 export type WSAllowedOrigins = string | string[] | ((origin: string, request: Request) => boolean | Promise<boolean>);
 
 /** Configuration for the WebSocket upgrade gate. */
 export interface WSUpgradeGuardOptions {
   /**
-   * Origins permitted to open a WebSocket. Default: same-origin only — the
+   * Origins permitted to open a WebSocket. Default: same-origin only, the
    * `Origin` header's origin must match the request's own `Host`.
    */
   allowedOrigins?: WSAllowedOrigins;
@@ -125,7 +125,7 @@ export interface WSUpgradeGuardOptions {
    * Permit handshakes that send no `Origin` header at all (non-browser clients:
    * CLIs, service-to-service, load tests). Default: `false`. Browsers always
    * send `Origin` on a WebSocket handshake, so allowing it back in also
-   * re-opens the hole to anything that can forge a socket — opt in knowingly.
+   * re-opens the hole to anything that can forge a socket, opt in knowingly.
    */
   allowMissingOrigin?: boolean;
   /** Legacy per-upgrade authentication callback. Runs after the Origin check. */
@@ -171,7 +171,7 @@ export async function checkWSOrigin(request: Request, options: WSUpgradeGuardOpt
   const origin = normalizeOrigin(rawOrigin);
   const allowed = options.allowedOrigins;
 
-  // Predicate form — the caller owns the decision.
+  // Predicate form, the caller owns the decision.
   if (typeof allowed === "function") {
     const ok = await allowed(rawOrigin, request);
     return ok ? UPGRADE_OK : { allowed: false, status: 403, reason: `Origin ${rawOrigin} rejected by allowedOrigins` };

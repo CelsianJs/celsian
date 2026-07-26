@@ -417,7 +417,10 @@ describe("Reply helpers depth", () => {
     app.get("/bad", (_req, reply) => reply.redirect("//evil.com"));
 
     const res = await app.inject({ url: "/bad" });
-    expect(res.status).toBe(500);
+    // 400, not 500: attacker-supplied input is a client error, and the redirect
+    // must never be emitted.
+    expect(res.status).toBe(400);
+    expect(res.headers.get("location")).toBeNull();
   });
 
   it("reply.html() should set correct content-type", async () => {
