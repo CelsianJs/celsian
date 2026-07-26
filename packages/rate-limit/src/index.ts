@@ -2,29 +2,68 @@
 
 import type { CelsianReply, CelsianRequest, HookHandler, PluginFunction } from "@celsian/core";
 import { CelsianError } from "@celsian/core";
+import { type Cidr, isTrustedProxy, parseCidr } from "./ip.js";
+
+export type { Cidr, ParsedIp } from "./ip.js";
+export { ipInCidr, isTrustedProxy, parseCidr, parseIp } from "./ip.js";
+export { createRedisRateLimitStore, type RedisRateLimitClient, type RedisRateLimitStoreOptions } from "./redis.js";
 
 /** Options for the rate limiter: max requests, window size, key generation, and store. */
 export interface RateLimitOptions {
   max: number;
   window: number;
+  /**
+   * How to bucket requests. THE RECOMMENDED CHOICE: key on an authenticated
+   * user / API key id, which is not attacker-controlled. Proxy-header keying is
+   * only as trustworthy as the trust boundary you declare below.
+   */
   keyGenerator?: (req: CelsianRequest) => string;
   store?: RateLimitStore;
-  /** Trust X-Forwarded-For / X-Real-IP headers. Default: false */
+  /**
+   * Declare the reverse proxies in front of this app, as IPs or CIDR blocks
+   * (e.g. `['10.0.0.0/8', '2001:db8::/32']`). The client IP is then the
+   * rightmost `X-Forwarded-For` entry that is NOT one of these — the standard
+   * untrusted-hop algorithm. This is the safe way to key on a proxy header:
+   * every value to the left of your own proxies is client-supplied and
+   * spoofable, and this is the only option that actually verifies which entries
+   * your infrastructure appended.
+   */
+  trustedProxies?: string[];
+  /**
+   * ADVANCED / legacy hop-count mode. Trust `X-Forwarded-For` and take the IP
+   * `trustedProxyHops` entries from the right, without verifying that a trusted
+   * proxy appended it. Correct only when the hop count is fixed and every
+   * request genuinely traverses your proxies. Prefer `trustedProxies`, or a
+   * `keyGenerator` keyed on an authenticated identity. Default: false.
+   */
   trustProxy?: boolean;
   /**
-   * Number of trusted reverse proxies between the client and this app. Used to
-   * pick the client IP from X-Forwarded-For: the IP is taken this many entries
-   * from the RIGHT, because trusted proxies append the address they saw on the
-   * right while everything further left is client-supplied (spoofable).
-   * Default: 1 (one trusted proxy — e.g. a single nginx / load balancer).
+   * Number of trusted reverse proxies between the client and this app, used by
+   * the `trustProxy` hop-count mode. The IP is taken this many entries from the
+   * RIGHT, because trusted proxies append the address they saw on the right
+   * while everything further left is client-supplied (spoofable). Default: 1.
    */
   trustedProxyHops?: number;
+  /**
+   * Consult `X-Real-IP` when `X-Forwarded-For` yields no client address.
+   * Default: FALSE. This header is a single unhopped value that the client
+   * fully controls unless a proxy overwrites it, so as a silent fallback it
+   * both let an attacker mint a fresh bucket per request AND let them burn a
+   * victim's bucket by setting it to the victim's IP (targeted lockout, e.g.
+   * on `/login`). Enable it only when a proxy you control always overwrites it.
+   */
+  trustXRealIp?: boolean;
   /**
    * Maximum number of distinct keys held by the default in-memory store before
    * eviction kicks in (guards against memory exhaustion from spoofed-key
    * floods). Ignored when a custom `store` is provided. Default: 100_000.
    */
   maxKeys?: number;
+  /**
+   * Maximum key length in characters. Longer keys are collapsed into one shared
+   * oversized bucket rather than stored verbatim. Default: 256.
+   */
+  maxKeyLength?: number;
 }
 
 /**
@@ -51,20 +90,32 @@ interface WindowEntry {
 export interface MemoryRateLimitStoreOptions {
   /**
    * Maximum number of distinct keys held at once. When the cap is reached, an
-   * expired (or failing that, the oldest) entry is evicted to make room. This
-   * bounds memory even when an attacker floods the limiter with spoofed keys.
-   * Default: 100_000.
+   * expired entry — or failing that, the LEAST-established entry — is evicted
+   * to make room. This bounds memory even when an attacker floods the limiter
+   * with spoofed keys. Default: 100_000.
    */
   maxKeys?: number;
+  /** Called (once per store) the first time the key cap forces an eviction. */
+  onCapReached?: (maxKeys: number) => void;
 }
 
 const DEFAULT_MAX_KEYS = 100_000;
+const DEFAULT_MAX_KEY_LENGTH = 256;
+/**
+ * Bucket every over-long key here. Hashing would be smaller but two distinct
+ * attacker keys could then collide onto a victim; one shared bucket is fail
+ * closed — abusive oversized keys throttle each other and nobody else.
+ */
+const OVERSIZED_KEY = "__oversized__";
+const EVICTION_SCAN_LIMIT = 16;
 
 /** In-memory fixed-window store with periodic cleanup and a max-keys cap. Single-process only. */
 export class MemoryRateLimitStore implements RateLimitStore {
   private entries = new Map<string, WindowEntry>();
   private cleanupTimer: ReturnType<typeof setInterval> | null = null;
   private readonly maxKeys: number;
+  private readonly onCapReached: ((maxKeys: number) => void) | undefined;
+  private capWarned = false;
 
   constructor(options?: MemoryRateLimitStoreOptions) {
     const maxKeys = options?.maxKeys ?? DEFAULT_MAX_KEYS;
@@ -72,6 +123,7 @@ export class MemoryRateLimitStore implements RateLimitStore {
       throw new CelsianError(`[@celsian/rate-limit] \`maxKeys\` must be a positive number, got ${String(maxKeys)}.`);
     }
     this.maxKeys = Math.floor(maxKeys);
+    this.onCapReached = options?.onCapReached;
     this.cleanupTimer = setInterval(() => {
       const now = Date.now();
       for (const [key, entry] of this.entries) {
@@ -103,37 +155,59 @@ export class MemoryRateLimitStore implements RateLimitStore {
     // grow the map without bound and exhaust memory.
     if (!existing && this.entries.size >= this.maxKeys) {
       this.evictOne(now);
+      if (!this.capWarned) {
+        this.capWarned = true;
+        (
+          this.onCapReached ??
+          ((cap: number) =>
+            console.warn(
+              `[@celsian/rate-limit] The in-memory store hit its ${cap}-key cap and is now evicting entries. ` +
+                "This usually means the limiter is keyed on an attacker-controlled value. Key on an " +
+                "authenticated user id via `keyGenerator`, or declare `trustedProxies`.",
+            ))
+        )(this.maxKeys);
+      }
     }
 
-    const entry: WindowEntry = {
-      count: 1,
-      resetAt: now + window,
-    };
-    // delete-then-set moves refreshed keys to the end of the Map's insertion
-    // order, so iteration order approximates "oldest window first" for eviction.
+    const entry: WindowEntry = { count: 1, resetAt: now + window };
     this.entries.delete(key);
     this.entries.set(key, entry);
     return Promise.resolve({ count: 1, resetAt: entry.resetAt });
   }
 
   /**
-   * Evict one entry to make room: prefer an expired entry from the oldest few,
-   * otherwise evict the oldest-inserted entry outright. The scan is bounded so
-   * eviction stays O(1) per insert even while an attacker floods fresh keys —
-   * an unbounded "find any expired entry" sweep here would be its own DoS.
+   * Evict one entry to make room. Prefer an expired entry; otherwise evict the
+   * LEAST-ESTABLISHED live entry — lowest count, tie-broken by soonest reset.
+   *
+   * Insertion-order eviction was itself the attack: a flood of fresh keys is
+   * always "newest", so the victim being throttled was always the one evicted,
+   * and their counter reset. Count-ordered eviction discards the flood's own
+   * count-1 entries instead, which is exactly what you want to drop. The scan
+   * is bounded so eviction stays O(1) per insert — an unbounded sweep here
+   * would be its own DoS.
    */
   private evictOne(now: number): void {
     let scanned = 0;
-    let oldest: string | undefined;
+    let weakest: string | undefined;
+    let weakestEntry: WindowEntry | undefined;
+
     for (const [key, entry] of this.entries) {
-      if (oldest === undefined) oldest = key;
       if (entry.resetAt <= now) {
         this.entries.delete(key);
         return;
       }
-      if (++scanned >= 8) break;
+      if (
+        weakestEntry === undefined ||
+        entry.count < weakestEntry.count ||
+        (entry.count === weakestEntry.count && entry.resetAt < weakestEntry.resetAt)
+      ) {
+        weakest = key;
+        weakestEntry = entry;
+      }
+      if (++scanned >= EVICTION_SCAN_LIMIT) break;
     }
-    if (oldest !== undefined) this.entries.delete(oldest);
+
+    if (weakest !== undefined) this.entries.delete(weakest);
   }
 
   destroy(): void {
@@ -144,47 +218,87 @@ export class MemoryRateLimitStore implements RateLimitStore {
   }
 }
 
-function createDefaultKeyGenerator(trustProxy: boolean, trustedProxyHops: number): (req: CelsianRequest) => string {
-  if (trustProxy) {
-    return (req: CelsianRequest): string => {
-      const xff = req.headers.get("x-forwarded-for");
-      if (xff) {
-        // X-Forwarded-For is attacker-controlled EXCEPT for the entries your
-        // own trusted proxies append — and proxies append the address they saw
-        // on the RIGHT. So the real client IP (as seen by the first trusted
-        // proxy) sits `trustedProxyHops` entries from the right. The leftmost
-        // value is whatever the client put in the header it sent — keying on
-        // it lets an attacker rotate a fake IP per request and fully bypass
-        // rate limiting (while flooding the store with unique keys).
-        // We never fall back to index 0 unless `trustedProxyHops` covers the
-        // entire list (i.e. every entry was appended by a trusted proxy).
-        const entries = xff
-          .split(",")
-          .map((part) => part.trim())
-          .filter(Boolean);
-        const clientIp = entries[Math.max(0, entries.length - trustedProxyHops)];
-        if (clientIp) return clientIp;
-      }
-      // Fail closed: when we cannot identify the client (no XFF / X-Real-IP),
-      // bucket all such requests under one shared constant key so they share a
-      // single limit. A per-request unique value (e.g. a timestamp) would give
-      // every unidentified request its own counter, silently disabling the
-      // limiter for anonymous traffic.
-      return req.headers.get("x-real-ip") ?? "anonymous";
-    };
+/** Shared bucket for requests whose client cannot be identified. */
+const ANONYMOUS_KEY = "anonymous";
+
+function splitForwardedFor(value: string): string[] {
+  return value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Client IP from the rightmost X-Forwarded-For entry that is NOT one of our own
+ * proxies. Everything to the left of the first untrusted hop is client-supplied.
+ */
+function clientIpFromTrustedProxies(req: CelsianRequest, trusted: Cidr[]): string | null {
+  const xff = req.headers.get("x-forwarded-for");
+  if (!xff) return null;
+  const entries = splitForwardedFor(xff);
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const candidate = entries[i]!;
+    if (!isTrustedProxy(candidate, trusted)) return candidate;
   }
-  throw new CelsianError(
-    "[@celsian/rate-limit] trustProxy is false and no custom keyGenerator was provided. " +
-      "Rate limiting cannot identify clients without a key. " +
-      "Set trustProxy:true (behind a reverse proxy) or provide a custom keyGenerator.",
-  );
+  // Every entry was one of our proxies — there is no client address to key on.
+  return null;
+}
+
+function clientIpFromHopCount(req: CelsianRequest, hops: number): string | null {
+  const xff = req.headers.get("x-forwarded-for");
+  if (!xff) return null;
+  const entries = splitForwardedFor(xff);
+  // Trusted proxies append the address they saw on the RIGHT, so the real
+  // client IP sits `hops` entries from the right. Keying on the LEFTMOST value
+  // lets an attacker rotate a fake IP per request and fully bypass the limiter.
+  return entries[Math.max(0, entries.length - hops)] ?? null;
+}
+
+function createDefaultKeyGenerator(options: {
+  trustedProxies: Cidr[] | null;
+  trustProxy: boolean;
+  trustedProxyHops: number;
+  trustXRealIp: boolean;
+}): (req: CelsianRequest) => string {
+  const { trustedProxies, trustProxy, trustedProxyHops, trustXRealIp } = options;
+
+  if (!trustedProxies && !trustProxy) {
+    throw new CelsianError(
+      "[@celsian/rate-limit] No way to identify clients. Rate limiting needs a key. In order of preference: " +
+        "(1) pass a `keyGenerator` keyed on an authenticated user or API-key id — attacker-controlled headers are not " +
+        "a trust boundary; (2) declare `trustedProxies: ['10.0.0.0/8', ...]` so the client IP is the rightmost " +
+        "X-Forwarded-For entry that is not one of your proxies; (3) as a last resort set `trustProxy: true` with a " +
+        "fixed `trustedProxyHops`. Registration fails rather than silently rate limiting nothing.",
+    );
+  }
+
+  return (req: CelsianRequest): string => {
+    const fromXff = trustedProxies
+      ? clientIpFromTrustedProxies(req, trustedProxies)
+      : clientIpFromHopCount(req, trustedProxyHops);
+    if (fromXff) return fromXff;
+
+    // X-Real-IP is a single unhopped value. Consulting it silently handed the
+    // client control of its own bucket key (and of a victim's). Only when the
+    // deployment explicitly declares a proxy overwrites it.
+    if (trustXRealIp) {
+      const realIp = req.headers.get("x-real-ip");
+      if (realIp) return realIp.trim();
+    }
+
+    // Fail closed: when we cannot identify the client, bucket all such requests
+    // under one shared key so they share a single limit. A per-request unique
+    // value would give every unidentified request its own counter, silently
+    // disabling the limiter for anonymous traffic.
+    return ANONYMOUS_KEY;
+  };
 }
 
 /**
  * Validate that a numeric option is a positive finite number at registration
  * time. A missing/NaN/non-positive `window` would make every bucket's resetAt
  * NaN — every request would see a "fresh" window and the limiter silently
- * fails OPEN. Fail closed instead (same philosophy as the trustProxy guard).
+ * fails OPEN. Fail closed instead.
  */
 function assertPositiveNumber(name: string, value: number): void {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
@@ -195,14 +309,44 @@ function assertPositiveNumber(name: string, value: number): void {
   }
 }
 
+function parseTrustedProxies(values: string[] | undefined): Cidr[] | null {
+  if (values === undefined) return null;
+  if (!Array.isArray(values) || values.length === 0) {
+    throw new CelsianError(
+      "[@celsian/rate-limit] `trustedProxies` must be a non-empty array of IPs or CIDR blocks. " +
+        "An empty list declares no trust boundary, which would key on a fully client-controlled value.",
+    );
+  }
+  return values.map((value) => {
+    const cidr = parseCidr(value);
+    if (!cidr) {
+      throw new CelsianError(
+        `[@celsian/rate-limit] \`trustedProxies\` entry is not a valid IP or CIDR block: ${String(value)}`,
+      );
+    }
+    return cidr;
+  });
+}
+
 /**
- * Fixed-window rate limiter plugin. Adds `x-ratelimit-*` headers and returns 429 when exceeded.
+ * FIXED-WINDOW rate limiter plugin. Adds `x-ratelimit-*` headers and returns 429
+ * when exceeded.
+ *
+ * A fixed window resets all at once, so a client can send `max` requests at the
+ * end of one window and `max` more at the start of the next — up to 2x `max`
+ * across a window boundary. Size the window accordingly.
  *
  * @example
  * ```ts
- * // `trustProxy: true` (or a custom keyGenerator) is required so the limiter
- * // knows how to identify clients behind a proxy — it throws otherwise.
- * await app.register(rateLimit({ max: 100, window: 60_000, trustProxy: true }));
+ * // Best: key on an authenticated identity, which the client cannot forge.
+ * await app.register(rateLimit({
+ *   max: 100,
+ *   window: 60_000,
+ *   keyGenerator: (req) => req.user?.sub ?? 'anonymous',
+ * }));
+ *
+ * // Behind your own proxies: declare them, and the client IP is verified.
+ * await app.register(rateLimit({ max: 100, window: 60_000, trustedProxies: ['10.0.0.0/8'] }));
  * ```
  */
 export function rateLimit(options: RateLimitOptions): PluginFunction {
@@ -210,6 +354,8 @@ export function rateLimit(options: RateLimitOptions): PluginFunction {
   const window = options.window;
   assertPositiveNumber("max", max);
   assertPositiveNumber("window", window);
+
+  const trustedProxies = parseTrustedProxies(options.trustedProxies);
   const trustProxy = options.trustProxy ?? false;
   const trustedProxyHops = options.trustedProxyHops ?? 1;
   if (!Number.isInteger(trustedProxyHops) || trustedProxyHops < 1) {
@@ -217,12 +363,32 @@ export function rateLimit(options: RateLimitOptions): PluginFunction {
       `[@celsian/rate-limit] \`trustedProxyHops\` must be an integer >= 1, got ${String(trustedProxyHops)}.`,
     );
   }
-  const keyGenerator = options.keyGenerator ?? createDefaultKeyGenerator(trustProxy, trustedProxyHops);
+
+  const maxKeyLength = options.maxKeyLength ?? DEFAULT_MAX_KEY_LENGTH;
+  if (!Number.isInteger(maxKeyLength) || maxKeyLength < 1) {
+    throw new CelsianError(
+      `[@celsian/rate-limit] \`maxKeyLength\` must be an integer >= 1, got ${String(maxKeyLength)}.`,
+    );
+  }
+
+  const keyGenerator =
+    options.keyGenerator ??
+    createDefaultKeyGenerator({
+      trustedProxies,
+      trustProxy,
+      trustedProxyHops,
+      trustXRealIp: options.trustXRealIp ?? false,
+    });
   const store = options.store ?? new MemoryRateLimitStore({ maxKeys: options.maxKeys });
 
   return function rateLimitPlugin(app) {
     const hook: HookHandler<void | Response> = async (request: CelsianRequest, reply: CelsianReply) => {
-      const key = keyGenerator(request);
+      const rawKey = keyGenerator(request);
+      // Keys derived from headers are attacker-controlled AND unbounded in
+      // length: a 20 KB X-Real-IP stored verbatim against a 100k-key cap is
+      // gigabytes of retained memory per window.
+      const key = rawKey.length > maxKeyLength ? OVERSIZED_KEY : rawKey;
+
       const { count, resetAt } = await store.increment(key, window);
 
       reply.header("x-ratelimit-limit", String(max));
@@ -230,7 +396,9 @@ export function rateLimit(options: RateLimitOptions): PluginFunction {
       reply.header("x-ratelimit-reset", String(Math.ceil(resetAt / 1000)));
 
       if (count > max) {
-        const retryAfter = Math.ceil((resetAt - Date.now()) / 1000);
+        // Never emit `Retry-After: 0` — a well-behaved client would retry
+        // immediately, which is the opposite of what a 429 asks for.
+        const retryAfter = Math.max(1, Math.ceil((resetAt - Date.now()) / 1000));
         return reply.status(429).header("retry-after", String(retryAfter)).json({
           error: "Too Many Requests",
           statusCode: 429,

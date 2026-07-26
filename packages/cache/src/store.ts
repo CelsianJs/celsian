@@ -32,10 +32,18 @@ export interface KVStore {
   /** Set multiple values at once. */
   setMany<T = unknown>(entries: Array<{ key: string; value: T; ttlMs?: number }>): Promise<void>;
 
-  /** Increment a numeric value. Returns the new value. */
+  /**
+   * Increment a numeric value. Returns the new value.
+   *
+   * ATOMICITY: implementations MUST perform the read-modify-write without an
+   * interleaving point, so concurrent increments cannot lose updates. The
+   * in-process {@link MemoryKVStore} does the whole operation synchronously; a
+   * distributed implementation must use a native primitive (Redis `INCRBY`),
+   * never a GET followed by a SET.
+   */
   incr(key: string, by?: number): Promise<number>;
 
-  /** Decrement a numeric value. Returns the new value. */
+  /** Decrement a numeric value. Returns the new value. See {@link KVStore.incr} for the atomicity contract. */
   decr(key: string, by?: number): Promise<number>;
 }
 
@@ -165,15 +173,26 @@ export class MemoryKVStore implements KVStore {
     }
   }
 
-  async incr(key: string, by = 1): Promise<number> {
-    const current = await this.get<number>(key);
-    const newValue = (current ?? 0) + by;
+  incr(key: string, by = 1): Promise<number> {
+    // The entire read-modify-write runs SYNCHRONOUSLY: there is no `await`
+    // between reading the entry and writing the new value, so concurrent
+    // increments cannot interleave and lose updates. The previous version had
+    // two await boundaries inside the critical section while being documented
+    // as an increment primitive. Do NOT introduce an `await` here.
     const entry = this.store.get(key);
-    await this.set(key, newValue, entry?.expiresAt ? entry.expiresAt - Date.now() : undefined);
-    return newValue;
+    const live = entry && !this.isExpired(entry) ? entry : undefined;
+    if (entry && !live) this.store.delete(key);
+
+    const current = typeof live?.value === "number" ? live.value : 0;
+    const newValue = current + by;
+
+    this.store.delete(key);
+    this.store.set(key, { value: newValue, expiresAt: live?.expiresAt ?? null });
+    this.evictIfNeeded();
+    return Promise.resolve(newValue);
   }
 
-  async decr(key: string, by = 1): Promise<number> {
+  decr(key: string, by = 1): Promise<number> {
     return this.incr(key, -by);
   }
 

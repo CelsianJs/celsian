@@ -150,6 +150,15 @@ export function createSessionManager(options: SessionOptions) {
         return newSession;
       },
       async save() {
+        // An EMPTY session is not persisted. Writing one per cookie-less
+        // request gave every crawler hit a 24h entry, so ~10k anonymous
+        // requests LRU-evicted every real logged-in session. An empty session
+        // also carries nothing worth restoring, so a save that empties it
+        // removes the entry rather than storing `{}`.
+        if (Object.keys(sessionData).length === 0) {
+          await store.delete(prefix + id);
+          return;
+        }
         await store.set(prefix + id, sessionData, ttlMs);
       },
     };
@@ -159,11 +168,17 @@ export function createSessionManager(options: SessionOptions) {
 
   /**
    * Create a new session.
+   *
+   * The session is persisted only once it holds data — call `save()` after
+   * putting something in it. Creating an empty session writes nothing, so a
+   * crawler hitting cookie-less routes cannot fill (and LRU-evict) the store.
    */
   async function create(initialData?: SessionData): Promise<Session> {
     const id = generateId();
     const session = makeSession(id, initialData ?? {});
-    await session.save();
+    if (initialData && Object.keys(initialData).length > 0) {
+      await session.save();
+    }
     return session;
   }
 
@@ -230,13 +245,27 @@ export function createSessionManager(options: SessionOptions) {
 
 /**
  * Parse a cookie header to get a specific cookie value.
+ *
+ * The value is percent-DECODED to mirror {@link encodeCookieValue}, which
+ * percent-encodes ids containing characters outside the RFC 6265 cookie-octet
+ * set. Without decoding, a custom `generateId` producing such an id round-tripped
+ * to a different string on every request, so `fromRequest` silently minted a
+ * fresh empty session each time and the user was never logged in.
  */
 function parseCookie(header: string, name: string): string | null {
   const cookies = header.split(";");
   for (const cookie of cookies) {
     const [key, ...rest] = cookie.trim().split("=");
     if (key === name) {
-      return rest.join("="); // Handle values with = in them
+      const raw = rest.join("="); // Handle values with = in them
+      try {
+        return decodeURIComponent(raw);
+      } catch {
+        // Malformed percent sequence (e.g. a literal `%` in an id we never
+        // encoded). Fall back to the raw value rather than throwing on a
+        // client-supplied header.
+        return raw;
+      }
     }
   }
   return null;
