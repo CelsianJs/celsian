@@ -14,8 +14,24 @@ export interface ResponseCacheOptions {
   store: KVStore;
   /** Default TTL in milliseconds (default: 60_000) */
   ttlMs?: number;
-  /** Cache key generator. Default: `${method}:${pathname}` */
+  /** Cache key generator. Default: `${method}:${host}:${pathname}${normalizedQuery}` */
   keyGenerator?: (request: Request) => string;
+  /**
+   * Allow-list of query parameters that participate in the default cache key.
+   * Everything else is dropped.
+   *
+   * Without this, an unauthenticated flood of `?cachebust=1`, `?cachebust=2`,
+   * ... mints an unbounded number of distinct keys and evicts the entries you
+   * actually wanted cached. Set this to the parameters your handler reads.
+   * Ignored when a custom `keyGenerator` is supplied.
+   */
+  queryParams?: string[];
+  /**
+   * Maximum cache key length in characters (default: 512). A longer key
+   * bypasses the cache entirely — it is neither read nor written — so an
+   * attacker cannot inflate stored key size.
+   */
+  maxKeyLength?: number;
   /** Which HTTP methods to cache (default: ['GET', 'HEAD']) */
   methods?: string[];
   /** Which status codes to cache (default: [200]) */
@@ -35,7 +51,30 @@ const DEFAULT_OPTIONS = {
   methods: ["GET", "HEAD"],
   statusCodes: [200],
   prefix: "rc:",
+  maxKeyLength: 512,
 };
+
+/**
+ * Request headers that rewrite the host/scheme a handler believes it is serving.
+ *
+ * These are the canonical web-cache-poisoning vectors: a handler that builds an
+ * absolute URL from `X-Forwarded-Host` reflects an attacker-chosen host into the
+ * response, and a single unauthenticated request then serves
+ * `<script src="https://evil.example/app.js">` to every anonymous visitor for
+ * the whole TTL. They are partitioned EAGERLY (like `origin`) because the
+ * response that would tell us to vary on them is not available at lookup time.
+ *
+ * This list is not exhaustive. Any request header your handler reflects into a
+ * response MUST be listed in `varyHeaders`.
+ */
+const HOST_REWRITE_HEADERS = [
+  "x-forwarded-host",
+  "x-forwarded-proto",
+  "x-forwarded-server",
+  "x-host",
+  "x-original-url",
+  "x-rewrite-url",
+];
 
 /**
  * Denylist of per-user / credential-bearing headers that MUST NOT be cached.
@@ -153,15 +192,40 @@ export function createResponseCache(options: ResponseCacheOptions) {
   const exclude = options.exclude ?? [];
   const prefix = options.prefix ?? DEFAULT_OPTIONS.prefix;
   const varyHeaders = options.varyHeaders ?? [];
-  const representedVaryHeaders = new Set(["origin", ...varyHeaders.map((header) => header.toLowerCase())]);
+  // `origin` stays first so `invalidate()`'s `|origin=` prefix match still works.
+  const representedVaryHeaders = new Set([
+    "origin",
+    ...HOST_REWRITE_HEADERS,
+    ...varyHeaders.map((header) => header.toLowerCase()),
+  ]);
   const credentialHeaders = new Set(
     [...DEFAULT_CREDENTIAL_HEADERS, ...(options.credentialHeaders ?? [])].map((header) => header.toLowerCase()),
   );
+  const queryParams = options.queryParams ? new Set(options.queryParams) : null;
+  const maxKeyLength = options.maxKeyLength ?? DEFAULT_OPTIONS.maxKeyLength;
   const keyGenerator = options.keyGenerator ?? defaultKeyGenerator;
+  /** In-flight origin executions, keyed by cache key (stampede protection). */
+  const inFlight = new Map<string, Promise<unknown>>();
+
+  /**
+   * Sort (and optionally filter) the query string so `?b=1&a=2` and `?a=2&b=1`
+   * share one entry instead of two, and so unknown cache-busting parameters can
+   * be dropped entirely.
+   */
+  function normalizeSearch(url: URL): string {
+    const params = [...url.searchParams.entries()].filter(([name]) => !queryParams || queryParams.has(name));
+    if (params.length === 0) return "";
+    params.sort((a, b) => (a[0] === b[0] ? (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0) : a[0] < b[0] ? -1 : 1));
+    return `?${params.map(([name, value]) => `${encodeURIComponent(name)}=${encodeURIComponent(value)}`).join("&")}`;
+  }
 
   function defaultKeyGenerator(request: Request): string {
     const url = new URL(request.url);
-    return `${request.method}:${url.pathname}${url.search}`;
+    // The HOST is part of the key. One process serving several domains shares a
+    // single store, so keying on the path alone served tenant-a's body to
+    // tenant-b. This invalidates pre-upgrade entries, which is correct for a
+    // safety boundary (same rationale as the `|origin=` partition below).
+    return `${request.method}:${url.host}:${url.pathname}${normalizeSearch(url)}`;
   }
 
   function cacheKeyForRequest(request: Request): string {
@@ -259,6 +323,18 @@ export function createResponseCache(options: ResponseCacheOptions) {
     }
 
     const cacheKey = cacheKeyForRequest(request);
+    // An over-long key is neither read nor written, so a caller cannot inflate
+    // the size of what the store retains.
+    if (cacheKey.length > maxKeyLength) {
+      return handler();
+    }
+
+    /** Replay a stored entry, or undefined when it must not be replayed. */
+    const replay = (entry: CachedResponse): Response =>
+      new Response(method === "HEAD" ? null : entry.body, {
+        status: entry.status,
+        headers: { ...entry.headers, "x-cache": "HIT" },
+      });
 
     // Check cache
     const cached = bypassRead ? undefined : await store.get<CachedResponse>(cacheKey);
@@ -268,64 +344,91 @@ export function createResponseCache(options: ResponseCacheOptions) {
       if (!canReplaySharedResponse(cached)) {
         await store.delete(cacheKey);
       } else {
-        const headers = { ...cached.headers, "x-cache": "HIT" };
-        return new Response(method === "HEAD" ? null : cached.body, {
-          status: cached.status,
-          headers,
-        });
+        return replay(cached);
       }
     }
 
-    // Execute handler
-    const response = await handler();
-
-    // Only cache successful responses
-    if (!statusCodes.includes(response.status)) {
-      return response;
-    }
-
-    // Respect response-side shared-cache prohibitions before cloning the body.
-    // Stripping Set-Cookie or Authorization alone is insufficient because the
-    // personalized response body could still be replayed to another user.
-    if (!canStoreSharedResponse(response)) {
-      return response;
-    }
-
-    // Clone and cache the response
-    const body = await response.clone().text();
-    const replayHeaders = new Headers(response.headers);
-    const mergedVary = mergeVary(replayHeaders.get("vary"), varyHeaders);
-    if (mergedVary) replayHeaders.set("vary", mergedVary);
-
-    const responseHeaders: Record<string, string> = {};
-    replayHeaders.forEach((value, key) => {
-      // Persist all representation/security headers; drop only the per-user
-      // credential-bearing ones (set-cookie, authorization, ...) which would
-      // otherwise be replayed to other users on a cache HIT.
-      if (!NON_CACHEABLE_HEADERS.has(key.toLowerCase())) {
-        responseHeaders[key] = value;
+    // Stampede protection (single-flight). N concurrent requests for one cold
+    // key previously meant N origin executions. Wait for the in-flight one, then
+    // re-read: if it stored an entry we serve that, otherwise (it turned out to
+    // be non-storable) we fall through and execute the handler ourselves rather
+    // than sharing a response that was never eligible for sharing.
+    if (!bypassRead) {
+      const pending = inFlight.get(cacheKey);
+      if (pending) {
+        await pending.catch(() => undefined);
+        const coalesced = await store.get<CachedResponse>(cacheKey);
+        if (coalesced && canReplaySharedResponse(coalesced)) {
+          return replay(coalesced);
+        }
       }
-    });
+    }
 
-    await store.set<CachedResponse>(
-      cacheKey,
-      {
+    /**
+     * Execute the origin handler and store the result. Published on `inFlight`
+     * as a WHOLE — including the `store.set` — so a coalescing caller that
+     * awaits it is guaranteed to see the entry when it re-reads.
+     */
+    async function executeAndStore(): Promise<Response> {
+      const response = await handler();
+
+      // Only cache successful responses
+      if (!statusCodes.includes(response.status)) {
+        return response;
+      }
+
+      // Respect response-side shared-cache prohibitions before cloning the body.
+      // Stripping Set-Cookie or Authorization alone is insufficient because the
+      // personalized response body could still be replayed to another user.
+      if (!canStoreSharedResponse(response)) {
+        return response;
+      }
+
+      // Clone and cache the response
+      const body = await response.clone().text();
+      const replayHeaders = new Headers(response.headers);
+      const mergedVary = mergeVary(replayHeaders.get("vary"), varyHeaders);
+      if (mergedVary) replayHeaders.set("vary", mergedVary);
+
+      const responseHeaders: Record<string, string> = {};
+      replayHeaders.forEach((value, key) => {
+        // Persist all representation/security headers; drop only the per-user
+        // credential-bearing ones (set-cookie, authorization, ...) which would
+        // otherwise be replayed to other users on a cache HIT.
+        if (!NON_CACHEABLE_HEADERS.has(key.toLowerCase())) {
+          responseHeaders[key] = value;
+        }
+      });
+
+      await store.set<CachedResponse>(
+        cacheKey,
+        {
+          status: response.status,
+          headers: responseHeaders,
+          body,
+          cachedAt: Date.now(),
+        },
+        customTtlMs ?? ttlMs,
+      );
+
+      // Add cache miss header
+      const newHeaders = new Headers(replayHeaders);
+      newHeaders.set("x-cache", "MISS");
+
+      return new Response(body, {
         status: response.status,
-        headers: responseHeaders,
-        body,
-        cachedAt: Date.now(),
-      },
-      customTtlMs ?? ttlMs,
-    );
+        headers: newHeaders,
+      });
+    }
 
-    // Add cache miss header
-    const newHeaders = new Headers(replayHeaders);
-    newHeaders.set("x-cache", "MISS");
-
-    return new Response(body, {
-      status: response.status,
-      headers: newHeaders,
-    });
+    const execution = executeAndStore();
+    inFlight.set(cacheKey, execution);
+    try {
+      return await execution;
+    } finally {
+      // Only clear our own entry — a later request may already have replaced it.
+      if (inFlight.get(cacheKey) === execution) inFlight.delete(cacheKey);
+    }
   }
 
   /**
@@ -336,12 +439,24 @@ export function createResponseCache(options: ResponseCacheOptions) {
   }
 
   /**
-   * Invalidate a specific cache key.
+   * Invalidate a specific cache key, across every partition of it.
+   *
+   * Accepts either the full generated form (`GET:example.com:/data`) or the
+   * host-less `GET:/data`, so call sites written before the host became part of
+   * the key keep working.
    */
   async function invalidate(key: string): Promise<boolean> {
-    const baseKey = prefix + key;
     const keys = await store.keys();
-    const matches = keys.filter((candidate) => candidate === baseKey || candidate.startsWith(`${baseKey}|origin=`));
+    const matches = keys.filter((candidate) => {
+      if (!candidate.startsWith(prefix)) return false;
+      // Strip the eager `|header=value` partitions to get the base key.
+      const base = candidate.slice(prefix.length).split("|", 1)[0]!;
+      if (base === key) return true;
+
+      const [method, ...rest] = base.split(":");
+      if (rest.length < 2) return false;
+      return `${method}:${rest.slice(1).join(":")}` === key;
+    });
     const deleted = await Promise.all(matches.map((candidate) => store.delete(candidate)));
     return deleted.some(Boolean);
   }

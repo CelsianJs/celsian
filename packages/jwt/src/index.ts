@@ -9,13 +9,80 @@ import {
 } from "@celsian/core";
 import * as jose from "jose";
 
-/** Non-enumerable-by-convention request key for each app's resolved JWT config. */
+/**
+ * Request key for the realm config bound to the encapsulation context that
+ * registered the plugin. Resolved through the matched route's context chain.
+ */
 const REQUEST_CONFIG_KEY = Symbol("@celsian/jwt/config");
 
-/** Options for the JWT plugin: shared secret and allowed algorithms. */
+/**
+ * Request key for the app-wide single-realm compatibility fallback.
+ *
+ * The context-scoped {@link REQUEST_CONFIG_KEY} above is the authority. This
+ * key exists only so that the ONE-realm-per-app case keeps working while
+ * plugin-scoped request decorations are hoisted to the root context — it is
+ * last-writer-wins by construction and is therefore consulted ONLY when the
+ * context-scoped config is absent. With more than one realm on a single app
+ * you must pass an explicit `{ secret }` to `createJWTGuard()`, or use the
+ * realm-bound `jwt(...).guard()` (see README).
+ */
+const REQUEST_FALLBACK_KEY = Symbol("@celsian/jwt/config-fallback");
+
+/** Default lifetime applied by `sign()` when no `expiresIn` is given. */
+const DEFAULT_EXPIRES_IN = "15m";
+
+/** Options for the JWT plugin. */
 export interface JWTOptions {
-  secret: string;
+  /** HMAC shared secret (HS256/HS384/HS512). Mutually exclusive with `publicKey`/`jwksUri`. */
+  secret?: string;
+  /**
+   * Public key for asymmetric verification (RS*, PS*, ES*, EdDSA), as a PEM
+   * SPKI string or a JWK object. Verification only unless `privateKey` is set.
+   */
+  publicKey?: string | jose.JWK;
+  /** Private key for asymmetric signing, as a PEM PKCS#8 string or a JWK object. */
+  privateKey?: string | jose.JWK;
+  /**
+   * HTTPS URL of a JWKS endpoint (Auth0, Clerk, Cognito, ...). The key set is
+   * cached, rotated, and selected by the token's `kid` header. Must be `https:`.
+   */
+  jwksUri?: string;
+  /** Tuning for the remote JWKS fetch. */
+  jwks?: JWKSOptions;
+  /** Allowed signature algorithms. Always pinned on every verify. */
   algorithms?: string[];
+  /** Required `iss` claim. Set on tokens produced by `sign()`. */
+  issuer?: string | string[];
+  /** Required `aud` claim. Set on tokens produced by `sign()`. */
+  audience?: string | string[];
+  /** Required `sub` claim. */
+  subject?: string;
+  /** Clock skew tolerance, e.g. `'30s'` or seconds as a number. Default: none. */
+  clockTolerance?: string | number;
+  /** Maximum age since `iat`, e.g. `'1h'`. */
+  maxTokenAge?: string | number;
+  /**
+   * Reject tokens that carry no `exp` claim. Default: `true`. A token without
+   * `exp` is a permanent bearer credential and this package has no revocation
+   * mechanism, so it fails closed unless you opt out explicitly.
+   */
+  requireExpiration?: boolean;
+  /**
+   * Default lifetime applied by `sign()` when the call site does not pass one.
+   * Default: `'15m'`. Pass `false` to mint non-expiring tokens, which also
+   * requires `requireExpiration: false`.
+   */
+  expiresIn?: string | number | false;
+}
+
+/** Tuning for remote JWKS fetching. */
+export interface JWKSOptions {
+  /** Minimum time between refetches after a `kid` miss, in ms. Default: 30_000. */
+  cooldownDurationMs?: number;
+  /** Maximum age of the cached key set before a background refresh, in ms. Default: 600_000. */
+  cacheMaxAgeMs?: number;
+  /** Fetch timeout in ms. Default: 5_000. */
+  timeoutMs?: number;
 }
 
 /** JWT payload with standard claims (iss, sub, exp, etc.) plus custom fields. */
@@ -28,14 +95,28 @@ export interface JWTPayload {
   iat?: number;
 }
 
-/** Resolved per-app JWT config (secret bytes + allowed algorithms). */
+/** Key material accepted by `jose.jwtVerify` (a static key or a JWKS resolver function). */
+type VerifyKey = Uint8Array | CryptoKey | jose.JWK | jose.JWTVerifyGetKey;
+type SignKey = Parameters<jose.SignJWT["sign"]>[0];
+
+/** Resolved per-realm JWT config. */
 interface ResolvedJWTConfig {
-  secretKey: Uint8Array;
+  getVerifyKey(): Promise<VerifyKey>;
+  getSignKey(): Promise<SignKey>;
   algorithms: string[];
+  verifyOptions: jose.JWTVerifyOptions;
+  requireExpiration: boolean;
+  defaultExpiresIn: string | number | false;
+  issuer?: string | string[];
+  audience?: string | string[];
 }
 
 /** Minimum recommended HMAC secret length in bytes (RFC 7518 §3.2: HS256 keys must be >= 256 bits). */
 const MIN_HMAC_SECRET_BYTES = 32;
+
+const DEFAULT_JWKS_COOLDOWN_MS = 30_000;
+const DEFAULT_JWKS_CACHE_MAX_AGE_MS = 600_000;
+const DEFAULT_JWKS_TIMEOUT_MS = 5_000;
 
 /**
  * Warn (without throwing — non-breaking) when an HS* secret is shorter than
@@ -55,9 +136,222 @@ function warnIfWeakHmacSecret(secretKey: Uint8Array, algorithms: string[]): void
   }
 }
 
+/** Memoize an async factory so key import / JWKS set creation happens at most once. */
+function once<T>(factory: () => Promise<T>): () => Promise<T> {
+  let promise: Promise<T> | undefined;
+  return () => {
+    promise ??= factory();
+    return promise;
+  };
+}
+
+/**
+ * Build the remote JWKS resolver.
+ *
+ * The URL is restricted to `https:` so a misconfigured or attacker-influenced
+ * value cannot be used to reach plaintext internal endpoints. `jose` handles
+ * `kid` selection, caching, and rotation; we only bound the fetch and refresh
+ * behaviour so a slow or flapping IdP cannot hang request handling.
+ */
+function createJWKSResolver(jwksUri: string, options: JWKSOptions | undefined): () => Promise<VerifyKey> {
+  let url: URL;
+  try {
+    url = new URL(jwksUri);
+  } catch {
+    throw new CelsianError(`[@celsian/jwt] \`jwksUri\` is not a valid URL: ${jwksUri}`);
+  }
+  if (url.protocol !== "https:") {
+    throw new CelsianError(
+      `[@celsian/jwt] \`jwksUri\` must use https: (got ${url.protocol}). ` +
+        "Fetching signing keys over plaintext would let a network attacker choose the key that validates tokens.",
+    );
+  }
+
+  return once(async () =>
+    jose.createRemoteJWKSet(url, {
+      cooldownDuration: options?.cooldownDurationMs ?? DEFAULT_JWKS_COOLDOWN_MS,
+      cacheMaxAge: options?.cacheMaxAgeMs ?? DEFAULT_JWKS_CACHE_MAX_AGE_MS,
+      timeoutDuration: options?.timeoutMs ?? DEFAULT_JWKS_TIMEOUT_MS,
+    }),
+  );
+}
+
+/** Default algorithm set inferred from the configured key material. */
+function defaultAlgorithms(options: JWTOptions): string[] {
+  if (options.secret !== undefined) return ["HS256"];
+  return ["RS256"];
+}
+
+function isPem(key: string | jose.JWK): key is string {
+  return typeof key === "string";
+}
+
+/**
+ * Resolve user options into the config every verify/sign path shares. Throws at
+ * registration time on a configuration that could not verify anything, so a
+ * misconfigured realm fails loudly instead of at the first request.
+ */
+function resolveConfig(options: JWTOptions): ResolvedJWTConfig {
+  const sources = [options.secret !== undefined, options.publicKey !== undefined, options.jwksUri !== undefined].filter(
+    Boolean,
+  ).length;
+
+  if (sources === 0) {
+    throw new CelsianError(
+      "[@celsian/jwt] No key material configured. Pass exactly one of `secret` (HMAC), " +
+        "`publicKey` (asymmetric), or `jwksUri` (remote JWKS).",
+    );
+  }
+  if (sources > 1) {
+    throw new CelsianError(
+      "[@celsian/jwt] `secret`, `publicKey`, and `jwksUri` are mutually exclusive — configure exactly one.",
+    );
+  }
+
+  const algorithms = options.algorithms ?? defaultAlgorithms(options);
+  if (!Array.isArray(algorithms) || algorithms.length === 0) {
+    throw new CelsianError(
+      "[@celsian/jwt] `algorithms` must be a non-empty array. Never leave the algorithm unpinned.",
+    );
+  }
+
+  const requireExpiration = options.requireExpiration ?? true;
+  const defaultExpiresIn = options.expiresIn ?? DEFAULT_EXPIRES_IN;
+  if (defaultExpiresIn === false && requireExpiration) {
+    throw new CelsianError(
+      "[@celsian/jwt] `expiresIn: false` mints non-expiring tokens that this realm would then reject. " +
+        "Set `requireExpiration: false` as well if you really want permanent bearer credentials.",
+    );
+  }
+
+  let getVerifyKey: () => Promise<VerifyKey>;
+  let getSignKey: () => Promise<SignKey>;
+
+  if (options.secret !== undefined) {
+    const secretKey = new TextEncoder().encode(options.secret);
+    warnIfWeakHmacSecret(secretKey, algorithms);
+    getVerifyKey = () => Promise.resolve(secretKey as VerifyKey);
+    getSignKey = () => Promise.resolve(secretKey as SignKey);
+  } else if (options.publicKey !== undefined) {
+    const publicKey = options.publicKey;
+    const alg = algorithms[0]!;
+    getVerifyKey = once(async () =>
+      isPem(publicKey)
+        ? ((await jose.importSPKI(publicKey, alg)) as VerifyKey)
+        : ((await jose.importJWK(publicKey, alg)) as VerifyKey),
+    );
+    getSignKey = signKeyFromPrivate(options.privateKey, alg, "publicKey");
+  } else {
+    getVerifyKey = createJWKSResolver(options.jwksUri!, options.jwks);
+    getSignKey = signKeyFromPrivate(options.privateKey, algorithms[0]!, "jwksUri");
+  }
+
+  const verifyOptions: jose.JWTVerifyOptions = { algorithms };
+  if (options.issuer !== undefined) verifyOptions.issuer = options.issuer;
+  if (options.audience !== undefined) verifyOptions.audience = options.audience;
+  if (options.subject !== undefined) verifyOptions.subject = options.subject;
+  if (options.clockTolerance !== undefined) verifyOptions.clockTolerance = options.clockTolerance;
+  if (options.maxTokenAge !== undefined) verifyOptions.maxTokenAge = options.maxTokenAge;
+
+  return {
+    getVerifyKey,
+    getSignKey,
+    algorithms,
+    verifyOptions,
+    requireExpiration,
+    defaultExpiresIn,
+    issuer: options.issuer,
+    audience: options.audience,
+  };
+}
+
+function signKeyFromPrivate(
+  privateKey: string | jose.JWK | undefined,
+  alg: string,
+  mode: "publicKey" | "jwksUri",
+): () => Promise<SignKey> {
+  if (privateKey === undefined) {
+    return () =>
+      Promise.reject(
+        new CelsianError(
+          `[@celsian/jwt] This realm is configured with \`${mode}\` only and cannot sign. ` +
+            "Pass `privateKey` (PEM PKCS#8 or JWK) to enable `sign()`.",
+        ),
+      );
+  }
+  return once(async () =>
+    isPem(privateKey)
+      ? ((await jose.importPKCS8(privateKey, alg)) as SignKey)
+      : ((await jose.importJWK(privateKey, alg)) as SignKey),
+  );
+}
+
+/**
+ * Verify a token against a resolved realm. Every path in this package funnels
+ * through here so algorithms stay pinned and issuer/audience/expiry policy is
+ * applied identically wherever verification happens.
+ */
+async function verifyWithConfig(config: ResolvedJWTConfig, token: string): Promise<JWTPayload> {
+  const key = await config.getVerifyKey();
+  // `key` is a static key or a JWKS resolver function; jose accepts both.
+  const { payload } = await jose.jwtVerify(token, key as never, config.verifyOptions);
+
+  if (config.requireExpiration && typeof payload.exp !== "number") {
+    throw new CelsianError(
+      "[@celsian/jwt] Token has no `exp` claim. A token without an expiry is a permanent bearer " +
+        "credential and this realm requires expiration (set `requireExpiration: false` to allow it).",
+    );
+  }
+
+  return payload as JWTPayload;
+}
+
+/** Apply the realm's expiry / issuer / audience policy when minting a token. */
+async function signWithConfig(
+  config: ResolvedJWTConfig,
+  payload: JWTPayload,
+  signOptions?: { expiresIn?: string | number | false },
+): Promise<string> {
+  let builder = new jose.SignJWT(payload as jose.JWTPayload)
+    .setProtectedHeader({ alg: config.algorithms[0]! })
+    .setIssuedAt();
+
+  if (config.issuer !== undefined && payload.iss === undefined) {
+    builder = builder.setIssuer(Array.isArray(config.issuer) ? config.issuer[0]! : config.issuer);
+  }
+  if (config.audience !== undefined && payload.aud === undefined) {
+    builder = builder.setAudience(config.audience);
+  }
+
+  const expiresIn = signOptions?.expiresIn ?? config.defaultExpiresIn;
+  if (expiresIn !== false) {
+    builder =
+      typeof expiresIn === "number"
+        ? builder.setExpirationTime(Math.floor(Date.now() / 1000) + expiresIn)
+        : builder.setExpirationTime(expiresIn);
+  }
+
+  return builder.sign(await config.getSignKey());
+}
+
 /** Sign and verify methods exposed on `app.jwt` after registering the plugin. */
 export interface JWTNamespace {
-  sign(payload: JWTPayload, options?: { expiresIn?: string | number }): Promise<string>;
+  sign(payload: JWTPayload, options?: { expiresIn?: string | number | false }): Promise<string>;
+  verify(token: string): Promise<JWTPayload>;
+}
+
+/**
+ * A registered JWT realm: a plugin function that also exposes a guard bound to
+ * this exact realm. Use `.guard()` whenever an app runs more than one realm —
+ * it never depends on ambient request state, so it cannot resolve to a
+ * neighbouring realm's key material.
+ */
+export interface JWTPlugin extends PluginFunction {
+  /** Guard bound to THIS realm's key material and claim policy. */
+  guard(): HookHandler;
+  /** Sign a token with this realm's key material (usable before registration). */
+  sign(payload: JWTPayload, options?: { expiresIn?: string | number | false }): Promise<string>;
+  /** Verify a token against this realm. */
   verify(token: string): Promise<JWTPayload>;
 }
 
@@ -66,113 +360,57 @@ export interface JWTNamespace {
  *
  * @example
  * ```ts
+ * // Single realm
  * await app.register(jwt({ secret: process.env.JWT_SECRET! }));
  * const token = await app.jwt.sign({ sub: userId });
+ * app.addHook('preHandler', createJWTGuard());
+ *
+ * // Multiple realms on one app — bind each guard to its realm explicitly
+ * const tenantA = jwt({ secret: process.env.TENANT_A_SECRET!, issuer: 'tenant-a' });
+ * await app.register(tenantA, { prefix: '/tenant-a' });
+ * app.addHook('preHandler', tenantA.guard());
  * ```
  */
-export function jwt(options: JWTOptions): PluginFunction {
-  const algorithms = options.algorithms ?? ["HS256"];
-  const secretKey = new TextEncoder().encode(options.secret);
-  warnIfWeakHmacSecret(secretKey, algorithms);
+export function jwt(options: JWTOptions): JWTPlugin {
+  const config = resolveConfig(options);
 
-  return function jwtPlugin(app) {
-    const resolved: ResolvedJWTConfig = { secretKey, algorithms };
+  const jwtInstance: JWTNamespace = {
+    sign(payload, signOptions) {
+      return signWithConfig(config, payload, signOptions);
+    },
+    verify(token) {
+      return verifyWithConfig(config, token);
+    },
+  };
 
-    // Decorate every request handled by THIS app with its own JWT config. A no-arg
-    // createJWTGuard() then resolves the config from the request at request time —
-    // so the guard is always bound to the app actually handling the request,
-    // regardless of plugin-registration vs guard-creation order. This is what makes
-    // multi-app isolation correct (app A's requests carry A's secret, B's carry B's).
-    app.decorateRequest(REQUEST_CONFIG_KEY, resolved, { scope: "app" });
-
-    const jwtInstance: JWTNamespace = {
-      async sign(payload: JWTPayload, signOptions?: { expiresIn?: string | number }): Promise<string> {
-        let builder = new jose.SignJWT(payload as jose.JWTPayload)
-          .setProtectedHeader({ alg: algorithms[0]! })
-          .setIssuedAt();
-
-        if (signOptions?.expiresIn) {
-          if (typeof signOptions.expiresIn === "number") {
-            builder = builder.setExpirationTime(Math.floor(Date.now() / 1000) + signOptions.expiresIn);
-          } else {
-            builder = builder.setExpirationTime(signOptions.expiresIn);
-          }
-        }
-
-        return builder.sign(secretKey);
-      },
-
-      async verify(token: string): Promise<JWTPayload> {
-        const { payload } = await jose.jwtVerify(token, secretKey, {
-          algorithms,
-        });
-        return payload as JWTPayload;
-      },
-    };
+  function jwtPlugin(app: Parameters<PluginFunction>[0]): void {
+    // Bind the config to the encapsulation context that registered this plugin
+    // so a route resolves the realm it actually lives under. `scope: "app"`
+    // would hoist every realm onto the single root map, where the
+    // last-registered realm silently wins for the entire process.
+    app.decorateRequest(REQUEST_CONFIG_KEY, config);
+    // App-wide compatibility fallback for the single-realm case. See the
+    // REQUEST_FALLBACK_KEY doc comment for why this is not the authority.
+    app.decorateRequest(REQUEST_FALLBACK_KEY, config, { scope: "app" });
 
     app.decorate("jwt", jwtInstance);
-  };
+  }
+
+  return Object.assign(jwtPlugin as PluginFunction, {
+    guard: () => createGuardForConfig(() => config),
+    sign: jwtInstance.sign,
+    verify: jwtInstance.verify,
+  });
 }
 
 /**
- * Create a preHandler hook that verifies Bearer tokens and populates `request.user`.
- *
- * When called without arguments, reads the secret from the JWT plugin decoration (`app.jwt`).
- * This requires the JWT plugin to be registered first via `app.register(jwt({ secret }))`.
- *
- * @example
- * ```ts
- * // Option 1: No args — reads secret from the registered JWT plugin
- * await app.register(jwt({ secret: process.env.JWT_SECRET! }));
- * app.addHook('preHandler', createJWTGuard());
- *
- * // Option 2: Explicit secret
- * app.addHook('preHandler', createJWTGuard({ secret: process.env.JWT_SECRET! }));
- * ```
+ * Shared guard body. `resolve` returns the realm config for this request, or
+ * throws when none can be determined — the guard never falls back to "some"
+ * realm, because guessing is how one tenant's token authenticates another's.
  */
-export function createJWTGuard(options?: JWTOptions): HookHandler {
-  // If options are provided, use them directly (eager init)
-  if (options) {
-    const algorithms = options.algorithms ?? ["HS256"];
-    const secretKey = new TextEncoder().encode(options.secret);
-    warnIfWeakHmacSecret(secretKey, algorithms);
-
-    const guard: HookHandler<void | Response> = async (request: CelsianRequest, reply: CelsianReply) => {
-      const auth = request.headers.get("authorization");
-      if (!auth?.startsWith("Bearer ")) {
-        return reply.status(401).json({ error: "Missing or invalid authorization header" });
-      }
-
-      const token = auth.slice(7);
-
-      try {
-        const { payload } = await jose.jwtVerify(token, secretKey, { algorithms });
-        (request as Record<string, unknown>).user = payload;
-      } catch {
-        return reply.status(401).json({ error: "Invalid or expired token" });
-      }
-    };
-
-    return guard as HookHandler;
-  }
-
-  // No options — resolve the JWT config from the REQUEST at request time. The jwt()
-  // plugin decorates each of its app's requests with that app's config (see above), so
-  // the guard always uses the secret/algorithms of the app actually handling the request.
-  // This is correct regardless of register-vs-createJWTGuard ordering and prevents
-  // cross-app secret bleed when multiple CelsianApp instances share a process. There is
-  // deliberately no module-global fallback: an undecorated request must fail closed.
-  const lazyGuard: HookHandler<void | Response> = async (request: CelsianRequest, reply: CelsianReply) => {
-    const config = (request as unknown as Record<PropertyKey, unknown>)[REQUEST_CONFIG_KEY] as
-      | ResolvedJWTConfig
-      | undefined;
-
-    if (!config) {
-      throw new CelsianError(
-        "createJWTGuard() called without options, but the JWT plugin has not been registered. " +
-          "Either pass { secret } to createJWTGuard() or register the JWT plugin first with app.register(jwt({ secret })).",
-      );
-    }
+function createGuardForConfig(resolve: (request: CelsianRequest) => ResolvedJWTConfig): HookHandler {
+  const guard: HookHandler<void | Response> = async (request: CelsianRequest, reply: CelsianReply) => {
+    const config = resolve(request);
 
     const auth = request.headers.get("authorization");
     if (!auth?.startsWith("Bearer ")) {
@@ -182,16 +420,55 @@ export function createJWTGuard(options?: JWTOptions): HookHandler {
     const token = auth.slice(7);
 
     try {
-      const { payload } = await jose.jwtVerify(token, config.secretKey, {
-        algorithms: config.algorithms,
-      });
-      (request as Record<string, unknown>).user = payload;
+      (request as Record<string, unknown>).user = await verifyWithConfig(config, token);
     } catch {
       return reply.status(401).json({ error: "Invalid or expired token" });
     }
   };
 
-  return lazyGuard as HookHandler;
+  return guard as HookHandler;
+}
+
+/**
+ * Create a preHandler hook that verifies Bearer tokens and populates `request.user`.
+ *
+ * When called without arguments, the realm is resolved from the request at
+ * request time. That is unambiguous only while the app runs a SINGLE realm —
+ * with two or more, pass an explicit `{ secret }` here or use the realm-bound
+ * `jwt(...).guard()`.
+ *
+ * @example
+ * ```ts
+ * // Option 1: No args — single-realm apps
+ * await app.register(jwt({ secret: process.env.JWT_SECRET! }));
+ * app.addHook('preHandler', createJWTGuard());
+ *
+ * // Option 2: Explicit config — required when several realms share one app
+ * app.addHook('preHandler', createJWTGuard({ secret: process.env.JWT_SECRET!, issuer: 'api' }));
+ * ```
+ */
+export function createJWTGuard(options?: JWTOptions): HookHandler {
+  if (options) {
+    const config = resolveConfig(options);
+    return createGuardForConfig(() => config);
+  }
+
+  // No options — resolve the realm from the REQUEST. The context-scoped
+  // decoration is authoritative; the app-wide fallback covers the single-realm
+  // case. There is deliberately no module-global fallback: an undecorated
+  // request must fail closed rather than inherit another app's secret.
+  return createGuardForConfig((request) => {
+    const bag = request as unknown as Record<PropertyKey, unknown>;
+    const config = (bag[REQUEST_CONFIG_KEY] ?? bag[REQUEST_FALLBACK_KEY]) as ResolvedJWTConfig | undefined;
+
+    if (!config) {
+      throw new CelsianError(
+        "createJWTGuard() called without options, but the JWT plugin has not been registered. " +
+          "Either pass { secret } to createJWTGuard() or register the JWT plugin first with app.register(jwt({ secret })).",
+      );
+    }
+    return config;
+  });
 }
 
 // ─── Declaration Merging ───
