@@ -158,7 +158,8 @@ app.task({
     // ... send the email
   },
   retries: 3,
-  timeout: 30_000,
+  // Keep this below the queue's visibility timeout (30s by default).
+  timeout: 15_000,
 });
 
 // Enqueue from a handler

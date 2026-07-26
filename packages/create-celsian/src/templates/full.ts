@@ -408,7 +408,9 @@ export default function userRoutes(): PluginFunction {
       handler(req: CelsianRequest, reply: CelsianReply) {
         const existed = db.users.delete(req.params.id);
         if (!existed) return reply.status(404).json({ error: 'User not found' });
-        return reply.status(204).json({ deleted: true });
+        // 204 means "no content", so it must not carry a body. Use send(), which
+        // omits the body for 204/304; json() would try to write one and throw.
+        return reply.status(204).send(null);
       },
     });
   };
@@ -522,7 +524,10 @@ import type { TaskDefinition } from '@celsian/core';
 export const cleanupTask: TaskDefinition = {
   name: 'cleanup',
   retries: 2,
-  timeout: 30_000,
+  // Must stay BELOW the queue's visibility timeout (30s by default), otherwise
+  // a task that outlives its lease is redelivered and runs alongside itself.
+  // startWorker() rejects an equal-or-greater value at boot.
+  timeout: 15_000,
   async handler(_input, ctx) {
     ctx.log.info('Running session cleanup...');
 
