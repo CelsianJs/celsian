@@ -165,6 +165,21 @@ export type TypedRouteHandler<TParams = Record<string, string>> = (
 export type ResponseSchemaMap = Record<number, unknown> & { default?: unknown };
 
 /**
+ * What `schema.response` accepts, in either of its two spellings:
+ *
+ * - a {@link ResponseSchemaMap}, `{ 200: schema, default: schema }`
+ * - a bare schema object, applied to every 2xx response
+ *
+ * The bare spelling is the one that mirrors `schema.body` and
+ * `schema.querystring`, so it has to work. The union is widened to `object`
+ * rather than to a structural schema shape because the four supported
+ * libraries (Zod, TypeBox, Valibot, Celsian's own `StandardSchema`) share no
+ * common property. `object` still rejects primitives, and the two forms are
+ * told apart at registration by their own keys, see `resolveResponseSchema`.
+ */
+export type RouteResponseSchema = ResponseSchemaMap | object;
+
+/**
  * Resolve the handler's `parsedQuery` type from a `querystring` schema.
  *
  * When no querystring schema is supplied the generic is inferred as `unknown`,
@@ -181,7 +196,7 @@ export interface RouteSchemaOptions<TBody = unknown, TQuery = unknown, TParams =
     body?: TBody;
     querystring?: TQuery;
     params?: unknown;
-    response?: ResponseSchemaMap;
+    response?: RouteResponseSchema;
   };
   /**
    * Route handler (Fastify-style options-object signature):
@@ -224,7 +239,7 @@ export interface RouteOptions {
     body?: unknown;
     querystring?: unknown;
     params?: unknown;
-    response?: ResponseSchemaMap;
+    response?: RouteResponseSchema;
   };
   /** Route-specific hooks */
   onRequest?: HookHandler | HookHandler[];
@@ -233,10 +248,24 @@ export interface RouteOptions {
   onSend?: HookHandler | HookHandler[];
 }
 
-/** Route options with typed schema inference for parsedBody and parsedQuery */
-export interface TypedRouteOptions<TBody = unknown, TQuery = unknown, TParams = Record<string, string>> {
+/**
+ * Route options with typed schema inference for parsedBody and parsedQuery.
+ *
+ * `TUrl` is a generic so the url string literal reaches
+ * {@link ExtractRouteParams}, exactly as it does for `app.get(url, ...)`.
+ * Without it `url` was a plain `string`, there was no literal to extract from,
+ * and `app.route({ url: '/users/:id' })` degraded `req.params` to
+ * `Record<string, string>` while `app.post('/users/:id')` typed it as
+ * `{ id: string }`. Same route, same framework, two different types.
+ */
+export interface TypedRouteOptions<
+  TBody = unknown,
+  TQuery = unknown,
+  TUrl extends string = string,
+  TParams = ExtractRouteParams<TUrl>,
+> {
   method: RouteMethod | RouteMethod[];
-  url: string;
+  url: TUrl;
   handler: TypedSchemaHandler<TParams, InferOutput<TBody>, InferQuery<TQuery>>;
   /** Endpoint type */
   kind?: "serverless" | "hot" | "task";
@@ -245,7 +274,7 @@ export interface TypedRouteOptions<TBody = unknown, TQuery = unknown, TParams = 
     body?: TBody;
     querystring?: TQuery;
     params?: unknown;
-    response?: ResponseSchemaMap;
+    response?: RouteResponseSchema;
   };
   /** Route-specific hooks */
   onRequest?: HookHandler | HookHandler[];
@@ -291,7 +320,7 @@ export interface PluginContext {
   register(plugin: PluginFunction, options?: PluginOptions): Promise<void>;
   // Typed overload first: overload resolution picks the first match, and the
   // untyped RouteOptions signature would otherwise erase schema inference.
-  route<TBody, TQuery>(options: TypedRouteOptions<TBody, TQuery>): void;
+  route<TBody, TQuery, TUrl extends string>(options: TypedRouteOptions<TBody, TQuery, TUrl>): void;
   route(options: RouteOptions): void;
 
   // Overloaded: (path, handler) for backwards compat, (path, options, handler) for typed schemas

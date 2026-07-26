@@ -9,6 +9,15 @@ export interface InjectOptions {
   headers?: Record<string, string>;
   payload?: unknown;
   query?: Record<string, string>;
+  /**
+   * Cookies to send, serialized into a single `Cookie` header.
+   *
+   * `packages/core/README.md` documented this key long before it existed, so
+   * every test that used it silently sent no cookies and asserted against a
+   * request that had none. An explicit `headers.cookie` still wins, so a test
+   * can hand-craft a malformed header when that is the point.
+   */
+  cookies?: Record<string, string>;
 }
 
 export function createInject(app: CelsianApp) {
@@ -29,6 +38,11 @@ export function createInject(app: CelsianApp) {
 
     const method = options.method ?? "GET";
     const headers = new Headers(options.headers);
+
+    if (options.cookies && !headers.has("cookie")) {
+      const pairs = Object.entries(options.cookies).map(([name, value]) => `${name}=${encodeURIComponent(value)}`);
+      if (pairs.length > 0) headers.set("cookie", pairs.join("; "));
+    }
 
     let body: string | undefined;
     if (options.payload !== undefined) {

@@ -1025,14 +1025,16 @@ Deno.<span class="fn">serve</span>(app.fetch);</pre>
           <p>Build procedures with schema validation and auto-generated clients</p>
         </div>
         <div class="example-code">
-<pre><span class="kw">import</span> { procedure, router } <span class="kw">from</span> <span class="str">'@celsian/rpc'</span>;
+<pre><span class="kw">import</span> { procedure, router, createRPCClient } <span class="kw">from</span> <span class="str">'@celsian/rpc'</span>;
 <span class="kw">import</span> { z } <span class="kw">from</span> <span class="str">'zod'</span>;
+<span class="kw">import</span> { db } <span class="kw">from</span> <span class="str">'./db.js'</span>;
 
 <span class="kw">const</span> appRouter = <span class="fn">router</span>({
   user: {
     getById: procedure
       .<span class="fn">input</span>(z.object({ id: z.string() }))
       .<span class="fn">query</span>(<span class="kw">async</span> ({ input }) => {
+        <span class="cmt">// input is { id: string }, inferred from the schema</span>
         <span class="kw">return</span> db.users.<span class="fn">find</span>(input.id);
       }),
     create: procedure
@@ -1041,6 +1043,11 @@ Deno.<span class="fn">serve</span>(app.fetch);</pre>
         <span class="kw">return</span> db.users.<span class="fn">create</span>(input);
       }),
   },
+});
+
+<span class="kw">export type</span> AppRouter = <span class="kw">typeof</span> appRouter;
+<span class="kw">const</span> rpc = <span class="fn">createRPCClient</span>&lt;AppRouter&gt;({
+  baseUrl: <span class="str">'http://localhost:3000/_rpc'</span>,
 });
 
 <span class="cmt">// Client: full type inference</span>

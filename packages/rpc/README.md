@@ -11,13 +11,34 @@ npm install @celsian/rpc
 ## Usage
 
 ```typescript
+// server.ts
+import { createApp } from '@celsian/core';
 import { procedure, router, RPCHandler } from '@celsian/rpc';
+import { z } from 'zod';
+
+const app = createApp();
 
 const appRouter = router({
-  greet: procedure.input(z.object({ name: z.string() })).query(({ input }) => `Hello, ${input.name}!`),
+  greet: procedure
+    // `input` is inferred from the schema: no type argument, no cast.
+    .input(z.object({ name: z.string() }))
+    .query(({ input }) => `Hello, ${input.name}!`),
 });
 const rpc = new RPCHandler(appRouter);
 rpc.mount(app); // serves /_rpc/* (pass a prefix to mount elsewhere: rpc.mount(app, '/api/rpc'))
+
+export type AppRouter = typeof appRouter;
+```
+
+```typescript
+// client.ts
+import { createRPCClient } from '@celsian/rpc/client';
+import type { AppRouter } from './server.js';
+
+const client = createRPCClient<AppRouter>({ baseUrl: 'http://localhost:3000/_rpc' });
+
+// `input` is checked against the schema, and `greeting` is `string`.
+const greeting = await client.greet.query({ name: 'Ada' });
 ```
 
 `mount()` registers both `GET` and `POST` wildcard routes, the RPC client uses

@@ -296,13 +296,13 @@ Serves an OpenAPI 3.1 JSON spec at `/docs/openapi.json` and a Swagger UI at `/do
 | `@celsian/rate-limit` | `app.register(rateLimit({ max: 100, window: 60_000, trustProxy: true }), { encapsulate: false })` | `app.register(rateLimit({ max: 50, window: 60_000, trustProxy: true }), { encapsulate: false })` |
 | `@celsian/compress` | `app.register(compress({ threshold: 1024 }), { encapsulate: false })` | `app.register(compress(), { encapsulate: false })` |
 
-**Important:** Rate-limit and compress install their logic as an `onRequest` hook. That hook applies to routes in the *same* encapsulation scope as where the hook is added. Always register these plugins with `{ encapsulate: false }`, both globally **and** inside a feature plugin.
-
-Since 0.6.0 an un-prefixed plugin is app-wide and a prefixed one is scoped, so
-`app.register(rateLimit(...))` protects your routes without `{ encapsulate: false }`.
-Passing it is still valid and is the explicit way to say "app-wide". For a per-feature
-limit, register the limiter inside that feature's plugin (see
-[Pattern: Feature Plugin](#pattern-feature-plugin)).
+**How scope works:** rate-limit and compress install their logic as an `onRequest`
+hook, and that hook applies to routes in the same encapsulation scope. Since 0.6.0
+an un-prefixed plugin is app-wide and a prefixed one is scoped, so
+`app.register(rateLimit(...))` protects your routes on its own. Passing
+`{ encapsulate: false }` is still valid and is the explicit way to say "app-wide",
+but it is **not** required. For a per-feature limit, register the limiter inside
+that feature's plugin (see [Pattern: Feature Plugin](#pattern-feature-plugin)).
 
 > `rateLimit()` needs a trustworthy way to identify a client and throws at registration
 > if given none, so it can never silently run without one. Prefer, in order:

@@ -17,6 +17,8 @@
   "include": [
     "packages/*/src/**/*.ts",
     "packages/core/test/type-inference.test.ts",
-    "packages/rpc/test/procedure.test.ts"
+    "packages/core/test/response-schema.test.ts",
+    "packages/rpc/test/procedure.test.ts",
+    "packages/rpc/test/type-inference.test.ts"
   ]
 }

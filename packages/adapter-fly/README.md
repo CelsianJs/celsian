@@ -12,26 +12,39 @@ npm install @celsian/adapter-fly
 
 ## Usage
 
-Reference the adapter from your `celsian.config.ts`:
+The adapter is a plain object with a `buildEnd()` method that writes the files.
+Call it from a post-build script:
 
 ```ts
-import { defineConfig } from '@celsian/core';
+// scripts/generate-fly-config.ts
 import { flyAdapter } from '@celsian/adapter-fly';
 
-export default defineConfig({
-  build: {
-    adapter: flyAdapter({
-      appName: 'my-app',
-      primaryRegion: 'iad',
-      regions: ['lhr', 'nrt'],
-    }),
-  },
+const adapter = flyAdapter({
+  appName: 'my-app',
+  primaryRegion: 'iad',
+  regions: ['lhr', 'nrt'],
+  healthCheckPath: '/health',
+});
+
+await adapter.buildEnd({
+  serverEntry: 'dist/index.js',
+  clientDir: 'dist/client',
+  staticDir: 'public',
+  outDir: '.',
 });
 ```
 
-`celsian build` then emits the Fly config; deploy with `fly deploy`. Because Fly
-runs a long-lived server, `app.task()` workers and `app.cron()` schedulers run
-normally here.
+```bash
+node --experimental-strip-types scripts/generate-fly-config.ts
+```
+
+That writes `fly.toml`, `Dockerfile` and `.dockerignore` into `outDir`; deploy
+with `fly deploy`. Because Fly runs a long-lived server, `app.task()` workers and
+`app.cron()` schedulers run normally here.
+
+> This adapter is **not** wired into `celsian.config.ts`. `CelsianConfig` has no
+> `build.adapter` key, so the `defineConfig({ build: { adapter } })` form this
+> README used to show did not type-check and was never read by `celsian build`.
 
 ## License
 

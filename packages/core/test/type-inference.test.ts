@@ -1,4 +1,5 @@
 import type { InferOutput, StandardSchema } from "@celsian/schema";
+import * as v from "valibot";
 import { describe, expectTypeOf, it } from "vitest";
 import { z } from "zod";
 import { createApp } from "../src/app.js";
@@ -545,6 +546,159 @@ describe("parsedBody and parsedQuery inference (Zod)", () => {
   it("InferQuery resolves the schema output, not the raw record", () => {
     expectTypeOf<InferQuery<typeof Query>>().toEqualTypeOf<QueryOut>();
     expectTypeOf<InferQuery<unknown>>().toEqualTypeOf<RawQuery>();
+  });
+});
+
+// ─── parsedBody + parsedQuery across every registration form (real Valibot schemas) ───
+//
+// Valibot carries its output type on `~types` (and on `~standard.types`), which
+// matched none of `InferOutput`'s four original carriers (`StandardSchema`,
+// `_output`, `_type`, `static`). Every form below inferred `unknown`, so any
+// read off `req.parsedBody` raised TS18046 even though runtime validation was
+// working perfectly. Runtime-only correctness is what made this invisible.
+
+describe("parsedBody and parsedQuery inference (Valibot)", () => {
+  const Body = v.object({ name: v.string(), age: v.number() });
+  const Query = v.object({ page: v.string(), tag: v.string() });
+
+  type BodyOut = { name: string; age: number };
+  type QueryOut = { page: string; tag: string };
+
+  it("InferOutput reads Valibot's `~types` carrier", () => {
+    expectTypeOf<InferOutput<typeof Body>>().toEqualTypeOf<BodyOut>();
+  });
+
+  it("app.post(path, opts, handler) types both parsedBody and parsedQuery", () => {
+    const app = createApp();
+    app.post("/v/:id", { schema: { body: Body, querystring: Query } }, (req, reply) => {
+      expectTypeOf(req.parsedBody).toEqualTypeOf<BodyOut>();
+      expectTypeOf(req.parsedQuery).toEqualTypeOf<QueryOut>();
+      expectTypeOf(req.params).toEqualTypeOf<{ id: string }>();
+      return reply.json({ name: req.parsedBody.name, tag: req.parsedQuery.tag });
+    });
+  });
+
+  it("app.post(path, { schema, handler }) types both parsedBody and parsedQuery", () => {
+    const app = createApp();
+    app.post("/v/:id", {
+      schema: { body: Body, querystring: Query },
+      handler(req, reply) {
+        expectTypeOf(req.parsedBody).toEqualTypeOf<BodyOut>();
+        expectTypeOf(req.parsedQuery).toEqualTypeOf<QueryOut>();
+        return reply.json({ age: req.parsedBody.age });
+      },
+    });
+  });
+
+  it("app.route({ ... }) types both parsedBody and parsedQuery", () => {
+    const app = createApp();
+    app.route({
+      method: "POST",
+      url: "/v-route",
+      schema: { body: Body, querystring: Query },
+      handler(req, reply) {
+        expectTypeOf(req.parsedBody).toEqualTypeOf<BodyOut>();
+        expectTypeOf(req.parsedQuery).toEqualTypeOf<QueryOut>();
+        return reply.json({ name: req.parsedBody.name });
+      },
+    });
+  });
+
+  it("the plugin form types both parsedBody and parsedQuery", async () => {
+    const app = createApp();
+    await app.register(async (ctx) => {
+      ctx.post("/v-plugin/:id", { schema: { body: Body, querystring: Query } }, (req, reply) => {
+        expectTypeOf(req.parsedBody).toEqualTypeOf<BodyOut>();
+        expectTypeOf(req.parsedQuery).toEqualTypeOf<QueryOut>();
+        return reply.json({ name: req.parsedBody.name });
+      });
+    });
+  });
+});
+
+// ─── app.route() must not degrade params inference ───
+//
+// `params` inferred as `{ id: string }` for `app.post('/users/:id', ...)` but
+// fell back to `Record<string, string>` for the equivalent `app.route({ url })`,
+// because `TypedRouteOptions` had no `url: T extends string` generic to feed
+// `ExtractRouteParams<T>`. Same route, same framework, two different types.
+
+describe("app.route() params inference", () => {
+  it("infers a single param from the url literal", () => {
+    const app = createApp();
+    app.route({
+      method: "GET",
+      url: "/users/:id",
+      handler(req, reply) {
+        expectTypeOf(req.params).toEqualTypeOf<{ id: string }>();
+        return reply.json({ id: req.params.id });
+      },
+    });
+  });
+
+  it("infers multiple params and matches the app.get() form exactly", () => {
+    const app = createApp();
+    app.route({
+      method: "GET",
+      url: "/users/:id/posts/:postId",
+      handler(req, reply) {
+        expectTypeOf(req.params).toEqualTypeOf<ExtractRouteParams<"/users/:id/posts/:postId">>();
+        expectTypeOf(req.params).toEqualTypeOf<{ id: string; postId: string }>();
+        return reply.json({ id: req.params.id, postId: req.params.postId });
+      },
+    });
+  });
+
+  it("infers a wildcard param", () => {
+    const app = createApp();
+    app.route({
+      method: "GET",
+      url: "/static/*",
+      handler(req, reply) {
+        expectTypeOf(req.params).toEqualTypeOf<{ "*": string }>();
+        return reply.json({ path: req.params["*"] });
+      },
+    });
+  });
+
+  it("infers params alongside schema-derived body and query", () => {
+    const app = createApp();
+    app.route({
+      method: "PUT",
+      url: "/orgs/:orgId/members/:memberId",
+      schema: { body: z.object({ role: z.string() }) },
+      handler(req, reply) {
+        expectTypeOf(req.params).toEqualTypeOf<{ orgId: string; memberId: string }>();
+        expectTypeOf(req.parsedBody).toEqualTypeOf<{ role: string }>();
+        return reply.json({ org: req.params.orgId, role: req.parsedBody.role });
+      },
+    });
+  });
+
+  it("yields an empty params object for a parameterless url", () => {
+    const app = createApp();
+    app.route({
+      method: "GET",
+      url: "/health",
+      handler(req, reply) {
+        expectTypeOf(req.params).toEqualTypeOf<{}>();
+        return reply.json({ ok: true });
+      },
+    });
+  });
+
+  it("infers params in the plugin context form too", async () => {
+    const app = createApp();
+    await app.register(async (ctx) => {
+      ctx.route({
+        method: "DELETE",
+        url: "/items/:itemId",
+        handler(req, reply) {
+          expectTypeOf(req.params).toEqualTypeOf<{ itemId: string }>();
+          return reply.json({ deleted: req.params.itemId });
+        },
+      });
+    });
   });
 });
 

@@ -1,4 +1,5 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
+import { z } from "zod";
 import { createProcedure, procedure } from "../src/procedure.js";
 
 describe("ProcedureBuilder", () => {
@@ -91,43 +92,33 @@ describe("ProcedureBuilder", () => {
 // ─── RPC Type Inference Tests ───
 
 describe("RPC procedure type inference", () => {
-  it("should type input in query handler via .input<T>()", () => {
-    const zodLike = {
-      safeParse(input: unknown) {
-        return { success: true, data: input };
-      },
-      parse(input: unknown) {
-        return input;
-      },
-    };
+  // These used to read `procedure.input<{ name: string }>(zodLike)`, an explicit
+  // annotation that hid the defect: `input<T>(schema: unknown)` had no inference
+  // site, so `T` collapsed to `unknown` for every caller who did NOT annotate,
+  // which is every caller in the docs. Passing a real schema is the spelling the
+  // README ships, so it is the spelling under test.
 
-    const proc = procedure.input<{ name: string }>(zodLike).query(async ({ input }) => {
+  it("should type input in query handler from a real schema", () => {
+    const proc = procedure.input(z.object({ name: z.string() })).query(async ({ input }) => {
       expectTypeOf(input).toEqualTypeOf<{ name: string }>();
       return { greeting: `Hello, ${input.name}` };
     });
 
     expectTypeOf(proc.type).toEqualTypeOf<"query">();
+    expectTypeOf(proc.handler).returns.resolves.toEqualTypeOf<{ greeting: string }>();
   });
 
-  it("should type output in mutation handler via .output<T>()", () => {
-    const zodLike = {
-      safeParse(input: unknown) {
-        return { success: true, data: input };
-      },
-      parse(input: unknown) {
-        return input;
-      },
-    };
-
+  it("should type output in mutation handler from a real .output() schema", () => {
     const proc = procedure
-      .input<{ a: number; b: number }>(zodLike)
-      .output<{ result: number }>(zodLike)
+      .input(z.object({ a: z.number(), b: z.number() }))
+      .output(z.object({ result: z.number() }))
       .mutation(async ({ input }) => {
         expectTypeOf(input).toEqualTypeOf<{ a: number; b: number }>();
         return { result: input.a + input.b };
       });
 
     expectTypeOf(proc.type).toEqualTypeOf<"mutation">();
+    expectTypeOf(proc.handler).returns.resolves.toEqualTypeOf<{ result: number }>();
   });
 
   it("should default to unknown input when no .input() is called", () => {

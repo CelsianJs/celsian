@@ -39,11 +39,23 @@ export interface StandardSchema<Input = unknown, Output = Input> {
  * - Zod v3, `_output`
  * - legacy TypeBox / misc, `_type`
  * - TypeBox (0.30+, incl. 0.34), `static`
+ * - Valibot 1.x, `~types`
+ * - any Standard Schema implementation, `~standard.types`
  *
  * The `static` branch matters because TypeBox is the schema library the default
  * `create-celsian` template installs: without it, every TypeBox-typed route and
  * procedure inferred `unknown`, forcing casts the docs claim are unnecessary.
- * It is checked last so it can never shadow the more specific carriers.
+ *
+ * The `~types` / `~standard` branches matter for the same reason on Valibot,
+ * which is one of the three libraries `@celsian/schema` adapts at runtime.
+ * Valibot carries its output type on neither `_output`, `_type`, nor `static`,
+ * so every Valibot-typed route inferred `unknown` and `request.parsedBody`
+ * raised TS18046 even though validation worked perfectly at runtime.
+ *
+ * Both carriers are declared OPTIONAL by their libraries (`readonly "~types"?:
+ * {...} | undefined`). A plain `T extends { "~types"?: ... }` check therefore
+ * matches every object type, including ones with no such property, so the
+ * branch has to be written as a `keyof` test plus `NonNullable` indexing.
  */
 export type InferOutput<T> =
   T extends StandardSchema<unknown, infer O>
@@ -54,4 +66,14 @@ export type InferOutput<T> =
         ? O
         : T extends { static: infer O }
           ? O
-          : unknown;
+          : "~types" extends keyof T
+            ? NonNullable<T["~types"]> extends { output: infer O }
+              ? O
+              : unknown
+            : "~standard" extends keyof T
+              ? NonNullable<T["~standard"]> extends { types?: infer Types }
+                ? NonNullable<Types> extends { output: infer O }
+                  ? O
+                  : unknown
+                : unknown
+              : unknown;

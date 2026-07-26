@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cors, createApp } from "@celsian/core";
 import { build } from "esbuild";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { createVercelCronHandler, createVercelEdgeHandler } from "../src/index.js";
 
 function makeRequest(path: string, init?: RequestInit) {
@@ -201,19 +201,121 @@ describe("@celsian/adapter-vercel (Cron Handler)", () => {
   });
 
   it("should allow requests with valid CRON_SECRET", async () => {
+    // This used to register a normal route and assert its body came back,
+    // which is exactly the defect: the handler ran the ROUTER, not the cron
+    // jobs, so a correctly-configured Vercel cron got a 404 and no scheduled
+    // work ever executed. It now reports which jobs it ran.
     const app = createApp();
-    app.get("/api/cron", (_req, reply) => reply.json({ ok: true }));
+    app.cron("cleanup", "0 3 * * *", async () => {});
 
     const handler = createVercelCronHandler(app, "test-secret-123");
     const response = await handler(makeCronRequest("/api/cron", "test-secret-123"));
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true });
+    expect(await response.json()).toEqual({ ran: ["cleanup"], failed: [] });
+  });
+
+  it("actually runs the registered cron jobs", async () => {
+    const app = createApp();
+    const calls: string[] = [];
+    app.cron("nightly", "0 3 * * *", async () => {
+      calls.push("nightly");
+    });
+    app.cron("hourly", "0 * * * *", async () => {
+      calls.push("hourly");
+    });
+
+    const handler = createVercelCronHandler(app, "s");
+    const res = await handler(makeCronRequest("/api/cron", "s"));
+
+    expect(res.status).toBe(200);
+    expect(calls.sort()).toEqual(["hourly", "nightly"]);
+  });
+
+  it("runs only the job whose schedule matches the bound expression", async () => {
+    const app = createApp();
+    const calls: string[] = [];
+    app.cron("nightly", "0 3 * * *", async () => {
+      calls.push("nightly");
+    });
+    app.cron("hourly", "0 * * * *", async () => {
+      calls.push("hourly");
+    });
+
+    const handler = createVercelCronHandler(app, "s", { schedule: "0 3 * * *" });
+    const res = await handler(makeCronRequest("/api/cron", "s"));
+
+    expect(await res.json()).toEqual({ ran: ["nightly"], failed: [] });
+    expect(calls).toEqual(["nightly"]);
+  });
+
+  it("lets a ?schedule= query parameter select the job", async () => {
+    const app = createApp();
+    const calls: string[] = [];
+    app.cron("hourly", "0 * * * *", async () => {
+      calls.push("hourly");
+    });
+    app.cron("nightly", "0 3 * * *", async () => {
+      calls.push("nightly");
+    });
+
+    const handler = createVercelCronHandler(app, "s", { schedule: "0 3 * * *" });
+    const res = await handler(makeCronRequest("/api/cron?schedule=0+*+*+*+*", "s"));
+
+    expect(await res.json()).toEqual({ ran: ["hourly"], failed: [] });
+    expect(calls).toEqual(["hourly"]);
+  });
+
+  it("reports a failing job as a 500 so Vercel marks the invocation failed", async () => {
+    const app = createApp();
+    app.cron("ok-job", "0 3 * * *", async () => {});
+    app.cron("bad-job", "0 3 * * *", async () => {
+      throw new Error("boom");
+    });
+
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const handler = createVercelCronHandler(app, "s");
+    const res = await handler(makeCronRequest("/api/cron", "s"));
+    errorSpy.mockRestore();
+
+    expect(res.status).toBe(500);
+    expect(await res.json()).toMatchObject({ ran: ["ok-job"], failed: ["bad-job"] });
+  });
+
+  it("captures a synchronously-throwing job handler too", async () => {
+    const app = createApp();
+    app.cron("sync-throw", "0 3 * * *", () => {
+      throw new Error("sync boom");
+    });
+
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const handler = createVercelCronHandler(app, "s");
+    const res = await handler(makeCronRequest("/api/cron", "s"));
+    errorSpy.mockRestore();
+
+    expect(res.status).toBe(500);
+    expect(await res.json()).toMatchObject({ failed: ["sync-throw"] });
+  });
+
+  it("warns and falls through to the router when no cron jobs are registered", async () => {
+    // Back-compat: a plain route behind the CRON_SECRET check is a legitimate
+    // setup, so it keeps working. The warning names the thing that is missing.
+    const app = createApp();
+    app.get("/api/cron", (_req, reply) => reply.json({ ok: true }));
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const handler = createVercelCronHandler(app, "s");
+    const res = await handler(makeCronRequest("/api/cron", "s"));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("no cron jobs are registered");
+    warnSpy.mockRestore();
   });
 
   it("should reject with 503 when no secret configured (fail closed)", async () => {
     const app = createApp();
-    app.get("/api/cron", (_req, reply) => reply.json({ ok: true }));
+    app.cron("noop", "0 3 * * *", async () => {});
 
     // No secret parameter, and CRON_SECRET env not set
     const originalEnv = process.env.CRON_SECRET;
@@ -232,7 +334,7 @@ describe("@celsian/adapter-vercel (Cron Handler)", () => {
 
   it("should read CRON_SECRET from environment variable", async () => {
     const app = createApp();
-    app.get("/api/cron", (_req, reply) => reply.json({ ok: true }));
+    app.cron("noop", "0 3 * * *", async () => {});
 
     const originalEnv = process.env.CRON_SECRET;
     process.env.CRON_SECRET = "env-secret-456";

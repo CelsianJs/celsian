@@ -47,18 +47,18 @@ export interface DeployAdapter {
 /**
  * Create a Fly.io deployment adapter.
  *
- * Usage in celsian.config.ts:
+ * Call `buildEnd()` from a post-build script. There is no `build.adapter` key in
+ * `CelsianConfig`, so this is NOT referenced from `celsian.config.ts`.
+ *
  * ```ts
  * import { flyAdapter } from '@celsian/adapter-fly';
  *
- * export default defineConfig({
- *   build: {
- *     adapter: flyAdapter({
- *       appName: 'my-app',
- *       primaryRegion: 'iad',
- *       regions: ['lhr', 'nrt'],
- *     }),
- *   },
+ * const adapter = flyAdapter({ appName: 'my-app', primaryRegion: 'iad', regions: ['lhr'] });
+ * await adapter.buildEnd({
+ *   serverEntry: 'dist/index.js',
+ *   clientDir: 'dist/client',
+ *   staticDir: 'public',
+ *   outDir: '.',
  * });
  * ```
  */

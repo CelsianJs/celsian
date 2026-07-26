@@ -136,26 +136,37 @@ describe("[5] request timeout aborts handler signal", () => {
   });
 });
 
-describe("[6] CSRF cookie Secure in production", () => {
-  const original = process.env.NODE_ENV;
-  beforeEach(() => {
-    process.env.NODE_ENV = "production";
-  });
-  afterEach(() => {
-    process.env.NODE_ENV = original;
-  });
+describe("[6] CSRF cookie Secure follows the request protocol", () => {
+  // This used to assert `NODE_ENV === 'production'`, which was the CSRF
+  // plugin exempting itself from the secure-by-default policy core imposed on
+  // every user cookie. Both now derive `secure` from the request protocol, so
+  // the assertion is about the protocol, and the two agree by construction.
 
-  it("sets Secure on the CSRF token cookie in production", async () => {
+  async function csrfCookieFor(url: string): Promise<string | null> {
     const app = createApp();
     await app.register(csrf(), { encapsulate: false });
     app.get("/page", (_req, reply) => reply.json({ ok: true }));
+    const res = await app.inject({ url });
+    return res.headers.get("set-cookie");
+  }
 
-    const res = await app.inject({ url: "/page" });
-    const setCookie = res.headers.get("set-cookie");
+  it("sets Secure on the CSRF token cookie over HTTPS", async () => {
+    const setCookie = await csrfCookieFor("https://app.example.com/page");
     expect(setCookie).toContain("_csrf=");
     expect(setCookie).toContain("Secure");
     // double-submit needs JS read access
     expect(setCookie).not.toContain("HttpOnly");
+  });
+
+  it("omits Secure over plain HTTP on localhost, so the token actually round-trips", async () => {
+    const setCookie = await csrfCookieFor("http://localhost:3000/page");
+    expect(setCookie).toContain("_csrf=");
+    expect(setCookie).not.toContain("Secure");
+  });
+
+  it("still sets Secure over plain HTTP on a routable host", async () => {
+    const setCookie = await csrfCookieFor("http://app.example.com/page");
+    expect(setCookie).toContain("Secure");
   });
 });
 

@@ -14,6 +14,7 @@ import { createLogger, generateRequestId, type Logger } from "./logger.js";
 import { MemoryQueue, type QueueBackend } from "./queue.js";
 import { createReply } from "./reply.js";
 import { buildRequest, buildRequestFast } from "./request.js";
+import { resolveResponseSchema } from "./response-schema.js";
 import { Router } from "./router.js";
 import { createEnqueue, type TaskDefinition, TaskRegistry, TaskWorker, type TaskWorkerOptions } from "./task.js";
 import {
@@ -30,7 +31,6 @@ import {
   type PluginFunction,
   type PluginOptions,
   type ResolvedScope,
-  type ResponseSchemaMap,
   ROUTE_SCOPE,
   type RouteHandler,
   type RouteManifestEntry,
@@ -176,7 +176,7 @@ export class CelsianApp {
    * handler: overload resolution picks the first match, and the untyped
    * `RouteOptions` signature would otherwise always win and erase the inference.
    */
-  route<TBody, TQuery>(options: TypedRouteOptions<TBody, TQuery>): void;
+  route<TBody, TQuery, TUrl extends string>(options: TypedRouteOptions<TBody, TQuery, TUrl>): void;
   route(options: RouteOptions): void;
   route(options: RouteOptions | TypedRouteOptions): void {
     this.pluginContext.route(options as RouteOptions);
@@ -695,6 +695,11 @@ export class CelsianApp {
 
       // Distinguish 404 (path not found) from 405 (wrong method)
       if (this.router.hasPath(pathname)) {
+        // RFC 9110 makes `Allow` mandatory on a 405. Without it the client is
+        // told its method is wrong but never which ones would work, and
+        // `docs/errors.md` promised the header while nothing in core ever set it.
+        const allowed = this.router.allowedMethods(pathname);
+        if (allowed.length > 0) missHeaders.set("allow", allowed.join(", "));
         const r405 = new Response(CelsianApp.METHOD_NOT_ALLOWED_BODY, {
           status: 405,
           headers: missHeaders,
@@ -769,7 +774,11 @@ export class CelsianApp {
       (celsianRequest as Record<string, unknown>).requestId = requestId;
     }
 
-    const reply = createReply();
+    // `fullUrl` is only built when trustProxy is on (it carries the
+    // x-forwarded-proto override); otherwise hand over the raw URL string and
+    // let the reply parse it lazily, and only if a cookie is actually set. The
+    // hot path stays free of a `new URL()` call.
+    const reply = createReply(fullUrl ?? rawUrl);
 
     // Apply reply decorations (skip loop if none registered)
     if (scope.replyDecorations.size > 0) {
@@ -1017,7 +1026,7 @@ export class CelsianApp {
   ): Promise<{ request: CelsianRequest; reply: CelsianReply }> {
     if (!fullUrl) fullUrl = new URL(rawUrl, "http://localhost");
     const celsianRequest = buildRequest(request, fullUrl, {});
-    const reply = createReply();
+    const reply = createReply(fullUrl);
     if (this.rootScope.replyDecorations.size > 0) {
       for (const [key, value] of this.rootScope.replyDecorations) {
         (reply as Record<string, unknown>)[key] = typeof value === "function" ? value() : value;
@@ -1104,10 +1113,12 @@ export class CelsianApp {
    * Disable with `createApp({ validateResponses: false })`.
    */
   private async validateResponse(response: Response, handlerResult: unknown, route: InternalRoute): Promise<Response> {
-    const schemas = route.schema?.response as ResponseSchemaMap | undefined;
+    const schemas = route.schema?.response;
     if (!schemas) return response;
 
-    const responseSchema = schemas[response.status] ?? schemas.default;
+    // Accepts both `{ 200: schema }` and a bare schema (2xx only). See
+    // `resolveResponseSchema` for why the `default` lookup needs Object.hasOwn.
+    const responseSchema = resolveResponseSchema(schemas, response.status);
     if (responseSchema === undefined || responseSchema === null) return response;
 
     let payload: unknown;

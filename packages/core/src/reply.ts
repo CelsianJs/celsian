@@ -235,8 +235,14 @@ function safeRedirectLocation(url: string, allowedHosts?: string[]): string {
 /**
  * Create a new reply builder. Provides chainable methods for setting status, headers,
  * cookies, and sending JSON/HTML/stream/file responses plus structured error helpers.
+ *
+ * @param requestUrl - The URL of the request being answered. Optional, and only
+ * used to pick a `secure` default for `cookie()` / `clearCookie()` that the
+ * browser will actually honour. Without it, cookies default to `Secure`, which
+ * over plain-HTTP local development means the browser drops them and never
+ * sends them back. See `resolveSecureDefault`.
  */
-export function createReply(): CelsianReply {
+export function createReply(requestUrl?: string | URL): CelsianReply {
   let statusCode = 200;
   const headers: Record<string, string> = {};
   const setCookies: string[] = [];
@@ -342,12 +348,15 @@ export function createReply(): CelsianReply {
     },
 
     cookie(name: string, value: string, options?: CookieOptions) {
-      setCookies.push(serializeCookie(name, value, options));
+      setCookies.push(serializeCookie(name, value, options, { url: requestUrl }));
       return reply;
     },
 
     clearCookie(name: string, options?: CookieOptions) {
-      setCookies.push(serializeCookie(name, "", { ...options, maxAge: 0 }));
+      // The clearing cookie must match the original's attributes, `Secure`
+      // included, or the browser treats it as a different cookie and the
+      // original survives. Same context in, same flag out.
+      setCookies.push(serializeCookie(name, "", { ...options, maxAge: 0 }, { url: requestUrl }));
       return reply;
     },
 

@@ -1,5 +1,6 @@
-// @celsian/rpc — Pure fetch-based RPC client proxy
+// @celsian/rpc, Pure fetch-based RPC client proxy
 
+import type { RPCContext } from "./types.js";
 import { decode, encode } from "./wire.js";
 
 /** Options for `createRPCClient` -- base URL, custom fetch, and default headers. */
@@ -125,10 +126,27 @@ type UntypedRPCClientProxy = {
 
 type RPCClientProxy<T> = IsAny<T> extends true ? UntypedRPCClientProxy : RPCRouterProxy<T>;
 
+/**
+ * Map a router type to its client surface.
+ *
+ * `ctx` is matched as {@link RPCContext}, NOT as `unknown`. Handlers are
+ * declared `(opts: { input: TInput; ctx: RPCContext }) => ...`, and under
+ * `strictFunctionTypes` (on in `tsconfig.base.json`) parameters are checked
+ * contravariantly: matching against `ctx: unknown` asked whether `unknown` is
+ * assignable to `RPCContext`, which it is not. Every procedure therefore fell
+ * through to the `never` branch and a typed client had no callable members at
+ * all, which is the exact opposite of the "end-to-end type safety" claim.
+ */
 type RPCRouterProxy<T> = {
-  [K in keyof T]: T[K] extends { type: "query"; handler: (opts: { input: infer I; ctx: unknown }) => Promise<infer O> }
+  [K in keyof T]: T[K] extends {
+    type: "query";
+    handler: (opts: { input: infer I; ctx: RPCContext }) => Promise<infer O>;
+  }
     ? { query(input: I): Promise<O> }
-    : T[K] extends { type: "mutation"; handler: (opts: { input: infer I; ctx: unknown }) => Promise<infer O> }
+    : T[K] extends {
+          type: "mutation";
+          handler: (opts: { input: infer I; ctx: RPCContext }) => Promise<infer O>;
+        }
       ? { mutate(input: I): Promise<O> }
       : T[K] extends Record<string, unknown>
         ? RPCClientProxy<T[K]>

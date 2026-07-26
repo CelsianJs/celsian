@@ -33,14 +33,18 @@ export interface DeployAdapter {
 /**
  * Create a Railway deployment adapter.
  *
- * Usage in celsian.config.ts:
+ * Call `buildEnd()` from a post-build script. There is no `build.adapter` key in
+ * `CelsianConfig`, so this is NOT referenced from `celsian.config.ts`.
+ *
  * ```ts
  * import { railwayAdapter } from '@celsian/adapter-railway';
  *
- * export default defineConfig({
- *   build: {
- *     adapter: railwayAdapter({ healthCheckPath: '/api/health' }),
- *   },
+ * const adapter = railwayAdapter({ healthCheckPath: '/health' });
+ * await adapter.buildEnd({
+ *   serverEntry: 'dist/index.js',
+ *   clientDir: 'dist/client',
+ *   staticDir: 'public',
+ *   outDir: '.',
  * });
  * ```
  */

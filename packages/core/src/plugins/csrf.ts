@@ -175,15 +175,24 @@ export function csrf(options: CSRFOptions = {}): PluginFunction {
         const existing = cookies[cookieName];
         if (!existing || !(await verifyToken(existing, sessionId))) {
           const token = await issueToken(sessionId);
-          const cookieStr = serializeCookie(cookieName, token, {
-            path: cookieOpts.path ?? "/",
-            // Secure by default in production (matches serializeCookie's policy);
-            // explicit cookie.secure overrides. Sent over HTTPS only in prod.
-            secure: cookieOpts.secure ?? process.env.NODE_ENV === "production",
-            sameSite: cookieOpts.sameSite ?? "lax",
-            domain: cookieOpts.domain,
-            httpOnly: false, // Must be readable by JS to send in header (double-submit)
-          });
+          const cookieStr = serializeCookie(
+            cookieName,
+            token,
+            {
+              path: cookieOpts.path ?? "/",
+              // `secure` is left to serializeCookie so this plugin gets exactly
+              // the policy it imposes on everyone else. It used to read
+              // `process.env.NODE_ENV === 'production'`, which meant the
+              // framework's own plugin exempted itself from the
+              // secure-by-default rule it enforced on user cookies. An explicit
+              // `cookie.secure` still overrides.
+              secure: cookieOpts.secure,
+              sameSite: cookieOpts.sameSite ?? "lax",
+              domain: cookieOpts.domain,
+              httpOnly: false, // Must be readable by JS to send in header (double-submit)
+            },
+            { url },
+          );
           reply.header("set-cookie", cookieStr);
         }
         return;

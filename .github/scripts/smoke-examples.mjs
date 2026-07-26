@@ -6,12 +6,13 @@
 // startup: it had never been started, by anyone, in CI or out.
 //
 // For each example that can run on plain Node, this boots it on a random free
-// port and polls an endpoint until it answers or the deadline passes. Examples
-// that target another platform (Lambda, Workers, Vercel) cannot be booted this
-// way; they are listed explicitly in NON_BOOTABLE with the reason, so the set
-// of things NOT covered stays visible instead of silently shrinking.
+// port, waits for the port to answer, and then requires a specific known-good
+// endpoint to return a specific status. Examples that target another platform
+// (Lambda, Workers, Vercel) cannot be booted this way; they are listed
+// explicitly in NON_BOOTABLE with the reason, so the set of things NOT covered
+// stays visible instead of silently shrinking.
 //
-// Exit code is non-zero if any bootable example fails to serve.
+// Exit code is non-zero if any bootable example fails to serve its endpoint.
 
 import { spawn } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -31,8 +32,32 @@ const NON_BOOTABLE = {
   docker: "container image; boots via docker compose, not `npm start`",
 };
 
-// Endpoints to try, in order. Examples do not all expose /health.
-const PROBE_PATHS = ["/health", "/healthz", "/"];
+// A known-good endpoint per example, and the status a WORKING example returns.
+//
+// The previous version probed `/health`, `/healthz`, `/` in order and accepted
+// ANY HTTP answer, 404 included, on the reasoning that a 404 still proves the
+// server booted. It does, and that is all it proves: `auth-flow`, `rest-api`
+// and `rpc-api` all passed this gate on 404s. A gate that a completely broken
+// example passes is not a gate.
+//
+// Every bootable example must therefore name an endpoint it is supposed to
+// serve and the status it is supposed to answer with. An example with no entry
+// here fails rather than falling back to something permissive: adding an
+// example should mean deciding what "working" means for it.
+const PROBES = {
+  "auth-flow": { path: "/health", expect: 200 },
+  basic: { path: "/health", expect: 200 },
+  "crud-api": { path: "/todos", expect: 200 },
+  quickstart: { path: "/todos", expect: 200 },
+  "rest-api": { path: "/users", expect: 200 },
+  "rpc-api": { path: '/_rpc/greeting.hello?input={"name":"smoke"}', expect: 200 },
+  "saas-demo": { path: "/health", expect: 200 },
+  showcase: { path: "/health", expect: 200 },
+};
+
+// Polled first, purely to detect that the port is listening. Its status is
+// never used as a pass signal.
+const LIVENESS_PATH = "/";
 
 const BOOT_TIMEOUT_MS = 30_000;
 const canSignalGroup = process.platform !== "win32";
@@ -65,28 +90,52 @@ function pickScript(pkg) {
   return null;
 }
 
-async function probe(port) {
-  for (const path of PROBE_PATHS) {
-    try {
-      const res = await fetch(`http://127.0.0.1:${port}${path}`, {
-        signal: AbortSignal.timeout(2000),
-      });
-      // Any HTTP answer proves the server booted and is routing. A 404 on `/`
-      // is a perfectly healthy server that simply has no root route.
-      if (res.status > 0) return { path, status: res.status };
-    } catch {
-      // try the next path
-    }
+/** True once the port answers anything at all. Liveness, not correctness. */
+async function isListening(port) {
+  try {
+    await fetch(`http://127.0.0.1:${port}${LIVENESS_PATH}`, {
+      signal: AbortSignal.timeout(2000),
+    });
+    return true;
+  } catch {
+    return false;
   }
-  return null;
+}
+
+/** Hit the example's known-good endpoint and report whether it answered as promised. */
+async function probe(port, probeSpec) {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}${probeSpec.path}`, {
+      signal: AbortSignal.timeout(5000),
+      headers: { accept: "application/json" },
+    });
+    const body = await res.text();
+    return { status: res.status, body: body.slice(0, 500) };
+  } catch (error) {
+    return { status: 0, body: String(error?.message ?? error) };
+  }
 }
 
 async function smokeOne(name) {
   const dir = join(examplesDir, name);
   const pkg = readPackageJson(dir);
+  if (!pkg) {
+    // No package.json at all: a stray directory (a leftover node_modules, a
+    // scratch dir), not an example. Reported so it stays visible.
+    return { name, ok: true, skipped: true, reason: "no package.json, not an example" };
+  }
   const script = pickScript(pkg);
   if (!script) {
     return { name, ok: false, reason: "no `start` or `dev` script to boot" };
+  }
+
+  const probeSpec = PROBES[name];
+  if (!probeSpec) {
+    return {
+      name,
+      ok: false,
+      reason: `no PROBES entry: add a known-good endpoint and expected status to ${"smoke-examples.mjs"}`,
+    };
   }
 
   const port = String(32000 + Math.floor(Math.random() * 10000));
@@ -117,17 +166,31 @@ async function smokeOne(name) {
 
   try {
     const deadline = Date.now() + BOOT_TIMEOUT_MS;
+    let listening = false;
     while (Date.now() < deadline) {
       if (child.exitCode !== null && child.exitCode !== 0) {
         return { name, ok: false, reason: `process exited with ${child.exitCode}`, output };
       }
-      const hit = await probe(port);
-      if (hit) {
-        return { name, ok: true, reason: `${hit.path} -> ${hit.status}` };
+      if (await isListening(port)) {
+        listening = true;
+        break;
       }
       await sleep(300);
     }
-    return { name, ok: false, reason: `no HTTP response within ${BOOT_TIMEOUT_MS / 1000}s`, output };
+    if (!listening) {
+      return { name, ok: false, reason: `no HTTP response within ${BOOT_TIMEOUT_MS / 1000}s`, output };
+    }
+
+    const hit = await probe(port, probeSpec);
+    if (hit.status !== probeSpec.expect) {
+      return {
+        name,
+        ok: false,
+        reason: `${probeSpec.path} -> ${hit.status || "no response"}, expected ${probeSpec.expect}`,
+        output: `${output}\n--- response body ---\n${hit.body}`,
+      };
+    }
+    return { name, ok: true, reason: `${probeSpec.path} -> ${hit.status}` };
   } finally {
     signalChild("SIGTERM");
     await sleep(500);
@@ -149,7 +212,8 @@ async function main() {
     }
     process.stdout.write(`BOOT  ${name} ... `);
     const result = await smokeOne(name);
-    console.log(result.ok ? `ok (${result.reason})` : `FAILED (${result.reason})`);
+    console.log(result.skipped ? `skipped (${result.reason})` : result.ok ? `ok (${result.reason})` : `FAILED (${result.reason})`);
+    if (result.skipped) continue;
     if (!result.ok && result.output) {
       console.log(`--- ${name} output ---\n${result.output.slice(-4000)}\n--- end ---`);
     }
@@ -157,7 +221,7 @@ async function main() {
   }
 
   const failed = results.filter((r) => !r.ok);
-  console.log(`\n${results.length - failed.length}/${results.length} examples booted and served.`);
+  console.log(`\n${results.length - failed.length}/${results.length} examples served their known-good endpoint.`);
   if (failed.length > 0) {
     console.error(`Failed: ${failed.map((r) => r.name).join(", ")}`);
     process.exit(1);

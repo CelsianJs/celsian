@@ -12,23 +12,35 @@ npm install @celsian/adapter-railway
 
 ## Usage
 
-Reference the adapter from your `celsian.config.ts`:
+The adapter is a plain object with a `buildEnd()` method that writes the files.
+Call it from a post-build script:
 
 ```ts
-import { defineConfig } from '@celsian/core';
+// scripts/generate-railway-config.ts
 import { railwayAdapter } from '@celsian/adapter-railway';
 
-export default defineConfig({
-  build: {
-    adapter: railwayAdapter({ healthCheckPath: '/health' }),
-  },
+const adapter = railwayAdapter({ healthCheckPath: '/health' });
+
+await adapter.buildEnd({
+  serverEntry: 'dist/index.js',
+  clientDir: 'dist/client',
+  staticDir: 'public',
+  outDir: '.',
 });
 ```
 
-`celsian build` then emits the Railway config. Because Railway runs a long-lived
-server, `app.task()` workers and `app.cron()` schedulers run normally here. Make
-sure the server binds `0.0.0.0` (the default in production) so Railway's proxy
-can reach it.
+```bash
+node --experimental-strip-types scripts/generate-railway-config.ts
+```
+
+That writes `Procfile`, `railway.json` and `.env.example` into `outDir`. Because
+Railway runs a long-lived server, `app.task()` workers and `app.cron()`
+schedulers run normally here. Make sure the server binds `0.0.0.0` (the default
+in production) so Railway's proxy can reach it.
+
+> This adapter is **not** wired into `celsian.config.ts`. `CelsianConfig` has no
+> `build.adapter` key, so the `defineConfig({ build: { adapter } })` form this
+> README used to show did not type-check and was never read by `celsian build`.
 
 ## License
 

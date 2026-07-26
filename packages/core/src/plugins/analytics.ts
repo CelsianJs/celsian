@@ -1,6 +1,7 @@
 // @celsian/core — Database analytics wrapper
 // Instruments every query with timing, surfaces DB vs server time
 
+import { CelsianError } from "../errors.js";
 import type { PluginFunction } from "../types.js";
 import type { DatabasePool, TransactionCapablePool, TransactionClient } from "./database.js";
 
@@ -22,6 +23,24 @@ export interface RequestMetrics {
 export interface TrackedPool extends DatabasePool {
   metrics: RequestMetrics;
   resetMetrics(): void;
+}
+
+/**
+ * The minimum surface {@link trackedPool} needs.
+ *
+ * `close()` and `end()` are both optional here because real drivers disagree:
+ * `DatabasePool` specifies `close()`, but node-postgres (`pg.Pool`), the pool
+ * `README.md` uses in its own example, exposes `end()`. `trackedPool`
+ * unconditionally called `pool.close.bind(pool)`, so the documented sample threw
+ * `TypeError: Cannot read properties of undefined (reading 'bind')` on the first
+ * line. Whichever one the pool has is used, and the wrapper always exposes
+ * `close()` so the result still satisfies `DatabasePool`.
+ */
+export interface TrackablePool {
+  query(sql: string, params?: unknown[]): Promise<unknown>;
+  isHealthy?(): Promise<boolean>;
+  close?(): Promise<void>;
+  end?(): Promise<void>;
 }
 
 /**
@@ -48,8 +67,24 @@ export interface TrackedPool extends DatabasePool {
  * // Response includes: Server-Timing: db;dur=12.5;desc="1 queries"
  * ```
  */
-export function trackedPool<T extends DatabasePool>(pool: T): T & TrackedPool {
+export function trackedPool<T extends TrackablePool>(pool: T): T & TrackedPool {
   const metrics: RequestMetrics = { dbTime: 0, queryCount: 0, queries: [] };
+
+  // `close()` per DatabasePool, `end()` per node-postgres. Resolved once, here,
+  // rather than assumed. A pool with neither is a configuration mistake worth
+  // naming at wrap time instead of at shutdown, when it is too late to matter.
+  const closeFn =
+    typeof pool.close === "function"
+      ? pool.close.bind(pool)
+      : typeof pool.end === "function"
+        ? pool.end.bind(pool)
+        : null;
+  if (!closeFn) {
+    throw new CelsianError(
+      "trackedPool(pool) requires the pool to expose close() or end(); received an object with neither. " +
+        "node-postgres pools use end(), most others use close().",
+    );
+  }
 
   const tracked = {
     async query(sql: string, params?: unknown[]): Promise<unknown> {
@@ -65,7 +100,7 @@ export function trackedPool<T extends DatabasePool>(pool: T): T & TrackedPool {
     },
 
     isHealthy: pool.isHealthy?.bind(pool),
-    close: pool.close.bind(pool),
+    close: closeFn,
 
     get metrics(): RequestMetrics {
       return { ...metrics, queries: [...metrics.queries] };

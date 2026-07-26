@@ -1,8 +1,22 @@
 // @celsian/rpc, Procedure builder
 
-import type { StandardSchema } from "@celsian/schema";
+import type { InferOutput, StandardSchema } from "@celsian/schema";
 import { fromSchema } from "@celsian/schema";
 import type { MiddlewareFunction, ProcedureDefinition, ProcedureType, RPCContext } from "./types.js";
+
+/**
+ * What a finalizing handler is allowed to return.
+ *
+ * Until `.output(schema)` pins it, `TOutput` is `unknown` and the handler may
+ * return anything, its return type then becomes the procedure's output type.
+ * Once an output schema is declared, the handler is constrained to it, so a
+ * handler that contradicts its own declared output is a compile error rather
+ * than a runtime validation failure.
+ */
+type HandlerResult<TOutput> = unknown extends TOutput ? unknown : TOutput;
+
+/** The procedure's output type: the handler's return until `.output()` pins it. */
+type ResolvedOutput<TOutput, TResult> = unknown extends TOutput ? Awaited<TResult> : TOutput;
 
 /**
  * Fluent builder for defining RPC procedures with optional input/output schemas and middleware.
@@ -28,19 +42,28 @@ class ProcedureBuilder<TInput = unknown, TOutput = unknown> {
     return next;
   }
 
-  /** Set the input validation schema (Zod, TypeBox, or Valibot). */
-  input<T>(schema: unknown): ProcedureBuilder<T, TOutput> {
-    const builder = this._carry(new ProcedureBuilder<T, TOutput>(this._middlewares));
-    builder._inputSchema = fromSchema<T>(schema) as StandardSchema<T>;
+  /**
+   * Set the input validation schema (Zod, TypeBox, or Valibot).
+   *
+   * The type parameter is the SCHEMA, not the parsed type: that is the only
+   * way TypeScript gets an inference site. The previous signature was
+   * `input<T>(schema: unknown)`, which mentioned `T` nowhere in the parameter
+   * list, so `T` had nothing to infer from and always collapsed to `unknown`,
+   * leaving `({ input }) => ...` handlers untyped and falsifying the
+   * end-to-end type safety the README advertises.
+   */
+  input<TSchema>(schema: TSchema): ProcedureBuilder<InferOutput<TSchema>, TOutput> {
+    const builder = this._carry(new ProcedureBuilder<InferOutput<TSchema>, TOutput>(this._middlewares));
+    builder._inputSchema = fromSchema<InferOutput<TSchema>>(schema) as StandardSchema<InferOutput<TSchema>>;
     builder._outputSchema = this._outputSchema as unknown as StandardSchema<TOutput> | undefined;
     return builder;
   }
 
-  /** Set the output validation schema. */
-  output<T>(schema: unknown): ProcedureBuilder<TInput, T> {
-    const builder = this._carry(new ProcedureBuilder<TInput, T>(this._middlewares));
+  /** Set the output validation schema. Infers from the schema, see {@link input}. */
+  output<TSchema>(schema: TSchema): ProcedureBuilder<TInput, InferOutput<TSchema>> {
+    const builder = this._carry(new ProcedureBuilder<TInput, InferOutput<TSchema>>(this._middlewares));
     builder._inputSchema = this._inputSchema as unknown as StandardSchema<TInput> | undefined;
-    builder._outputSchema = fromSchema<T>(schema) as StandardSchema<T>;
+    builder._outputSchema = fromSchema<InferOutput<TSchema>>(schema) as StandardSchema<InferOutput<TSchema>>;
     return builder;
   }
 
@@ -67,29 +90,36 @@ class ProcedureBuilder<TInput = unknown, TOutput = unknown> {
     return builder;
   }
 
-  /** Finalize as a read-only query procedure (GET). */
-  query(
-    handler: (opts: { input: TInput; ctx: RPCContext }) => Promise<TOutput> | TOutput,
-  ): ProcedureDefinition<TInput, TOutput, "query"> {
+  /**
+   * Finalize as a read-only query procedure (GET).
+   *
+   * `TResult` is inferred from the handler so the procedure carries a real
+   * output type. Without it every procedure resolved to `Promise<unknown>` on
+   * the client, which is half of what "end-to-end type safety" has to mean.
+   */
+  query<TResult extends HandlerResult<TOutput>>(
+    handler: (opts: { input: TInput; ctx: RPCContext }) => Promise<TResult> | TResult,
+  ): ProcedureDefinition<TInput, ResolvedOutput<TOutput, TResult>, "query"> {
     return this._build("query", handler);
   }
 
-  /** Finalize as a write mutation procedure (POST). */
-  mutation(
-    handler: (opts: { input: TInput; ctx: RPCContext }) => Promise<TOutput> | TOutput,
-  ): ProcedureDefinition<TInput, TOutput, "mutation"> {
+  /** Finalize as a write mutation procedure (POST). See {@link query} for the return inference. */
+  mutation<TResult extends HandlerResult<TOutput>>(
+    handler: (opts: { input: TInput; ctx: RPCContext }) => Promise<TResult> | TResult,
+  ): ProcedureDefinition<TInput, ResolvedOutput<TOutput, TResult>, "mutation"> {
     return this._build("mutation", handler);
   }
 
-  private _build<TType extends ProcedureType>(
+  private _build<TType extends ProcedureType, TResult extends HandlerResult<TOutput>>(
     type: TType,
-    handler: (opts: { input: TInput; ctx: RPCContext }) => Promise<TOutput> | TOutput,
-  ): ProcedureDefinition<TInput, TOutput, TType> {
+    handler: (opts: { input: TInput; ctx: RPCContext }) => Promise<TResult> | TResult,
+  ): ProcedureDefinition<TInput, ResolvedOutput<TOutput, TResult>, TType> {
+    type Out = ResolvedOutput<TOutput, TResult>;
     return {
       type,
       inputSchema: this._inputSchema,
-      outputSchema: this._outputSchema,
-      handler: async (opts) => handler(opts) as Promise<TOutput>,
+      outputSchema: this._outputSchema as StandardSchema<Out> | undefined,
+      handler: async (opts) => (await handler(opts)) as Out,
       middlewares: this._middlewares,
       allowFormData: this._allowFormData,
     };

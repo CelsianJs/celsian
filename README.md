@@ -316,6 +316,7 @@ See the [Error Reference](docs/errors.md) for every error `code`, its cause, and
 ```typescript
 // server.ts
 import { procedure, router, RPCHandler } from '@celsian/rpc';
+import { z } from 'zod';
 
 const appRouter = router({
   users: {
@@ -333,7 +334,12 @@ app.route({ method: ['GET', 'POST'], url: '/_rpc/*path', handler: (req) => rpc.h
 export type AppRouter = typeof appRouter;
 
 // client.ts
+import { createRPCClient } from '@celsian/rpc/client';
+import type { AppRouter } from './server.js';
+
 const client = createRPCClient<AppRouter>({ baseUrl: 'http://localhost:3000/_rpc' });
+// Both calls are fully typed: the input is checked against the procedure's
+// schema, and the result is the procedure's return type.
 const users = await client.users.list.query({ limit: 10 });
 const newUser = await client.users.create.mutate({ name: 'Bob', email: 'bob@example.com' });
 ```

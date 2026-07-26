@@ -4,8 +4,13 @@ export { CelsianApp, createApp } from "./app.js";
 export type { CelsianConfig } from "./config.js";
 export { ConfigLoadError, defineConfig, loadConfig } from "./config.js";
 export { EncapsulationContext } from "./context.js";
-export type { CookieOptions } from "./cookie.js";
-export { parseCookies, serializeCookie } from "./cookie.js";
+export type { CookieOptions, CookieSecurityContext } from "./cookie.js";
+export {
+  parseCookies,
+  resetCookieSecurityWarnings,
+  resolveSecureDefault,
+  serializeCookie,
+} from "./cookie.js";
 export type { CronJob, ServerlessCronRuntime } from "./cron.js";
 export { CronScheduler, detectServerlessCronRuntime, parseCronExpression, shouldRun } from "./cron.js";
 export {
@@ -49,6 +54,7 @@ export type {
 export { DEFAULT_VISIBILITY_TIMEOUT, generateQueueId, MemoryQueue } from "./queue.js";
 export { createReply } from "./reply.js";
 export { buildRequest } from "./request.js";
+export { isStatusKeyedResponseMap, resolveResponseSchema } from "./response-schema.js";
 export { Router } from "./router.js";
 export type { ServeOptions, ServeResult } from "./serve.js";
 export { nodeToWebRequest, serve, writeWebResponse } from "./serve.js";
@@ -69,12 +75,14 @@ export type {
   PluginContext,
   PluginFunction,
   PluginOptions,
+  ResponseSchemaMap,
   RouteHandler,
   RouteHooks,
   RouteManifestEntry,
   RouteMatch,
   RouteMethod,
   RouteOptions,
+  RouteResponseSchema,
   RouteSchemaOptions,
   TypedCelsianRequest,
   TypedRouteHandler,

@@ -190,3 +190,61 @@ describe("slowQueryLogger", () => {
     expect(warnMock).not.toHaveBeenCalled();
   });
 });
+
+// ─── trackedPool must accept the pool the README actually uses ───
+//
+// `README.md` wraps a `pg.Pool`, and node-postgres closes with `end()`, not
+// `close()`. `trackedPool` did `pool.close.bind(pool)` unconditionally, so the
+// documented sample threw `TypeError: Cannot read properties of undefined
+// (reading 'bind')` before it ever ran a query.
+
+describe("trackedPool close/end tolerance", () => {
+  it("accepts a node-postgres style pool that closes with end()", async () => {
+    let ended = false;
+    const pgStylePool = {
+      async query() {
+        return { rows: [] };
+      },
+      async end() {
+        ended = true;
+      },
+    };
+
+    const pool = trackedPool(pgStylePool);
+    await pool.query("SELECT 1");
+    expect(pool.metrics.queryCount).toBe(1);
+
+    await pool.close();
+    expect(ended).toBe(true);
+  });
+
+  it("still prefers close() when the pool has one", async () => {
+    let closed = false;
+    let ended = false;
+    const pool = trackedPool({
+      async query() {
+        return null;
+      },
+      async close() {
+        closed = true;
+      },
+      async end() {
+        ended = true;
+      },
+    });
+
+    await pool.close();
+    expect(closed).toBe(true);
+    expect(ended).toBe(false);
+  });
+
+  it("throws a named error when the pool can close neither way", () => {
+    expect(() =>
+      trackedPool({
+        async query() {
+          return null;
+        },
+      }),
+    ).toThrow(/close\(\) or end\(\)/);
+  });
+});

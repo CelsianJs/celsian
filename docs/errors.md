@@ -39,7 +39,7 @@ These codes come from CelsianJS itself (request parsing, routing, and validation
 | `VALIDATION_FAILED` | 400 | A request failed a route's `schema` (body, query, or params). The response includes an `issues` array with the failing paths. | Send input that matches the schema. Read `issues` to see which fields are wrong. |
 | `INVALID_JSON` | 400 | The request had a JSON content-type but the body was not valid JSON. | Send well-formed JSON and a correct `Content-Type: application/json` header. |
 | `INVALID_BODY` | 400 | The request body could not be parsed for its content-type (e.g. malformed form data). | Check the body encoding matches the `Content-Type`. |
-| `MALFORMED_URI` | 400 | The request path contained invalid percent-encoding (e.g. `/%ZZ`). | Percent-encode path segments correctly (`encodeURIComponent`). |
+| `MALFORMED_URI` | 400 | A matched **route parameter or wildcard** segment contained invalid percent-encoding. For a route `/p/:id`, `/p/%ZZ` is a 400. A bad escape in a path that matches no route is a plain `NOT_FOUND` 404, because decoding only happens once a route matches. | Percent-encode path segments correctly (`encodeURIComponent`). |
 | `NOT_FOUND` | 404 | No route matched the request path. | Check the path and method. Use `app.getRoutes()` to list registered routes. |
 | `METHOD_NOT_ALLOWED` | 405 | The path matched a route, but not for this HTTP method. | Use a method the route defines. The `Allow` header lists permitted methods. |
 | `PAYLOAD_TOO_LARGE` | 413 | The request body exceeded the configured `bodyLimit` (default 1 MB). | Reduce the payload, or raise `bodyLimit` in route/app config (`0` disables the check). |

@@ -23,7 +23,12 @@ export default defineConfig({
     typecheck: {
       enabled: true,
       tsconfig: "./tsconfig.typecheck.vitest.json",
-      include: ["packages/core/test/type-inference.test.ts", "packages/rpc/test/procedure.test.ts"],
+      include: [
+        "packages/core/test/type-inference.test.ts",
+        "packages/core/test/response-schema.test.ts",
+        "packages/rpc/test/procedure.test.ts",
+        "packages/rpc/test/type-inference.test.ts",
+      ],
     },
     coverage: {
       provider: "v8",

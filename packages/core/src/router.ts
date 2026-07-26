@@ -279,6 +279,43 @@ export class Router {
     return this._hasPath(this.root, segments, 0);
   }
 
+  /**
+   * The methods registered for this exact path, for the `Allow` header on a
+   * 405. RFC 9110 makes `Allow` mandatory on `405 Method Not Allowed`, and
+   * without it a client is told its method is wrong but not which ones are
+   * right. Mirrors {@link hasPath}, wildcards excluded for the same reason.
+   *
+   * `HEAD` is reported wherever `GET` is registered, because the app really
+   * does answer HEAD through its GET fallback. Reporting only what is
+   * literally in the routing table would understate what the server accepts.
+   */
+  allowedMethods(pathname: string): RouteMethod[] {
+    const canonical = canonicalizePath(pathname, this.ignoreTrailingSlash);
+    if (canonical === null) return [];
+
+    const found = new Set<RouteMethod>();
+    const staticRoutes = this.staticRoutes.get(canonical);
+    if (staticRoutes) {
+      for (const method of staticRoutes.keys()) found.add(method);
+    }
+    this._collectMethods(this.root, splitPath(canonical), 0, found);
+
+    if (found.has("GET")) found.add("HEAD");
+    return METHOD_ORDER.filter((method) => found.has(method));
+  }
+
+  private _collectMethods(node: RadixNode, segments: string[], index: number, out: Set<RouteMethod>): void {
+    if (index >= segments.length) {
+      for (const method of node.routes.keys()) out.add(method);
+      return;
+    }
+    const seg = segments[index]!;
+    const staticChild = node.children.get(seg);
+    if (staticChild) this._collectMethods(staticChild, segments, index + 1, out);
+    if (node.paramChild) this._collectMethods(node.paramChild, segments, index + 1, out);
+    // Wildcards excluded, see _hasPath.
+  }
+
   private _hasPath(node: RadixNode, segments: string[], index: number): boolean {
     if (index >= segments.length) {
       return node.routes.size > 0;
@@ -313,6 +350,9 @@ export class Router {
     }
   }
 }
+
+/** Canonical order for the `Allow` header, so the value is stable across requests. */
+const METHOD_ORDER: RouteMethod[] = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
 
 // ─── Module-level helpers (avoids `this` overhead) ───
 

@@ -190,7 +190,7 @@ throw new HttpError(404, 'User not found');
 ```ts
 import { defineConfig, loadConfig } from '@celsian/core';
 
-export default defineConfig({ port: 3000 });
+export default defineConfig({ server: { port: 3000 } });
 ```
 
 ## Documentation
