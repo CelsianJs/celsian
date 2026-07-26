@@ -46,8 +46,8 @@
 | `res.cookie()` | ✅ Full support | `reply.cookie(name, value, options)` with full cookie options |
 | `res.clearCookie()` | ✅ Full support | `reply.clearCookie(name, options)` |
 | `res.type()` | ⚠️ Partial | No shorthand; use `reply.header('content-type', '...')` |
-| `res.download()` | ⚠️ Works, no traversal guard | `reply.download(filePath, filename?)` sets a Content-Disposition attachment and strips `"`/CR/LF from the filename. It does NOT guard against path traversal: it calls `resolve()`, which normalizes rather than confines, and there is no `root` option. Verified exploitable 2026-07-26, see SECURITY_AUDIT.md C-3. Validate the path yourself before calling it. |
-| `res.sendFile()` | ✅ Full support, guard is opt-in | `reply.sendFile(filePath, { root })` does MIME detection and returns 403 if the resolved path escapes `root`. The traversal guard exists ONLY when you pass `root`. Called as `sendFile(userPath)` with no `root` it will read any file the process can reach (verified 2026-07-26, see SECURITY_AUDIT.md C-2). Always pass `root` for user-influenced paths. |
+| `res.download()` | ✅ Full support, confined by default | `reply.download(filePath, options?)` sets a Content-Disposition attachment and strips `"`/CR/LF from the filename. Since 0.6.0 it is path-confined: `options.root` defaults to `process.cwd()` and an escaping path returns 403, with a `realpath()` re-check so symlinks cannot escape either. Pass `{ root }` to serve from somewhere other than the CWD. |
+| `res.sendFile()` | ✅ Full support, confined by default | `reply.sendFile(filePath, { root })` does MIME detection and returns 403 if the resolved path escapes `root`. Since 0.6.0 `root` defaults to `process.cwd()` rather than being optional, so there is no unconfined mode, and containment is re-checked against `realpath()`. |
 | `res.html()` | ✅ Full support | `reply.html(content)` — not in Express but a nice addition |
 | `res.stream()` | ✅ Full support | `reply.stream(readable)` — not in Express |
 | Status code helpers | ✅ Full support | `reply.notFound()`, `reply.badRequest()`, `reply.unauthorized()`, etc. |

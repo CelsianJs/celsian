@@ -60,16 +60,14 @@ findings, added CSRF protection, and hardened the adapter-node path traversal pr
 - **File:** `packages/core/src/reply.ts`, lines 156-175 (original)
 - **Description:** `sendFile()` passed the `filePath` argument directly to `readFile()` without resolving or validating the path. If an application constructs the path from user input (e.g., `reply.sendFile('/uploads/' + req.params.file)`), an attacker could traverse the filesystem using `../` sequences.
 - **Impact:** Arbitrary file read. While this depends on how the application uses `sendFile`, the framework provides no guardrails.
-- **Status: OPEN** (reopened 2026-07-26). The previously recorded fix, "added `resolve()` to normalize the path before reading", does not confine the path and does not address the finding. Re-verified as exploitable on 2026-07-26.
-- **Mitigation available today:** always call `reply.sendFile(userPath, { root: '/your/dir' })`. The `root` form resolves against `root` and returns 403 on escape. The no-`root` form has no guard.
+- **Status: FIXED in 0.6.0** (2026-07-26). History matters here: this was first recorded as fixed when it was not (the "added `resolve()`" note normalized rather than confined), then reopened, then genuinely fixed. `resolveConfinedPath()` in `packages/core/src/reply.ts` now confines every call: `root` defaults to `process.cwd()`, containment is checked lexically and then re-checked against `realpath()` so a symlink cannot escape, and there is no unconfined mode. Verified 2026-07-26: `sendFile('../../../../../../etc/hosts')` with no `root` returns 403.
 
 ### C-3: Path Traversal in `reply.download()`
 - **Severity:** CRITICAL
 - **File:** `packages/core/src/reply.ts`, lines 177-202 (original)
 - **Description:** Same issue as C-2 but in the `download()` method. Additionally, the `filename` parameter was interpolated directly into the `Content-Disposition` header without sanitization, enabling CRLF header injection.
 - **Impact:** Arbitrary file read plus potential response header injection via crafted filenames.
-- **Status: PARTIALLY FIXED, traversal OPEN** (reopened 2026-07-26). The `Content-Disposition` sanitisation is real and correct: `packages/core/src/reply.ts:209` strips `"`, `\r` and `\n`. The traversal half is not fixed. `resolve()` normalizes rather than confines, and `download()` has no `root` option, so there is no confinement mechanism at all. Re-verified as exploitable on 2026-07-26.
-- **Mitigation available today:** validate or canonicalise the path yourself before calling `download()`, or use `sendFile(path, { root })` plus an explicit `content-disposition` header.
+- **Status: FIXED in 0.6.0** (2026-07-26). The `Content-Disposition` sanitisation was always real and correct (strips `"`, `\r`, `\n`). The traversal half is now fixed too: `download()` gained a `DownloadOptions` object with `root` and `allowSymlinks`, and shares `resolveConfinedPath()` with `sendFile()`. Verified 2026-07-26: `download('../../../../../../etc/hosts')` with no `root` returns 403.
 
 ---
 

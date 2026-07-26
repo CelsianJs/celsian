@@ -1,12 +1,31 @@
 # Plugins and Encapsulation
 
-CelsianJS uses a Fastify-inspired plugin system where each plugin runs in an isolated context. Decorations, and `onRequest` / `preHandler` hooks, registered inside a plugin are scoped to that plugin's routes by default.
+CelsianJS uses a Fastify-inspired plugin system where each plugin runs in its own context.
 
-> **Known gap (0.5.5).** Encapsulation is not complete. `onSend` and `onResponse` hooks
-> registered inside a plugin also run for routes registered outside it. Verified
-> 2026-07-26: a plugin registered under a `/p` prefix, adding all four hook types,
-> still fired its `onSend` and `onResponse` for a sibling `GET /outside`. Treat those
-> two hook types as app-wide regardless of where you register them.
+**The rule: a prefix decides the scope.**
+
+| Registration | Decorations and hooks apply to |
+|---|---|
+| `app.register(p, { prefix: '/x' })` | only routes under `/x` |
+| `app.register(p)` (no prefix) | every route in the app |
+| `app.register(p, { encapsulate: false })` | every route in the app, explicitly |
+
+All four hook types (`onRequest`, `preHandler`, `onSend`, `onResponse`) follow the same
+rule, so a prefixed plugin cannot leak a hook onto a sibling route.
+
+An un-prefixed plugin being app-wide is deliberate: it is what makes
+`await app.register(cors())` behave as middleware rather than silently doing nothing.
+If you want a plugin scoped, give it a prefix.
+
+Hooks are resolved when the app is ready, not when a route is registered, so
+`app.addHook(...)` applies to routes declared before it as well as after. Registration
+order does not change behavior.
+
+> **Changed in 0.6.0.** Previously `onRequest` and `preHandler` registered inside a
+> plugin were silently DISCARDED, which made security plugins no-ops, while `onSend`
+> and `onResponse` leaked to every ancestor. Both are fixed. If you worked around the
+> old behavior with `{ encapsulate: false }` on a security plugin, you can now drop it,
+> though leaving it in place is still correct and explicit.
 
 ## Writing a Plugin
 

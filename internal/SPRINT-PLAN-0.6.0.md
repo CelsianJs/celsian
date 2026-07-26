@@ -15,7 +15,7 @@ Make every claim CelsianJS makes on its front page true, and make the framework 
 - [ ] `pnpm typecheck` actually checks files; type tests can actually fail
 - [ ] Body/query/response type inference works in every registration form, including TypeBox
 - [ ] Task queue does not drop or duplicate jobs
-- [ ] No claim in README, `site/index.html`, package READMEs or `docs/internal/` is false
+- [ ] No claim in README, `site/index.html`, package READMEs or `internal/` is false
 - [ ] `pnpm build`, `pnpm test`, `pnpm typecheck` all green at the end
 
 ## Deliberately out of scope
@@ -59,7 +59,7 @@ Dead-letter queue + failure hook · `promoteDelayed()` atomicity via Lua · visi
 
 ### Track 7: CI, build, benchmarks, docs, site, examples, CLI
 **Owns:** `.github/**`, `tsconfig*.json`, `vitest.config.ts`, `benchmarks/**`, `site/**`, `docs/**`, `README.md`, `CHANGELOG.md`, `examples/**`, `packages/{cli,create-celsian}/**`, all `packages/*/README.md`
-`tsc -b --noEmit` · vitest typecheck enabled + test files in tsconfig · benchmark harness rigor + retract/re-run the Express claim · 3 broken site samples · README `encapsulate: false` · correct every false claim including `docs/internal/SECURITY_AUDIT.md` · examples in CI + showcase cron fix + app exports · stub package READMEs · pin CI actions to SHAs · blocking prod audit · lint warnings visible · `celsian dev` `.env` · `celsian deploy` app import · CHANGELOG sync · root version · scaffold rate-limit keyGenerator + stale security.ts comment
+`tsc -b --noEmit` · vitest typecheck enabled + test files in tsconfig · benchmark harness rigor + retract/re-run the Express claim · 3 broken site samples · README `encapsulate: false` · correct every false claim including `internal/SECURITY_AUDIT.md` · examples in CI + showcase cron fix + app exports · stub package READMEs · pin CI actions to SHAs · blocking prod audit · lint warnings visible · `celsian dev` `.env` · `celsian deploy` app import · CHANGELOG sync · root version · scaffold rate-limit keyGenerator + stale security.ts comment
 
 ## Cross-track contract (CRIT-3)
 

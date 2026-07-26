@@ -9,7 +9,7 @@ The batteries-included TypeScript backend that goes serverless without leaving i
 - **Durable jobs that cross the serverless boundary** -- Background tasks with retries and cron, built in. Run them in-process on a long-lived server, or back them with `@celsian/queue-redis` so a serverless producer and a hot-server worker share one queue. No separate BullMQ worker process to stand up.
 - **Built-in everything** -- Background tasks, cron, WebSocket, CORS, CSRF protection, security headers, DB analytics, rate limiting, JWT, caching, compression, OpenAPI docs. No plugin scavenger hunt.
 - **Multi-runtime** -- Write once, deploy to any JavaScript runtime. Built on `Request`/`Response`, not `req`/`res`.
-- **Fastify-style plugin encapsulation** -- Decorations, and `onRequest`/`preHandler` hooks, are scoped to the plugin that registers them. (Known gap as of 0.5.5: `onSend` and `onResponse` hooks registered inside a plugin also run for routes outside it. See [Plugin Encapsulation](#plugin-encapsulation).)
+- **Fastify-style plugin encapsulation** -- A plugin registered with a `prefix` is encapsulated: its decorations and all four hook types stay inside that prefix. A plugin registered without a prefix is app-wide, which is what makes `app.register(cors())` work as middleware. See [Plugin Encapsulation](#plugin-encapsulation).
 - **Schema-agnostic validation** -- Auto-detects Zod, TypeBox, or Valibot. No config, no adapters.
 
 > **On performance:** Celsian is **not** the fastest option, and a previous claim here that it
