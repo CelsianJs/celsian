@@ -1,4 +1,4 @@
-// Auth guard middleware — protects routes that require a valid JWT.
+// Auth guard middleware -- protects routes that require a valid JWT.
 //
 // Uses @celsian/jwt's createJWTGuard, which:
 //   1. Extracts the Bearer token from the Authorization header
@@ -12,9 +12,13 @@
 import { createJWTGuard, type JWTNamespace } from "@celsian/jwt";
 
 // In production, load this from an environment variable or secrets manager.
-export const JWT_SECRET = process.env.JWT_SECRET ?? "quickstart-dev-secret";
+// The fallback is an obvious placeholder, and at least 32 bytes so
+// @celsian/jwt does not warn about a brute-forceable HMAC secret on boot.
+// Generate a real one with:
+//   node -e "console.log(crypto.randomBytes(32).toString('hex'))"
+export const JWT_SECRET = process.env.JWT_SECRET ?? "celsian-quickstart-dev-secret-change-me";
 
-// Re-usable hook — attach to any route via `preHandler: authGuard`
+// Re-usable hook -- attach to any route via `preHandler: authGuard`
 export const authGuard = createJWTGuard({ secret: JWT_SECRET });
 
 // ─── Shared JWT Instance ───
@@ -27,6 +31,6 @@ export function setJwtInstance(instance: JWTNamespace) {
 }
 
 export function getJwt(): JWTNamespace {
-  if (!_jwt) throw new Error("JWT not initialized — ensure app.ready() was awaited");
+  if (!_jwt) throw new Error("JWT not initialized -- ensure app.ready() was awaited");
   return _jwt;
 }

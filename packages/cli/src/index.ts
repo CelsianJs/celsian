@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// @celsian/cli — Developer CLI
+// @celsian/cli: Developer CLI
 
 import { buildCommand } from "./commands/build.js";
 import { createCommand, type Template } from "./commands/create.js";
@@ -21,10 +21,12 @@ async function main(): Promise<void> {
       const port = getFlag(args, "--port", "-p");
       const host = getFlag(args, "--host", "-h");
       const entry = getFlag(args, "--entry", "-e");
+      const envFile = getFlag(args, "--env-file");
       await devCommand({
         entry: entry ?? undefined,
         port: port ? parseInt(port, 10) : undefined,
         host: host ?? undefined,
+        envFile: envFile ?? undefined,
       });
       break;
     }
@@ -84,7 +86,8 @@ async function main(): Promise<void> {
       const target = getFlag(args, "--target") ?? "es2022";
       const minify = args.includes("--minify");
       const platform = getFlag(args, "--platform") ?? "node";
-      await buildCommand({ entry, outdir, format, target, minify, platform });
+      const verbose = args.includes("--verbose");
+      await buildCommand({ entry, outdir, format, target, minify, platform, verbose });
       break;
     }
 
@@ -115,6 +118,13 @@ async function main(): Promise<void> {
       console.log("    build                    Bundle app for production");
       console.log("    deploy --platform <target>  Generate deployment files (auto-detects if omitted)");
       console.log("");
+      console.log("  Dev options:");
+      console.log("");
+      console.log("    --entry, -e <path>       Entry point (default: src/index.ts)");
+      console.log("    --port, -p <port>        Port to pass through as PORT");
+      console.log("    --host, -h <host>        Host to pass through as HOST");
+      console.log("    --env-file <path>        Env file to load (default: .env when present)");
+      console.log("");
       console.log("  Build options:");
       console.log("");
       console.log("    --entry, -e <path>       Entry point (default: src/index.ts)");
@@ -123,6 +133,7 @@ async function main(): Promise<void> {
       console.log("    --target <target>        Build target (default: es2022)");
       console.log("    --platform node|browser  Target platform (default: node)");
       console.log("    --minify                 Minify output");
+      console.log("    --verbose                List every elided side-effect-only import");
       console.log("");
       console.log("  Deploy targets:");
       console.log("");

@@ -7,10 +7,19 @@ PORT=3000
 HOST=0.0.0.0
 CORS_ORIGIN=http://localhost:3000
 
+# Rate limiting: set TRUST_PROXY=true when a reverse proxy / load balancer sits
+# in front of this app (Fly, Railway, Vercel, Cloudflare, nginx). The limiter
+# then keys on the client IP from X-Forwarded-For. TRUSTED_PROXY_HOPS is how
+# many proxies are in front of you (1 for a single load balancer).
+# Required in production: the app refuses to boot with NODE_ENV=production and
+# TRUST_PROXY unset, because otherwise all clients share one rate-limit bucket.
+TRUST_PROXY=false
+TRUSTED_PROXY_HOPS=1
+
 # Auth
 JWT_SECRET=change-me-to-a-real-secret-at-least-32-chars
 
-# Database (placeholder — swap for your real DB URL)
+# Database (placeholder, swap for your real DB URL)
 DATABASE_URL=file:./data.db
 
 # Environment
@@ -76,8 +85,8 @@ export const fullTemplate: Record<string, string> = {
 
   ".env.example": ENV_FILE,
 
-  // Scaffolded directly (and gitignored) so `npm run dev` works out of the box —
-  // both the dev and start scripts load it via --env-file=.env.
+  // Scaffolded directly (and gitignored) so `npm run dev` works out of the box.
+  // Both the dev and start scripts load it via --env-file=.env.
   ".env": ENV_FILE,
 
   ".gitignore": `node_modules/
@@ -122,7 +131,7 @@ export interface JWTPayload {
 `,
 
   // ─── src/plugins/database.ts ───
-  "src/plugins/database.ts": `// Database module — in-memory store for development
+  "src/plugins/database.ts": `// Database module, in-memory store for development
 // Replace with a real database (PostgreSQL, SQLite, etc.) for production
 
 import type { User, Session } from '../types.js';
@@ -144,7 +153,7 @@ function createStore(): DatabaseStore {
   };
 }
 
-// Module-level singleton — shared across all routes and plugins
+// Module-level singleton: shared across all routes and plugins
 export const db: DatabaseStore = createStore();
 
 // Seed a demo user on import
@@ -158,7 +167,7 @@ db.users.set(demoUser.id, demoUser);
 `,
 
   // ─── src/plugins/auth.ts ───
-  "src/plugins/auth.ts": `// JWT auth plugin — guards protected routes via Bearer token
+  "src/plugins/auth.ts": `// JWT auth plugin, guards protected routes via Bearer token
 // Uses @celsian/jwt under the hood
 
 import { jwt, createJWTGuard } from '@celsian/jwt';
@@ -166,7 +175,7 @@ import type { PluginFunction, HookHandler } from '@celsian/core';
 
 const JWT_SECRET = process.env.JWT_SECRET ?? 'dev-secret-change-me';
 
-// Known insecure placeholder values shipped with the scaffold — refuse to
+// Known insecure placeholder values shipped with the scaffold: refuse to
 // start in production with any of them (covers both the code default and the
 // value written into the generated .env / .env.example).
 const INSECURE_SECRETS = new Set([
@@ -201,7 +210,7 @@ export const requireAuth: HookHandler = createJWTGuard({
 `,
 
   // ─── src/plugins/security.ts ───
-  "src/plugins/security.ts": `// Security plugin — CORS + CSRF + security headers + rate limiting
+  "src/plugins/security.ts": `// Security plugin, CORS + CSRF + security headers + rate limiting
 // Combines multiple @celsian/core plugins into a single registration
 
 import { cors, security, csrf } from '@celsian/core';
@@ -209,6 +218,38 @@ import { rateLimit } from '@celsian/rate-limit';
 import type { PluginFunction } from '@celsian/core';
 
 const CORS_ORIGIN = process.env.CORS_ORIGIN ?? 'http://localhost:3000';
+
+// Rate limiting needs a per-client key. The only client identifier available
+// to the app is the X-Forwarded-For header set by a reverse proxy, so:
+//
+//   TRUST_PROXY=true   Key on the real client IP from X-Forwarded-For. Use this
+//                      on any platform with a proxy in front of your app (Fly,
+//                      Railway, Vercel, Cloudflare, nginx). Set
+//                      TRUSTED_PROXY_HOPS to the number of proxies in front of
+//                      you so a client cannot spoof the header by prepending
+//                      values to it.
+//   TRUST_PROXY unset  No header is trusted, so every request shares ONE
+//                      bucket. Fine locally; in production it means one client
+//                      can exhaust the limit for everyone, so we refuse to boot.
+const TRUST_PROXY = process.env.TRUST_PROXY === 'true';
+const TRUSTED_PROXY_HOPS = Number(process.env.TRUSTED_PROXY_HOPS ?? '1');
+
+if (process.env.NODE_ENV === 'production' && !TRUST_PROXY) {
+  throw new Error(
+    '[celsian] FATAL: rate limiting cannot identify clients in production. ' +
+    'Set TRUST_PROXY=true (plus TRUSTED_PROXY_HOPS if more than one proxy sits in front of this app) ' +
+    'so the limiter keys on the client IP from X-Forwarded-For. ' +
+    'If you are not behind a proxy, replace the rateLimit keyGenerator in src/plugins/security.ts ' +
+    'with one keyed on your authenticated user or session id.'
+  );
+}
+
+if (process.env.NODE_ENV === 'production' && (!Number.isInteger(TRUSTED_PROXY_HOPS) || TRUSTED_PROXY_HOPS < 1)) {
+  throw new Error(
+    '[celsian] FATAL: TRUSTED_PROXY_HOPS must be a positive integer, got ' + String(process.env.TRUSTED_PROXY_HOPS) + '. ' +
+    'It is the number of trusted proxies between the client and this app (1 for a single load balancer).'
+  );
+}
 
 /**
  * Register all security-related plugins in one call.
@@ -226,7 +267,7 @@ export function securityPlugins(): PluginFunction[] {
   }
 
   return [
-    // CORS — allow cross-origin requests
+    // CORS: allow cross-origin requests
     cors({
       origin: CORS_ORIGIN,
       credentials: true,
@@ -241,39 +282,39 @@ export function securityPlugins(): PluginFunction[] {
 
     // CSRF protection (double-submit cookie).
     //
-    // IMPORTANT: @celsian/core <=0.5.1 matches excludePaths EXACTLY (no prefix
-    // matching), so every RPC procedure endpoint is listed individually below.
-    // The '/_rpc/*' entry is kept for newer core versions that support prefix
-    // patterns. When you add a new mutation procedure, add its '/_rpc/<ns>.<name>'
-    // path here — or send the x-csrf-token header from your client (see README).
+    // excludePaths match exactly OR as a path-segment prefix, so '/_rpc'
+    // covers every procedure under it ('/_rpc/math.multiply' and friends)
+    // without listing them one by one. It does NOT match '/_rpcx'.
     csrf({
       cookieName: '_csrf',
       headerName: 'x-csrf-token',
-      excludePaths: [
-        '/health',
-        '/ready',
-        '/_rpc/*',
-        '/_rpc/greeting.hello',
-        '/_rpc/math.add',
-        '/_rpc/math.multiply',
-        '/_rpc/system.ping',
-      ],
+      excludePaths: ['/health', '/ready', '/_rpc'],
     }),
 
-    // Rate limiting — 100 requests per 60 seconds
-    rateLimit({
-      max: 100,
-      window: 60_000,
-      // Local scaffold default: use a stable single-process key without trusting proxy headers.
-      // In production, replace this with a user/session/IP key appropriate for your deployment.
-      keyGenerator: () => 'local-scaffold',
-    }),
+    // Rate limiting: 100 requests per 60 seconds. See the TRUST_PROXY notes above.
+    rateLimit(
+      TRUST_PROXY
+        ? {
+            max: 100,
+            window: 60_000,
+            trustProxy: true,
+            trustedProxyHops: TRUSTED_PROXY_HOPS,
+          }
+        : {
+            max: 100,
+            window: 60_000,
+            // Development only: no trustworthy client identifier is available,
+            // so all traffic shares one bucket. Production boots are blocked
+            // above until TRUST_PROXY is set or this key is replaced.
+            keyGenerator: () => 'shared-development-bucket',
+          },
+    ),
   ];
 }
 `,
 
   // ─── src/routes/health.ts ───
-  "src/routes/health.ts": `// Health check route — GET /health
+  "src/routes/health.ts": `// Health check route, GET /health
 // Returns server status and uptime for load balancers and monitoring
 
 import type { PluginFunction } from '@celsian/core';
@@ -296,7 +337,7 @@ export default function healthRoutes(): PluginFunction {
 `,
 
   // ─── src/routes/users.ts ───
-  "src/routes/users.ts": `// User CRUD routes — /users
+  "src/routes/users.ts": `// User CRUD routes, /users
 // Full REST: GET (list), POST (create), GET/:id, PUT/:id, DELETE/:id
 
 import { Type } from '@sinclair/typebox';
@@ -317,13 +358,13 @@ const UpdateUserSchema = Type.Object({
 
 export default function userRoutes(): PluginFunction {
   return function users(app) {
-    // GET /users — list all users
+    // GET /users: list all users
     app.get('/users', (_req, reply) => {
       const allUsers = Array.from(db.users.values());
       return reply.json(allUsers);
     });
 
-    // POST /users — create a new user (typed body from schema)
+    // POST /users: create a new user (typed body from schema)
     app.post('/users', {
       schema: { body: CreateUserSchema },
     }, (req, reply) => {
@@ -338,14 +379,14 @@ export default function userRoutes(): PluginFunction {
       return reply.status(201).json(user);
     });
 
-    // GET /users/:id — get a single user
+    // GET /users/:id: get a single user
     app.get('/users/:id', (req, reply) => {
       const user = db.users.get(req.params.id);
       if (!user) return reply.status(404).json({ error: 'User not found' });
       return reply.json(user);
     });
 
-    // PUT /users/:id — update a user (protected, typed body from schema)
+    // PUT /users/:id: update a user (protected, typed body from schema)
     app.put('/users/:id', {
       schema: { body: UpdateUserSchema },
       onRequest: requireAuth,
@@ -359,7 +400,7 @@ export default function userRoutes(): PluginFunction {
       return reply.json(user);
     });
 
-    // DELETE /users/:id — delete a user (protected)
+    // DELETE /users/:id: delete a user (protected)
     app.route({
       method: 'DELETE',
       url: '/users/:id',
@@ -375,7 +416,7 @@ export default function userRoutes(): PluginFunction {
 `,
 
   // ─── src/routes/rpc.ts ───
-  "src/routes/rpc.ts": `// RPC endpoint — type-safe procedures at /_rpc/*
+  "src/routes/rpc.ts": `// RPC endpoint, type-safe procedures at /_rpc/*
 // Demonstrates queries and mutations with typed schemas
 
 import { procedure, router, RPCHandler } from '@celsian/rpc';
@@ -429,7 +470,7 @@ export default function rpcRoutes(): PluginFunction {
 `,
 
   // ─── src/routes/auth.ts ───
-  "src/routes/auth.ts": `// Auth routes — dev-only token minting
+  "src/routes/auth.ts": `// Auth routes, dev-only token minting
 // GET /auth/token returns a JWT for the seeded demo user so you can try the
 // protected endpoints (PUT/DELETE /users/:id) without building a login flow.
 // The route is NOT registered when NODE_ENV=production.
@@ -475,7 +516,7 @@ export default function authRoutes(root: CelsianApp): PluginFunction {
 import type { TaskDefinition } from '@celsian/core';
 
 /**
- * Cleanup task — removes expired sessions from the in-memory store.
+ * Cleanup task, removes expired sessions from the in-memory store.
  * In production, this would run a database query instead.
  */
 export const cleanupTask: TaskDefinition = {
@@ -509,7 +550,7 @@ export async function generateDailyReport(): Promise<void> {
   const now = new Date();
   console.log(\`[report] Generating daily report for \${now.toISOString().split('T')[0]}\`);
 
-  // Placeholder — swap for real report logic:
+  // Placeholder: swap for real report logic:
   // const users = await db.query('SELECT COUNT(*) FROM users WHERE created_at > $1', [yesterday]);
   // const requests = await analytics.getRequestCount(yesterday, today);
   // await email.send({ to: 'admin@example.com', subject: 'Daily Report', body: ... });
@@ -519,16 +560,17 @@ export async function generateDailyReport(): Promise<void> {
 `,
 
   // ─── src/index.ts ───
-  "src/index.ts": `// {{name}} — Full-stack Celsian API
-// Routes, plugins, background tasks, and cron — all wired up
+  "src/index.ts": `// {{name}}, Full-stack Celsian API
+// Routes, plugins, background tasks, and cron: all wired up
 
+import { pathToFileURL } from 'node:url';
 import { createApp, serve, openapi } from 'celsian';
 
 // Plugins
 import { authPlugin } from './plugins/auth.js';
 import { securityPlugins } from './plugins/security.js';
 
-// Database (module-level singleton — imported for side-effect seeding)
+// Database (module-level singleton: imported for side-effect seeding)
 import './plugins/database.js';
 
 // Routes
@@ -589,11 +631,16 @@ app.cron('daily-report', '0 0 * * *', generateDailyReport);
 
 const port = parseInt(process.env.PORT ?? '3000', 10);
 
-serve(app, { port });
+// Start a listening server only when this file IS the process entry point.
+// Tests, serverless handlers and \`celsian routes\` import \`app\` and drive it
+// directly, and must not bind a port.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  serve(app, { port });
+}
 `,
 
   // ─── test/api.test.ts ───
-  "test/api.test.ts": `// Integration tests using app.inject() — no server needed
+  "test/api.test.ts": `// Integration tests using app.inject(), no server needed
 // Run with: npm test
 
 import { describe, it, expect, beforeAll } from 'vitest';
@@ -609,7 +656,7 @@ import { securityPlugins } from '../src/plugins/security.js';
 
 function createTestApp() {
   const app = createApp();
-  // Register just what we need — skip auth/security for tests
+  // Register just what we need: skip auth/security for tests
   app.register(healthRoutes());
   app.register(userRoutes());
   app.register(rpcRoutes());
@@ -776,7 +823,7 @@ CMD ["node", "dist/index.js"]
   // ─── README.md ───
   "README.md": `# {{name}}
 
-A full-stack API built with [CelsianJS](https://github.com/CelsianJs/celsian) — the fast, modular Node.js framework.
+A full-stack API built with [CelsianJS](https://github.com/CelsianJs/celsian), the fast, modular Node.js framework.
 
 ## Quick Start
 
@@ -787,7 +834,7 @@ npm install
 # Review environment variables (a .env was created from .env.example for you)
 # Set a strong JWT_SECRET before deploying anywhere.
 
-# Start development server (with hot reload — loads .env automatically)
+# Start development server (with hot reload: loads .env automatically)
 npm run dev
 \`\`\`
 
@@ -797,10 +844,10 @@ The server starts at **http://localhost:3000**. Open http://localhost:3000/docs 
 
 \`\`\`
 src/
-  index.ts              # App entry — registers plugins, routes, tasks, cron
+  index.ts              # App entry, registers plugins, routes, tasks, cron
   types.ts              # Shared TypeScript types
   routes/
-    health.ts           # GET /health — uptime and status
+    health.ts           # GET /health, uptime and status
     users.ts            # Full CRUD: GET/POST/PUT/DELETE /users
     rpc.ts              # Type-safe RPC at /_rpc/*
     auth.ts             # Dev-only GET /auth/token (demo JWT minting)
@@ -819,27 +866,27 @@ test/
 
 | Method | Path | Auth | CSRF | Description |
 |--------|------|------|------|-------------|
-| GET | \`/health\` | No | — | Server health check |
-| GET | \`/auth/token\` | No | — | Mint a demo JWT (dev only) |
-| GET | \`/users\` | No | — | List all users |
+| GET | \`/health\` | No |, | Server health check |
+| GET | \`/auth/token\` | No |, | Mint a demo JWT (dev only) |
+| GET | \`/users\` | No |, | List all users |
 | POST | \`/users\` | No | Yes | Create a user |
-| GET | \`/users/:id\` | No | — | Get a user by ID |
+| GET | \`/users/:id\` | No |, | Get a user by ID |
 | PUT | \`/users/:id\` | Yes | Yes | Update a user |
 | DELETE | \`/users/:id\` | Yes | Yes | Delete a user |
 | GET/POST | \`/_rpc/*\` | No | Excluded | RPC procedures |
-| GET | \`/docs\` | No | — | Swagger UI |
-| GET | \`/docs/openapi.json\` | No | — | OpenAPI 3.1 spec |
+| GET | \`/docs\` | No |, | Swagger UI |
+| GET | \`/docs/openapi.json\` | No |, | OpenAPI 3.1 spec |
 
 ### CSRF: why your first POST returns 403
 
 This template enables **double-submit cookie** CSRF protection. Every mutating
-request (POST/PUT/PATCH/DELETE) must send the CSRF token **twice** — as the
-\`_csrf\` cookie and as the \`x-csrf-token\` header — and the values must match.
+request (POST/PUT/PATCH/DELETE) must send the CSRF token **twice**, as the
+\`_csrf\` cookie and as the \`x-csrf-token\` header, and the values must match.
 A plain \`curl -X POST /users\` has neither, so it gets \`403 CSRF token mismatch\`.
 
 The flow:
 
-1. Make a GET request first — the server sets the \`_csrf\` cookie.
+1. Make a GET request first, the server sets the \`_csrf\` cookie.
    (Use a non-excluded route like \`/users\`: CSRF-excluded paths such as
    \`/health\` skip the plugin entirely and never set the cookie.)
 2. Echo that cookie value back in the \`x-csrf-token\` header on mutations.
@@ -860,9 +907,27 @@ Browser clients: read \`document.cookie\`'s \`_csrf\` value (it is intentionally
 not HttpOnly) and send it as the \`x-csrf-token\` header.
 
 RPC endpoints under \`/_rpc/\` are excluded from CSRF checks (see
-\`src/plugins/security.ts\`) — note that core <=0.5.1 matches exclusions
-exactly, so each procedure path is listed there; add yours when you create
-new mutation procedures.
+\`src/plugins/security.ts\`). \`excludePaths\` entries match exactly or as a
+path-segment prefix, so the single \`'/_rpc'\` entry covers every procedure:
+you do not need to list new ones as you add them.
+
+### Rate limiting and TRUST_PROXY
+
+The limiter needs a per-client key, and the only client identifier available to
+the app is the \`X-Forwarded-For\` header set by a reverse proxy.
+
+- **Behind a proxy** (Fly, Railway, Vercel, Cloudflare, nginx): set
+  \`TRUST_PROXY=true\`, and \`TRUSTED_PROXY_HOPS\` to the number of proxies in
+  front of the app (\`1\` for a single load balancer). The limiter then keys on
+  the real client IP, and clients cannot bypass it by prepending fake values to
+  the header.
+- **Not behind a proxy**: replace the \`keyGenerator\` in
+  \`src/plugins/security.ts\` with one keyed on your authenticated user or
+  session id.
+
+With \`NODE_ENV=production\` and \`TRUST_PROXY\` unset, the app **refuses to
+boot**. That is deliberate: the fallback key puts every client in one shared
+bucket, so a single caller could exhaust the limit for everyone.
 
 ### Auth: calling the JWT-protected routes
 
@@ -870,7 +935,7 @@ new mutation procedures.
 one for the seeded demo user via the dev-only \`/auth/token\` route:
 
 \`\`\`bash
-# 1. Get a token (dev only — not registered when NODE_ENV=production)
+# 1. Get a token (dev only: not registered when NODE_ENV=production)
 TOKEN=$(curl -s http://localhost:3000/auth/token | node -pe 'JSON.parse(require("fs").readFileSync(0)).token')
 
 # 2. CSRF token as above
@@ -945,7 +1010,7 @@ await app.enqueue('send-email', { to: 'user@example.com', subject: 'Welcome!' })
 ## Adding a Cron Job
 
 \`\`\`typescript
-// In src/index.ts — uses standard 5-field cron syntax
+// In src/index.ts: uses standard 5-field cron syntax
 app.cron('weekly-digest', '0 9 * * 1', async () => {
   // Runs every Monday at 9am
   console.log('Generating weekly digest...');
@@ -969,7 +1034,7 @@ const CreateProductSchema = Type.Object({
   price: Type.Number({ minimum: 0 }),
 });
 
-// parsedBody is fully typed — no cast needed!
+// parsedBody is fully typed: no cast needed!
 app.post('/products', {
   schema: { body: CreateProductSchema },
 }, (req, reply) => {
@@ -979,7 +1044,7 @@ app.post('/products', {
 
 ## Testing
 
-Tests use \`app.inject()\` — no HTTP server needed.
+Tests use \`app.inject()\`, no HTTP server needed.
 
 \`\`\`bash
 npm test

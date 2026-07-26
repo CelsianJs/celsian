@@ -100,11 +100,25 @@ fastify.decorateReply("sendSuccess", function (data) {
 **Celsian:**
 
 ```typescript
-app.decorate("db", databasePool);
-// Access via app.db or through plugin context
+app.decorate("db", databasePool);          // app-level: app.db
+app.decorateRequest("user", null);         // per-request property
+app.decorateReply("sendSuccess", () =>     // per-request reply method
+  function (data: unknown) {
+    return this.json({ success: true, data });
+  }
+);
 ```
 
-Celsian uses `decorate()` at the app level. Decorations are scoped by the encapsulation context they're registered in. Request-level data is typically set via hooks modifying `request` properties rather than through separate decoration APIs.
+Celsian has all three of `decorate()`, `decorateRequest()` and `decorateReply()`, matching
+Fastify one for one. Decorations are scoped by the encapsulation context they are
+registered in.
+
+One important difference from Fastify: **`decorateReply` treats a function value as a
+per-request factory.** Celsian calls it with no arguments on every request and assigns the
+*return value* to the reply. So a reply *method* must be passed as a factory that returns
+the method (as above). Passing the method directly, the way Fastify does it, makes Celsian
+invoke your method with no arguments on every request, which throws before any handler
+runs. See [Plugins and Encapsulation](plugins.md#reply-decorators).
 
 ## Hook Lifecycle
 
@@ -228,7 +242,7 @@ fastify.setErrorHandler((error, request, reply) => {
 ```typescript
 app.setErrorHandler((error, request, reply) => {
   if (error instanceof ValidationError) {
-    // Set the status with .status(); reply.json() takes only the body —
+    // Set the status with .status(). reply.json() takes only the body;
     // a second argument is silently ignored.
     return reply.status(422).json({ errors: error.issues });
   }

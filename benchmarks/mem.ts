@@ -1,36 +1,30 @@
-// benchmarks/mem.ts — Honest, isolated per-framework memory measurement.
+// benchmarks/mem.ts - Honest, isolated per-framework memory measurement.
 //
-// run.ts measures RSS *deltas* of a single shared process that hosts all three
-// servers sequentially, so whichever framework runs FIRST absorbs the entire
+// An older run.ts measured RSS *deltas* of a single shared process that hosted
+// all servers sequentially, so whichever framework ran FIRST absorbed the entire
 // one-time process warm-up (V8 heap growth, JIT, autocannon's connection pools)
-// and looks ~50× heavier than the rest. That artifact made CelsianJS appear to
-// use 94–100 MB vs an impossible "1.7 MB" for Express.
+// and looked ~50x heavier than the rest. That artifact made CelsianJS appear to
+// use 94 to 100 MB vs an impossible "1.7 MB" for Express. run.ts no longer
+// reports memory at all.
 //
 // This script runs ONE framework in a fresh process, drives real load against
-// it, forces GC, then reports the process's ABSOLUTE RSS — an apples-to-apples
-// number. Run each framework in its own process:
+// it, forces GC, then reports the process's ABSOLUTE RSS, which is the
+// apples-to-apples number. Run each framework in its own process:
 //
-//   for fw in celsian express fastify; do
+//   for fw in celsian express fastify hono; do
 //     NODE_OPTIONS=--expose-gc npx tsx benchmarks/mem.ts $fw
 //   done
 
 import { spawn } from "node:child_process";
-import { startBenchServer } from "./server.js";
-import { startExpressServer } from "./server-express.js";
-import { startFastifyServer } from "./server-fastify.js";
-
-const starters: Record<string, (port: number) => Promise<{ close: () => Promise<void> }>> = {
-  celsian: startBenchServer,
-  express: startExpressServer,
-  fastify: startFastifyServer,
-};
+import { frameworks, getFramework } from "./frameworks.js";
 
 const fw = process.argv[2] ?? "celsian";
-const start = starters[fw];
-if (!start) {
-  console.error(`Unknown framework "${fw}". Use one of: ${Object.keys(starters).join(", ")}`);
+const def = getFramework(fw);
+if (!def) {
+  console.error(`Unknown framework "${fw}". Use one of: ${frameworks.map((f) => f.id).join(", ")}`);
   process.exit(1);
 }
+const start = def.start;
 
 const port = 13000;
 const server = await start(port);

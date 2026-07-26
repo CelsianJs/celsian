@@ -9,10 +9,14 @@ The batteries-included TypeScript backend that goes serverless without leaving i
 - **Durable jobs that cross the serverless boundary** -- Background tasks with retries and cron, built in. Run them in-process on a long-lived server, or back them with `@celsian/queue-redis` so a serverless producer and a hot-server worker share one queue. No separate BullMQ worker process to stand up.
 - **Built-in everything** -- Background tasks, cron, WebSocket, CORS, CSRF protection, security headers, DB analytics, rate limiting, JWT, caching, compression, OpenAPI docs. No plugin scavenger hunt.
 - **Multi-runtime** -- Write once, deploy to any JavaScript runtime. Built on `Request`/`Response`, not `req`/`res`.
-- **Fastify-style plugin encapsulation** -- Scoped hooks and decorations by default. No accidental middleware leaks.
+- **Fastify-style plugin encapsulation** -- Decorations, and `onRequest`/`preHandler` hooks, are scoped to the plugin that registers them. (Known gap as of 0.5.5: `onSend` and `onResponse` hooks registered inside a plugin also run for routes outside it. See [Plugin Encapsulation](#plugin-encapsulation).)
 - **Schema-agnostic validation** -- Auto-detects Zod, TypeBox, or Valibot. No config, no adapters.
 
-> **On performance:** Celsian's radix-tree router and low-allocation request path make it markedly faster than Express (1.25x-2.3x across our scenarios), though Fastify remains faster on raw throughput -- see the honest [benchmark table](#benchmark-results) below. Speed isn't the reason to pick Celsian; the durable-job-to-serverless story is.
+> **On performance:** Celsian is **not** the fastest option, and a previous claim here that it
+> was 1.25x-2.3x faster than Express has been withdrawn as unsupported. Re-measured with a
+> rigorous harness on 2026-07-26, Celsian ranked last of Fastify, Hono, Express and Celsian in
+> all five scenarios. See [Honest Benchmarks](#honest-benchmarks). Speed isn't the reason to
+> pick Celsian; the durable-job-to-serverless story is.
 
 ## Quick Start
 
@@ -86,35 +90,52 @@ export default createVercelEdgeHandler(app);           // Vercel Edge
 
 ### Honest Benchmarks
 
-Benchmarked on Node.js v22, Apple Silicon, 10 connections for 10 seconds per scenario:
+**Retracted 2026-07-26: CelsianJS is not faster than Express.** This section used to claim
+"1.25x to 2.3x faster than Express". That claim came from a benchmark harness that could not
+support it: it never checked for errors or non-2xx responses, did no warmup, ran a single
+pass per cell while publishing five significant figures, and ran every framework in one
+shared process in a fixed order, competing with the load generator for CPU.
 
-| Scenario              | Fastify (req/s) | CelsianJS (req/s) | Express (req/s) |
-| --------------------- | ---------------: | -----------------: | --------------: |
-| JSON response         |           69,681 |             51,897 |          22,775 |
-| Route params          |           69,075 |             50,790 |          22,713 |
-| Middleware (5 layers)  |           64,826 |             45,028 |          22,248 |
-| JSON body parsing     |           43,824 |             35,488 |          20,217 |
-| Error handling        |           47,818 |             26,061 |          20,795 |
+The harness has been rewritten (process isolation, readiness polling, real warmup, n=5 with
+median and 95% CI, randomized ordering, hard failure on any bad HTTP). With the fixed
+harness the result reverses: **CelsianJS ranked last of four frameworks in all five
+scenarios, and Express won 24 of 25 paired within-repetition comparisons.**
 
-Memory (isolated process, absolute RSS / retained heap under load): CelsianJS 187.6 MB / **13.9 MB heap**, Express 173.0 MB / 12.8 MB, Fastify 122.8 MB / 16.3 MB — CelsianJS's retained heap is on par with Express and below Fastify.
+No replacement numbers are published here, because the only available run was on a loaded
+developer laptop where the worst relative standard deviation was 34%. The ranking is
+consistent enough to state; the magnitudes are not. Fresh figures are pending a run on
+dedicated, idle hardware.
 
-**Fastify is faster.** It operates directly on Node.js internals with `fast-json-stringify` — hard to beat. CelsianJS pays a performance tax for Web Standard API compatibility (`Request`/`Response` object creation per request).
+Full data, methodology and the trustworthiness assessment are in
+[`benchmarks/RESULTS.md`](benchmarks/RESULTS.md). Reproduce with `pnpm bench`.
 
-**CelsianJS is 1.25-2.3x faster than Express** (and ~74% of Fastify on JSON) while shipping batteries that neither Fastify nor Express include: background task queues, cron scheduling, multi-runtime deployment, and DB analytics. If raw throughput is your only concern, use Fastify. If you need application infrastructure in a single framework, that's where CelsianJS fits.
+The one clean, reproducible deficit worth acting on: **error handling runs at about 0.58x
+Express**, with a tight spread on both sides. The error path is not fast-pathed, and that is
+a known gap.
+
+**Speed is not the reason to choose CelsianJS.** If raw throughput is your only concern, use
+Fastify. CelsianJS trades throughput for multi-runtime portability and for application
+infrastructure that neither Fastify nor Express includes: background task queues, cron
+scheduling, and DB analytics in one framework.
 
 ### Built-In Everything
 
 No hunting for middleware packages:
 
 ```typescript
+// NOTE the `{ encapsulate: false }` on every plugin whose hooks must apply to
+// routes registered OUTSIDE the plugin. Without it the plugin's request hooks
+// stay inside its own scope and silently do nothing to your routes. This is the
+// single easiest thing to get wrong: `rateLimit` registered without it lets
+// 6 of 6 requests through at `max: 2`.
 await app.register(security(), { encapsulate: false });  // Helmet-style headers
-await app.register(cors({ origin: 'https://myapp.com' }));
+await app.register(cors({ origin: 'https://myapp.com' }), { encapsulate: false });
 await app.register(csrf(), { encapsulate: false });      // CSRF token protection
 // trustProxy lets the limiter read the client IP from X-Forwarded-For behind a proxy.
-// Set it (or pass a keyGenerator) — without one of them, rateLimit() throws at registration.
-await app.register(rateLimit({ max: 100, window: 60_000, trustProxy: true }));
-await app.register(compress());
-await app.register(jwt({ secret: process.env.JWT_SECRET! }));
+// Set it (or pass a keyGenerator). Without one of them, rateLimit() throws at registration.
+await app.register(rateLimit({ max: 100, window: 60_000, trustProxy: true }), { encapsulate: false });
+await app.register(compress(), { encapsulate: false });
+await app.register(jwt({ secret: process.env.JWT_SECRET! }), { encapsulate: false });
 await app.register(openapi({ title: 'My API' }));
 
 app.health();                                             // /health + /ready
@@ -123,11 +144,17 @@ app.cron('cleanup', '0 3 * * *', cleanupHandler);        // Cron jobs
 app.ws('/chat', { open, message, close });                // WebSocket
 ```
 
-> **WebSocket note.** WebSocket is supported on Node (via `serve()`) and Bun (via `@celsian/adapter-bun`) today — not yet on Deno, Cloudflare Workers, or other adapters. On **Node**, WebSocket needs the `ws` package, which is not bundled: `npm i ws`. Bun serves WebSockets natively, with no extra install.
+> **WebSocket note.** WebSocket is supported on Node (via `serve()`) and Bun (via `@celsian/adapter-bun`) today, not yet on Deno, Cloudflare Workers, or other adapters. On **Node**, WebSocket needs the `ws` package, which is not bundled: `npm i ws`. Bun serves WebSockets natively, with no extra install.
 
 ### Plugin Encapsulation
 
-Plugins get isolated scopes by default. Hooks and decorations registered inside a plugin do not leak to sibling plugins or the parent scope.
+Plugins get isolated scopes by default. Decorations, and `onRequest` / `preHandler` hooks, registered inside a plugin do not leak to sibling plugins or the parent scope.
+
+> **Known gap (0.5.5).** Encapsulation is not yet complete: `onSend` and `onResponse`
+> hooks registered inside a plugin DO run for routes registered outside it. Verified
+> 2026-07-26: a plugin registering all four hook types under a `/p` prefix still fired
+> its `onSend` and `onResponse` for a sibling `GET /outside`. Do not rely on those two
+> hook types being scoped. `onRequest` and `preHandler` scope correctly.
 
 ```typescript
 // Auth plugin -- hooks only apply to routes registered inside
@@ -185,7 +212,7 @@ app.route({
 | **Reply** | json, html, stream, redirect, sendFile, download, cookies, 9 error helpers |
 | **Security** | Helmet-style headers, CORS, CSRF protection, JWT, fixed-window rate limiting |
 | **Background** | Task queue with retries, cron scheduling, Redis queue backend |
-| **Real-time** | WebSocket with broadcast and connection management |
+| **Real-time** | WebSocket with broadcast and connection management; [Server-Sent Events](docs/sse.md) (single stream or broadcast hub, works on every runtime) |
 | **Database** | Connection pool plugin, transactions, query analytics, Server-Timing |
 | **Caching** | Response cache, session management (KV store) |
 | **Infra** | Compression, OpenAPI 3.1 + Swagger UI, structured logging, inject() testing |
@@ -308,7 +335,7 @@ const newUser = await client.users.create.mutate({ name: 'Bob', email: 'bob@exam
 
 The [SaaS Demo](examples/saas-demo/) builds a complete backend in one file (~250 lines): JWT auth, users CRUD, background tasks, cron, SSE, and OpenAPI docs.
 
-The example depends on workspace packages (`@celsian/*` via the `workspace:` protocol), so install and build from the repo root with pnpm — `npm install` inside the example folder fails because npm can't resolve `workspace:`.
+The example depends on workspace packages (`@celsian/*` via the `workspace:` protocol), so install and build from the repo root with pnpm, `npm install` inside the example folder fails because npm can't resolve `workspace:`.
 
 ```bash
 # From the repo root
@@ -426,17 +453,28 @@ Fly.io and Railway adapters auto-generate deployment configs (fly.toml, Dockerfi
 
 ## Benchmark Results
 
-Node.js v22.13.1, macOS Darwin (Apple Silicon), 10 connections, 10s per scenario. Full methodology and reproduction steps in [`benchmarks/RESULTS.md`](benchmarks/RESULTS.md).
+**The previously published table here has been withdrawn.** It was produced by a harness
+with four independently disqualifying defects, and the numbers do not reproduce. See
+[Honest Benchmarks](#honest-benchmarks) above for what happened and
+[`benchmarks/RESULTS.md`](benchmarks/RESULTS.md) for the full write-up.
 
-| Scenario              | Fastify (req/s) | CelsianJS (req/s) | Express (req/s) |
-| --------------------- | ---------------: | -----------------: | --------------: |
-| JSON response         |           69,681 |             51,897 |          22,775 |
-| Route params          |           69,075 |             50,790 |          22,713 |
-| Middleware (5 layers)  |           64,826 |             45,028 |          22,248 |
-| JSON body parsing     |           43,824 |             35,488 |          20,217 |
-| Error handling        |           47,818 |             26,061 |          20,795 |
+Current state, measured 2026-07-26 with the rewritten harness (CelsianJS, Express, Fastify,
+Hono; 10 connections; 2s warmup discarded; n=5; randomized order; separate process per
+server):
 
-Fastify is the fastest Node.js framework. CelsianJS is 1.25-2.3x faster than Express and runs at ~74% of Fastify on JSON throughput. The remaining gap with Fastify comes from Web Standard API overhead (`Request`/`Response` per request). CelsianJS trades some throughput for multi-runtime portability and built-in application infrastructure.
+- CelsianJS ranked **last of four in all five scenarios**.
+- Express won **24 of 25** paired within-repetition comparisons.
+- The clearest deficit is **error handling, at roughly 0.58x Express**, which is the one
+  cell tight enough on both sides to state with confidence.
+
+Absolute req/s figures are deliberately not repeated here. The run was on a loaded laptop
+(worst relative standard deviation 34%), which is enough to establish a ranking but not to
+publish magnitudes. Republishing numbers requires a run on an idle machine with worst SD
+under about 5%.
+
+Reproduce with `pnpm bench`. The harness now fails the run outright on any socket error,
+timeout, or unexpected status code, so a broken server can no longer be reported as a
+result.
 
 ## Configuration
 
@@ -456,13 +494,16 @@ export default defineConfig({
 - [Quick Start Guide](docs/quickstart.md)
 - [Hooks Lifecycle](docs/hooks.md)
 - [Plugins and Encapsulation](docs/plugins.md)
+- [Server-Sent Events](docs/sse.md)
 - [Deployment Guide](docs/deployment.md)
 - [Database Plugin](docs/database.md)
 - [Error Reference](docs/errors.md)
+- **[Migrating from Fastify](docs/migration-from-fastify.md)** -- side-by-side conversion
+  of routes, hooks, plugins, decorators, validation and error handling
 
 ## WhatStack
 
-CelsianJS is the backend half of [WhatStack](https://whatfw.com) — the agent-first full-stack framework:
+CelsianJS is the backend half of [WhatStack](https://whatfw.com), the agent-first full-stack framework:
 
 | Layer | Framework | What It Does |
 |-------|-----------|-------------|
@@ -476,7 +517,7 @@ CelsianJS is the backend half of [WhatStack](https://whatfw.com) — the agent-f
 git clone https://github.com/CelsianJs/celsian.git
 cd celsian
 pnpm install
-pnpm build   # build all packages first — tests import from built dist/
+pnpm build   # build all packages first, tests import from built dist/
 pnpm test
 ```
 

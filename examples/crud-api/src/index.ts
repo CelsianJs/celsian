@@ -1,6 +1,8 @@
 // CelsianJS CRUD API Example
 // Full CRUD for a "todos" resource with validation, pagination, sorting, and filtering
 
+import { realpathSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import { cors, createApp, HttpError, serve } from "@celsian/core";
 
 // ─── Types ───
@@ -248,9 +250,25 @@ export function createCrudApp() {
   return app;
 }
 
-// Start server only when run directly (not when imported by tests)
-if (!process.env.VITEST) {
-  const app = createCrudApp();
+/** True when this file was executed directly, false when imported. */
+function isDirectRun(moduleUrl: string): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return pathToFileURL(realpathSync(entry)).href === moduleUrl;
+  } catch {
+    return false;
+  }
+}
+
+// A ready-made instance, exported as the default so tooling that loads this
+// file (for example `celsian routes`) can find it. Tests call createCrudApp()
+// to get their own isolated instance.
+const app = createCrudApp();
+export default app;
+
+// Start server only when run directly (not when imported by tests or tooling)
+if (!process.env.VITEST && isDirectRun(import.meta.url)) {
   await app.ready();
-  serve(app, { port: parseInt(process.env.PORT ?? "3000", 10) });
+  await serve(app, { port: parseInt(process.env.PORT ?? "3000", 10) });
 }

@@ -10,7 +10,7 @@ await esbuild.build({
   external: ['node:*'],
   minify: true,
   banner: {
-    js: '// CelsianJS Docker Example — Built with esbuild',
+    js: '// CelsianJS Docker Example -- Built with esbuild',
   },
 });
 

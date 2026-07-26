@@ -62,7 +62,9 @@ describe("rest-api template — user creation passes validation", () => {
       payload: { name: "Ada", email: "ada@example.com" },
     });
     expect(res.status).toBe(201);
-    const body = await res.json();
+    // `Response.json()` is typed `Promise<unknown>` under Node's lib types, so
+    // narrow it rather than reaching into an `unknown`.
+    const body = (await res.json()) as { email: string };
     expect(body.email).toBe("ada@example.com");
   });
 

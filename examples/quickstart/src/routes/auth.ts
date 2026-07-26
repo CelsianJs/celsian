@@ -1,4 +1,4 @@
-// Auth routes — registration, login, and a protected "me" endpoint.
+// Auth routes -- registration, login, and a protected "me" endpoint.
 //
 // Demonstrates:
 //   - JWT token signing via the @celsian/jwt plugin
@@ -63,7 +63,7 @@ const authCredentialsSchema = z.object({
 // ─── Plugin ───
 
 export const authRoutes: PluginFunction = (app) => {
-  // POST /auth/register — Create a new account and return a JWT
+  // POST /auth/register -- Create a new account and return a JWT
   app.post(
     "/auth/register",
     {
@@ -93,7 +93,7 @@ export const authRoutes: PluginFunction = (app) => {
     },
   );
 
-  // POST /auth/login — Authenticate and return a JWT
+  // POST /auth/login -- Authenticate and return a JWT
   app.post(
     "/auth/login",
     {
@@ -116,7 +116,7 @@ export const authRoutes: PluginFunction = (app) => {
     },
   );
 
-  // GET /auth/me — Protected route: returns the authenticated user's profile
+  // GET /auth/me -- Protected route: returns the authenticated user's profile
   app.route({
     method: "GET",
     url: "/auth/me",

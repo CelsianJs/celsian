@@ -1,4 +1,4 @@
-// benchmarks/server.ts — CelsianJS benchmark target server
+// benchmarks/server.ts - CelsianJS benchmark target server
 //
 // Sets up a CelsianJS app with all benchmark routes and starts it.
 // Usage: import { startBenchServer } from './server.ts'
@@ -8,17 +8,17 @@ import { createApp, serve } from "@celsian/core";
 export async function startBenchServer(port: number): Promise<{ close: () => Promise<void> }> {
   const app = createApp();
 
-  // ─── Scenario 1: JSON hello ───
+  // Scenario 1: JSON hello
   app.get("/json", (_req, reply) => {
     return reply.json({ message: "Hello, World!" });
   });
 
-  // ─── Scenario 2: Route params ───
+  // Scenario 2: Route params
   app.get("/user/:id", (req, reply) => {
     return reply.json({ id: req.params.id, name: `User ${req.params.id}`, email: `user${req.params.id}@test.com` });
   });
 
-  // ─── Scenario 3: Middleware/hooks chain (5 layers) ───
+  // Scenario 3: Middleware/hooks chain (5 layers)
   app.route({
     method: "GET",
     url: "/middleware",
@@ -44,12 +44,12 @@ export async function startBenchServer(port: number): Promise<{ close: () => Pro
     },
   });
 
-  // ─── Scenario 4: Body parse ───
+  // Scenario 4: Body parse
   app.post("/echo", (req, reply) => {
     return reply.json(req.parsedBody);
   });
 
-  // ─── Scenario 5: Error handling ───
+  // Scenario 5: Error handling
   app.get("/error", () => {
     throw new Error("Intentional benchmark error");
   });

@@ -1,4 +1,4 @@
-// @celsian/cli — celsian create command
+// @celsian/cli: celsian create command
 // Delegates to create-celsian's scaffolder so `celsian create` and
 // `npm create celsian` produce identical projects (all 4 templates).
 

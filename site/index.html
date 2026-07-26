@@ -3,8 +3,30 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CelsianJS — The Application Framework for Every Runtime</title>
-  <meta name="description" content="The batteries-included TypeScript backend that goes serverless without leaving its batteries behind. Durable background jobs, cron, RPC, OpenAPI, multi-runtime — deploy the same app to a VPS or Lambda. Part of the WhatStack ecosystem.">
+  <title>CelsianJS: The Application Framework for Every Runtime</title>
+  <meta name="description" content="The batteries-included TypeScript backend that goes serverless without leaving its batteries behind. Durable background jobs, cron, RPC, OpenAPI, multi-runtime: deploy the same app to a VPS or Lambda. Part of the WhatStack ecosystem.">
+  <link rel="canonical" href="https://celsianjs.com/">
+
+  <!-- Favicon: inline SVG data URI so the page stays a single self-contained file. -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231c1917'/%3E%3Cpath d='M42 22a14 14 0 1 0 0 20' fill='none' stroke='%23f59e0b' stroke-width='7' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231c1917'/%3E%3Cpath d='M42 22a14 14 0 1 0 0 20' fill='none' stroke='%23f59e0b' stroke-width='7' stroke-linecap='round'/%3E%3C/svg%3E">
+
+  <!-- Open Graph / Twitter. Without these the link rendered bare in Slack and X. -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="CelsianJS">
+  <meta property="og:url" content="https://celsianjs.com/">
+  <meta property="og:title" content="CelsianJS: The Application Framework for Every Runtime">
+  <meta property="og:description" content="A TypeScript backend framework with zero runtime dependencies in core. Background jobs, cron, RPC, OpenAPI and plugin encapsulation, running on Node, Bun, Deno, Workers, Lambda and Vercel.">
+  <meta property="og:image" content="https://celsianjs.com/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="CelsianJS: the application framework for every runtime">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="CelsianJS: The Application Framework for Every Runtime">
+  <meta name="twitter:description" content="A TypeScript backend framework with zero runtime dependencies in core. Background jobs, cron, RPC, OpenAPI and plugin encapsulation, running on Node, Bun, Deno, Workers, Lambda and Vercel.">
+  <meta name="twitter:image" content="https://celsianjs.com/og.png">
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -516,6 +538,43 @@
 
     .bench-card:hover { border-color: rgba(245, 158, 11, 0.3); }
 
+    /* Withdrawn performance claim. Styled as a correction notice, not a feature. */
+    .bench-retraction {
+      max-width: 780px;
+      margin: 0 auto 48px;
+      padding: 28px 32px;
+      background: rgba(245, 158, 11, 0.06);
+      border: 1px solid rgba(245, 158, 11, 0.28);
+      border-left: 3px solid var(--accent-light);
+      border-radius: 12px;
+    }
+
+    .bench-retraction h3 {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent-light);
+      margin-bottom: 14px;
+    }
+
+    .bench-retraction p {
+      font-size: 15px;
+      line-height: 1.7;
+      color: rgba(255,255,255,0.68);
+    }
+
+    .bench-retraction p + p { margin-top: 12px; }
+    .bench-retraction strong { color: rgba(255,255,255,0.92); font-weight: 600; }
+    .bench-retraction a { color: var(--accent-light); }
+    .bench-retraction code {
+      font-family: var(--mono);
+      font-size: 13px;
+      background: rgba(255,255,255,0.08);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
     .bench-value {
       font-family: var(--mono);
       font-size: 28px;
@@ -803,7 +862,7 @@
       <a href="#code">Code</a>
       <a href="#middleware">Middleware</a>
       <a href="#performance">Performance</a>
-      <a href="https://github.com/CelsianJs/celsian/tree/main/docs">Docs</a>
+      <a href="https://github.com/CelsianJs/celsian/blob/main/docs/README.md">Docs</a>
       <a href="https://github.com/CelsianJs">GitHub</a>
     </div>
   </nav>
@@ -818,7 +877,7 @@
           <span class="gradient">leaving its batteries behind</span>
         </h1>
         <p class="hero-subtitle animate delay-1">
-          The batteries-included TypeScript backend. Background jobs with retries, cron, RPC, OpenAPI, and schema-agnostic validation — built in. Deploy the same app, and its durable jobs, to a $5 VPS or to Lambda. BullMQ needs a separate worker process; your Lambda doesn't. One codebase runs on Node, Bun, Deno, Workers, Lambda, and Vercel.
+          The batteries-included TypeScript backend. Background jobs with retries, cron, RPC, OpenAPI, and schema-agnostic validation, built in. Deploy the same app, and its durable jobs, to a $5 VPS or to Lambda. BullMQ needs a separate worker process; your Lambda doesn't. One codebase runs on Node, Bun, Deno, Workers, Lambda, and Vercel.
         </p>
         <div class="hero-actions animate delay-2">
           <a href="#get-started" class="btn btn-primary">Get Started</a>
@@ -826,15 +885,15 @@
         </div>
         <div class="hero-stats animate delay-3">
           <div class="stat">
-            <span class="stat-value">52K</span>
-            <span class="stat-label">req/sec</span>
+            <span class="stat-value">0</span>
+            <span class="stat-label">runtime dependencies in core</span>
           </div>
           <div class="stat">
             <span class="stat-value">0</span>
             <span class="stat-label">extra worker processes</span>
           </div>
           <div class="stat">
-            <span class="stat-value">1,400+</span>
+            <span class="stat-value">1,587</span>
             <span class="stat-label">passing tests</span>
           </div>
         </div>
@@ -855,9 +914,14 @@
 
 <span class="kw">const</span> app = <span class="fn">createApp</span>();
 
-<span class="cmt">// Register middleware</span>
-<span class="kw">await</span> app.<span class="fn">register</span>(<span class="fn">cors</span>({ origin: <span class="str">'*'</span> }));
-<span class="kw">await</span> app.<span class="fn">register</span>(<span class="fn">rateLimit</span>({ max: <span class="num">100</span>, window: <span class="num">60_000</span> }));
+<span class="cmt">// encapsulate: false applies these app-wide</span>
+<span class="kw">await</span> app.<span class="fn">register</span>(<span class="fn">cors</span>({ origin: <span class="str">'*'</span> }), { encapsulate: <span class="kw">false</span> });
+<span class="kw">await</span> app.<span class="fn">register</span>(<span class="fn">rateLimit</span>({
+  max: <span class="num">100</span>,
+  window: <span class="num">60_000</span>,
+  <span class="cmt">// Behind a proxy or CDN, use trustProxy: true instead.</span>
+  keyGenerator: (req) => req.headers.<span class="fn">get</span>(<span class="str">'x-api-key'</span>) ?? <span class="str">'anonymous'</span>,
+}), { encapsulate: <span class="kw">false</span> });
 
 <span class="cmt">// Routes</span>
 app.<span class="fn">get</span>(<span class="str">'/api/users/:id'</span>, (req, reply) <span class="kw">=></span> {
@@ -880,14 +944,14 @@ Deno.<span class="fn">serve</span>(app.fetch);</pre>
     <div class="section-header">
       <p class="section-label">Features</p>
       <h2 class="section-title">Everything you need for production backends</h2>
-      <p class="section-desc">A complete application framework built on Web Standard APIs. Task queues, cron, multi-runtime &mdash; not just routing.</p>
+      <p class="section-desc">A complete application framework built on Web Standard APIs. Task queues, cron, multi-runtime, not just routing.</p>
     </div>
 
     <div class="features-grid">
       <div class="feature">
         <div class="feature-icon">&#x1F9E9;</div>
         <h3>Plugin Encapsulation on Web Standards</h3>
-        <p>Fastify-style scoped plugins built on Request/Response, not req/res. Hooks and decorations never leak across boundaries. Works on every runtime.</p>
+        <p>Fastify-style scoped plugins built on Request/Response, not req/res. Decorations are scoped to the plugin that registers them, and <code>encapsulate: false</code> opts a plugin into applying app-wide. Works on every runtime.</p>
       </div>
       <div class="feature">
         <div class="feature-icon">&#x23F0;</div>
@@ -979,7 +1043,7 @@ Deno.<span class="fn">serve</span>(app.fetch);</pre>
   },
 });
 
-<span class="cmt">// Client — full type inference</span>
+<span class="cmt">// Client: full type inference</span>
 <span class="kw">const</span> user = <span class="kw">await</span> rpc.user.getById.<span class="fn">query</span>({ id: <span class="str">'1'</span> });</pre>
         </div>
       </div>
@@ -1019,28 +1083,28 @@ hub.<span class="fn">broadcast</span>({ event: <span class="str">'update'</span>
           <p>Job queue with retry, concurrency, and cron scheduling</p>
         </div>
         <div class="example-code">
-<pre><span class="kw">import</span> { createTaskQueue, createCronScheduler }
-  <span class="kw">from</span> <span class="str">'@celsian/core'</span>;
+<pre><span class="kw">import</span> { createApp, serve } <span class="kw">from</span> <span class="str">'@celsian/core'</span>;
 
-<span class="kw">const</span> queue = <span class="fn">createTaskQueue</span>({ concurrency: <span class="num">5</span> });
+<span class="kw">const</span> app = <span class="fn">createApp</span>();
 
-queue.<span class="fn">register</span>({
+app.<span class="fn">setTaskWorkerOptions</span>({ concurrency: <span class="num">5</span> });
+
+app.<span class="fn">task</span>({
   name: <span class="str">'send-email'</span>,
-  handler: <span class="kw">async</span> (job) => {
-    <span class="kw">await</span> <span class="fn">sendEmail</span>(job.payload);
-    <span class="kw">return</span> { success: <span class="num">true</span> };
+  retries: <span class="num">3</span>,
+  timeout: <span class="num">10_000</span>,
+  <span class="kw">async</span> <span class="fn">handler</span>(input: { to: <span class="kw">string</span> }) {
+    <span class="kw">await</span> <span class="fn">sendEmail</span>(input.to);
   },
-  maxRetries: <span class="num">3</span>,
-  retryDelayMs: <span class="num">5000</span>,
 });
 
-<span class="cmt">// Enqueue with optional delay</span>
-<span class="kw">await</span> queue.<span class="fn">enqueue</span>(<span class="str">'send-email'</span>, { to: <span class="str">'ada@example.com'</span> });
+<span class="kw">await</span> app.<span class="fn">enqueue</span>(<span class="str">'send-email'</span>, { to: <span class="str">'ada@example.com'</span> });
 
-<span class="cmt">// Cron jobs with human-readable schedules</span>
-<span class="kw">const</span> cron = <span class="fn">createCronScheduler</span>();
-cron.<span class="fn">add</span>({ name: <span class="str">'cleanup'</span>, schedule: <span class="str">'every 1h'</span>,
-  handler: () => db.<span class="fn">cleanup</span>() });</pre>
+<span class="cmt">// Cron takes a standard 5-field expression</span>
+app.<span class="fn">cron</span>(<span class="str">'cleanup'</span>, <span class="str">'0 * * * *'</span>, () => db.<span class="fn">cleanup</span>());
+
+<span class="cmt">// serve() starts the worker and cron for you</span>
+<span class="fn">serve</span>(app, { port: <span class="num">3000</span> });</pre>
         </div>
       </div>
 
@@ -1117,41 +1181,19 @@ app.<span class="fn">post</span>(<span class="str">'/api/login'</span>, <span cl
     <div class="bench-inner">
       <div class="section-header section-center" style="margin-left: auto; margin-right: auto;">
         <p class="section-label">Performance</p>
-        <h2 class="section-title">Measured, not promised</h2>
-        <p class="section-desc">Real benchmarks on Node.js v22, Apple Silicon, 10 connections, 10s per scenario. 1.25–2.3x faster than Express with batteries included (~74% of Fastify on JSON).</p>
+        <h2 class="section-title">Speed is not why you pick this</h2>
+        <p class="section-desc">This page used to claim CelsianJS was 1.25x to 2.3x faster than Express. That claim has been withdrawn. The harness behind it never checked for failed requests, did no warmup, ran one pass per number, and ran every framework in a single shared process. Rebuilt properly, the result reverses.</p>
+      </div>
+
+      <div class="bench-retraction">
+        <h3>Retracted 2026-07-26</h3>
+        <p>Re-measured with process isolation, real warmup, 5 repetitions with a 95% confidence interval, randomized ordering, and a hard failure on any socket error or unexpected status code: <strong>CelsianJS ranked last of the four frameworks tested (Fastify, Hono, Express, CelsianJS) in all five scenarios</strong>, and Express won 24 of 25 paired comparisons.</p>
+        <p>We are not publishing replacement req/sec figures. The only run available was on a loaded laptop where the worst relative standard deviation was 34%, which is enough to establish a ranking but not to stand behind a number. Fresh figures are pending a run on dedicated idle hardware.</p>
+        <p>The clearest reproducible gap is error handling at roughly <strong>0.58x Express</strong>. The error path is not fast-pathed, and that is a known gap we intend to close.</p>
+        <p>Full data and methodology: <a href="https://github.com/CelsianJs/celsian/blob/main/benchmarks/RESULTS.md">benchmarks/RESULTS.md</a>. Reproduce with <code>pnpm bench</code>.</p>
       </div>
 
       <div class="benchmarks-grid">
-        <div class="bench-card">
-          <div class="bench-value">52K</div>
-          <div class="bench-unit">req/sec</div>
-          <div class="bench-label">JSON response</div>
-          <div class="bench-detail">2.3x faster than Express</div>
-        </div>
-        <div class="bench-card">
-          <div class="bench-value">51K</div>
-          <div class="bench-unit">req/sec</div>
-          <div class="bench-label">Route params</div>
-          <div class="bench-detail">radix-tree router</div>
-        </div>
-        <div class="bench-card">
-          <div class="bench-value">45K</div>
-          <div class="bench-unit">req/sec</div>
-          <div class="bench-label">Middleware chain (5)</div>
-          <div class="bench-detail">2.0x faster than Express</div>
-        </div>
-        <div class="bench-card">
-          <div class="bench-value">35K</div>
-          <div class="bench-unit">req/sec</div>
-          <div class="bench-label">JSON body parsing</div>
-          <div class="bench-detail">1.8x faster than Express</div>
-        </div>
-        <div class="bench-card">
-          <div class="bench-value">26K</div>
-          <div class="bench-unit">req/sec</div>
-          <div class="bench-label">Error handling</div>
-          <div class="bench-detail">structured 500 responses</div>
-        </div>
         <div class="bench-card">
           <div class="bench-value">0</div>
           <div class="bench-unit">external deps</div>
@@ -1165,10 +1207,10 @@ app.<span class="fn">post</span>(<span class="str">'/api/login'</span>, <span cl
           <div class="bench-detail">Node, Bun, Deno, Workers, Lambda, Vercel</div>
         </div>
         <div class="bench-card">
-          <div class="bench-value">1,400+</div>
+          <div class="bench-value">1,587</div>
           <div class="bench-unit">tests</div>
           <div class="bench-label">Test coverage</div>
-          <div class="bench-detail">88 test files, zero flaky</div>
+          <div class="bench-detail">97 test files, 80% line coverage</div>
         </div>
       </div>
     </div>
@@ -1290,12 +1332,14 @@ app.<span class="fn">post</span>(<span class="str">'/api/login'</span>, <span cl
           <span class="code-filename">server.ts</span>
         </div>
         <div class="code-content">
-<pre><span class="kw">import</span> { createApp, cors, jwtAuth } <span class="kw">from</span> <span class="str">'@celsian/core'</span>;
-<span class="kw">import</span> { procedure, router } <span class="kw">from</span> <span class="str">'@celsian/rpc'</span>;
+<pre><span class="kw">import</span> { createApp, cors, serve } <span class="kw">from</span> <span class="str">'@celsian/core'</span>;
+<span class="kw">import</span> { procedure, router, RPCHandler } <span class="kw">from</span> <span class="str">'@celsian/rpc'</span>;
 <span class="kw">import</span> { z } <span class="kw">from</span> <span class="str">'zod'</span>;
 
 <span class="kw">const</span> app = <span class="fn">createApp</span>();
-<span class="kw">await</span> app.<span class="fn">register</span>(cors, { origin: <span class="str">'*'</span> });
+
+<span class="cmt">// Pass the plugin FACTORY's result, not the factory</span>
+<span class="kw">await</span> app.<span class="fn">register</span>(<span class="fn">cors</span>({ origin: <span class="str">'*'</span> }), { encapsulate: <span class="kw">false</span> });
 
 <span class="cmt">// REST routes</span>
 app.<span class="fn">get</span>(<span class="str">'/health'</span>, (req, reply) <span class="kw">=></span>
@@ -1303,16 +1347,17 @@ app.<span class="fn">get</span>(<span class="str">'/health'</span>, (req, reply)
 );
 
 <span class="cmt">// Type-safe RPC</span>
-<span class="kw">const</span> rpc = <span class="fn">router</span>({
+<span class="kw">const</span> appRouter = <span class="fn">router</span>({
   hello: procedure
     .<span class="fn">input</span>(z.object({ name: z.string() }))
     .<span class="fn">query</span>(({ input }) <span class="kw">=></span> <span class="str">`Hello ${input.name}!`</span>),
 });
 
-app.<span class="fn">mount</span>(<span class="str">'/rpc'</span>, rpc);
+<span class="kw">new</span> <span class="fn">RPCHandler</span>(appRouter).<span class="fn">mount</span>(app, <span class="str">'/rpc'</span>);
+<span class="kw">export type</span> AppRouter = <span class="kw">typeof</span> appRouter;
 
-<span class="cmt">// One-line deploy</span>
-Bun.<span class="fn">serve</span>({ fetch: app.fetch, port: <span class="num">3000</span> });</pre>
+<span class="cmt">// serve() picks the runtime: Node, Bun or Deno</span>
+<span class="fn">serve</span>(app, { port: <span class="num">3000</span> });</pre>
         </div>
       </div>
     </div>
@@ -1321,10 +1366,10 @@ Bun.<span class="fn">serve</span>({ fetch: app.fetch, port: <span class="num">30
   <footer>
     <div class="footer-content">
       <div class="footer-left">
-        CelsianJS v0.5.x &mdash; MIT License &mdash; Part of <a href="https://whatfw.com" style="color: var(--accent); text-decoration: none;">WhatStack</a>
+        CelsianJS v0.5.x, MIT License, part of <a href="https://whatfw.com" style="color: var(--accent); text-decoration: none;">WhatStack</a>
       </div>
       <div class="footer-links">
-        <a href="https://github.com/CelsianJs/celsian/tree/main/docs">Documentation</a>
+        <a href="https://github.com/CelsianJs/celsian/blob/main/docs/README.md">Documentation</a>
         <a href="https://github.com/CelsianJs">GitHub</a>
         <a href="https://www.npmjs.com/org/celsian">npm</a>
       </div>

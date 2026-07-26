@@ -1,6 +1,6 @@
 {
   "name": "celsian-monorepo",
-  "version": "0.5.2",
+  "version": "0.5.5",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,10 @@
     "test:watch": "vitest",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -p tsconfig.typecheck.json && pnpm typecheck:edge && pnpm typecheck:bench",
+    "typecheck:edge": "tsc -p packages/edge-router/tsconfig.json --noEmit",
+    "typecheck:bench": "tsc -p benchmarks/tsconfig.json",
+    "typecheck:src": "tsc -p tsconfig.typecheck.src.json",
     "changeset": "changeset",
     "release": "changeset publish",
     "bench": "pnpm --filter celsian-benchmarks exec tsx run.ts",

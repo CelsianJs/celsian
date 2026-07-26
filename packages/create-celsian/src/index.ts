@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// create-celsian — Project scaffolder (bin entry)
+// create-celsian: Project scaffolder (bin entry)
 // Zero external dependencies. Interactive prompts via raw stdin.
 // All scaffolding logic lives in scaffold.ts so @celsian/cli can reuse it.
 
@@ -85,7 +85,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  // No project name — enter interactive mode
+  // No project name: enter interactive mode
   // But only if stdin is a TTY (not piped)
   if (process.stdin.isTTY) {
     const { name, template, pm } = await interactiveMode();

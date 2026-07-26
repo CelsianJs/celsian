@@ -1,4 +1,4 @@
-// @celsian/cli — Banner + version
+// @celsian/cli: Banner + version
 
 import { readFileSync } from "node:fs";
 

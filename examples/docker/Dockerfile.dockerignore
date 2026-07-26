@@ -1,0 +1,14 @@
+# Applies to examples/docker/Dockerfile, whose build context is the monorepo
+# root. BuildKit looks for <dockerfile>.dockerignore before the context-root
+# .dockerignore, so this file is what takes effect. A .dockerignore sitting in
+# this directory would be ignored entirely, because it is not at the context
+# root.
+**/node_modules
+**/dist
+# Without this, a host .tsbuildinfo makes `tsc -b` in the image think the
+# (excluded) dist output is already up to date, and it emits nothing.
+**/*.tsbuildinfo
+**/coverage
+.git
+.claude
+*.log

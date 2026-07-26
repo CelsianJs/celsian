@@ -1,0 +1,46 @@
+// Root typecheck program.
+//
+// This exists because `tsc --noEmit` against the root tsconfig.json checks
+// NOTHING: that file is `"files": []` plus project references, and references
+// are only traversed in build mode (`tsc -b`). Build mode in turn refuses
+// `--noEmit` for composite projects (TS6310), so a real, emit-free gate needs
+// its own flat program. That is this file.
+//
+// Two deliberate differences from the build (tsconfig.json):
+//
+//  1. `test` is included. Package tsconfigs use `"include": ["src"]` so that
+//     tests never land in `dist`; that scoping is correct for the build but it
+//     meant no tsconfig in the repo ever saw a test file. Every `expectTypeOf`
+//     assertion was therefore a runtime no-op that could not fail. They are
+//     compile-time assertions and need a compiler pointed at them.
+//
+//  2. `@celsian/*` resolves to package SOURCE, not to `dist/*.d.ts`. Checking
+//     against source means the gate does not silently pass on a stale or
+//     missing build.
+//
+// `packages/edge-router` is excluded: its source targets the Cloudflare
+// Workers global scope (`@cloudflare/workers-types`), which conflicts with the
+// Node lib assumed here. It is type-checked on its own via `typecheck:edge`.
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022"],
+    "types": ["node", "vitest/globals"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "paths": {
+      "celsian": ["./packages/celsian/src/index.ts"],
+      "create-celsian": ["./packages/create-celsian/src/scaffold.ts"],
+      "@celsian/*": ["./packages/*/src/index.ts"]
+    }
+  },
+  "include": ["packages/*/src/**/*.ts", "packages/*/test/**/*.ts"],
+  "exclude": ["**/node_modules", "**/dist", "packages/edge-router"]
+}

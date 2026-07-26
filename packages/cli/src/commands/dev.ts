@@ -1,4 +1,4 @@
-// @celsian/cli — celsian dev command
+// @celsian/cli: celsian dev command
 
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync, watch } from "node:fs";
@@ -9,14 +9,30 @@ export interface DevOptions {
   entry?: string;
   port?: number;
   host?: string;
+  /** Env file to load into the child process. Default: ".env". */
+  envFile?: string;
 }
 
 export async function devCommand(options: DevOptions = {}): Promise<void> {
   const entry = options.entry ?? "src/index.ts";
   const cwd = process.cwd();
   const entryPath = resolve(cwd, entry);
+  const envFile = options.envFile ?? ".env";
+  const envFilePath = resolve(cwd, envFile);
+  // Load .env exactly the way the scaffold's own `npm run dev` does, via Node's
+  // --env-file (tsx forwards it). Without this, `celsian dev` and `npm run dev`
+  // behave differently and a scaffolded project silently falls back to its
+  // placeholder JWT_SECRET. Real environment variables still win: Node's
+  // --env-file never overwrites a variable that is already set.
+  const hasEnvFile = existsSync(envFilePath);
+  // An explicitly requested env file that does not exist is a user error, not
+  // something to silently ignore.
+  if (!hasEnvFile && options.envFile) {
+    logger.error(`Env file not found: ${envFile}`);
+    return;
+  }
 
-  // Fail with a clear, actionable message before spawning tsx — otherwise a
+  // Fail with a clear, actionable message before spawning tsx: otherwise a
   // missing entry (wrong directory, or a project using `server.ts`) surfaces as
   // a raw "Cannot find module" stack trace from tsx. Mirrors `celsian routes`.
   if (!existsSync(entryPath)) {
@@ -26,6 +42,9 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
   }
 
   logger.info(`Starting dev server: ${entry}`);
+  if (hasEnvFile) {
+    logger.dim(`  Loading environment from ${envFile}`);
+  }
 
   let child: ChildProcess | null = null;
   let restarting = false;
@@ -38,7 +57,8 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
     };
 
     // Use tsx for TypeScript execution
-    child = spawn("npx", ["tsx", entryPath], {
+    const tsxArgs = hasEnvFile ? ["tsx", `--env-file=${envFilePath}`, entryPath] : ["tsx", entryPath];
+    child = spawn("npx", tsxArgs, {
       cwd,
       stdio: "inherit",
       env,

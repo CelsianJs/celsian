@@ -1,0 +1,66 @@
+<!doctype html>
+<!--
+  Source for site/og.png (1200x630 Open Graph card).
+  Regenerate with:  node site/build-og.mjs
+  Kept in the repo so the image can be rebuilt when the copy changes, rather
+  than being a binary nobody can edit.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 1200px; height: 630px;
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: #1c1917;
+    color: #fafaf9;
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 82px 88px;
+    position: relative;
+    overflow: hidden;
+  }
+  .glow {
+    position: absolute; top: -280px; right: -220px;
+    width: 760px; height: 760px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(245,158,11,0.28) 0%, rgba(245,158,11,0) 68%);
+  }
+  .mark { display: flex; align-items: center; gap: 18px; margin-bottom: 40px; }
+  .mark svg { width: 56px; height: 56px; }
+  .mark span { font-size: 32px; font-weight: 800; letter-spacing: -0.02em; }
+  h1 {
+    font-size: 74px; line-height: 1.06; font-weight: 800;
+    letter-spacing: -0.035em; max-width: 960px;
+  }
+  h1 em { font-style: normal; color: #f59e0b; }
+  p {
+    margin-top: 30px; font-size: 29px; line-height: 1.45;
+    color: #a8a29e; max-width: 900px; font-weight: 400;
+  }
+  .runtimes {
+    margin-top: 46px; display: flex; gap: 14px; flex-wrap: wrap;
+    font-family: 'JetBrains Mono', monospace; font-size: 20px; font-weight: 500;
+  }
+  .runtimes span {
+    border: 1px solid #44403c; border-radius: 999px;
+    padding: 9px 20px; color: #d6d3d1;
+  }
+</style>
+</head>
+<body>
+  <div class="glow"></div>
+  <div class="mark">
+    <svg viewBox="0 0 64 64" aria-hidden="true">
+      <rect width="64" height="64" rx="14" fill="#292524"/>
+      <path d="M42 22a14 14 0 1 0 0 20" fill="none" stroke="#f59e0b" stroke-width="7" stroke-linecap="round"/>
+    </svg>
+    <span>CelsianJS</span>
+  </div>
+  <h1>The application framework for <em>every runtime</em></h1>
+  <p>TypeScript backend with zero runtime dependencies in core. Background jobs, cron, RPC, OpenAPI and plugin encapsulation.</p>
+  <div class="runtimes">
+    <span>Node</span><span>Bun</span><span>Deno</span><span>Workers</span><span>Lambda</span><span>Vercel</span>
+  </div>
+</body>
+</html>

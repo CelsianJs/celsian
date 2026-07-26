@@ -11,8 +11,7 @@ const timer = setInterval(() => {
   samples.push(Math.round((process.memoryUsage().rss / 1048576) * 10) / 10);
 }, 4000);
 // 40s of mixed load
-const inst = autocannon({ url: `http://127.0.0.1:${port}/json`, connections: 25, duration: 40 });
-await new Promise((res) => inst.on("done", res));
+await autocannon({ url: `http://127.0.0.1:${port}/json`, connections: 25, duration: 40 });
 clearInterval(timer);
 if (global.gc) {
   global.gc();
@@ -27,6 +26,6 @@ const growth = avg(lastThird) - avg(firstThird);
 console.log(
   `first-third avg: ${avg(firstThird).toFixed(1)}MB  last-third avg: ${avg(lastThird).toFixed(1)}MB  growth: ${growth.toFixed(1)}MB`,
 );
-console.log(growth < 10 ? "VERDICT: stable — no leak" : "VERDICT: RSS climbing — investigate");
+console.log(growth < 10 ? "VERDICT: stable, no leak" : "VERDICT: RSS climbing, investigate");
 await server.close();
 process.exit(0);

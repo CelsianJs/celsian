@@ -1,19 +1,24 @@
+# Build context is the MONOREPO ROOT, not this directory.
+#   docker compose up --build          (context is set in docker-compose.yml)
+#   docker build -f examples/docker/Dockerfile -t celsian-api ../..
+
 # Stage 1: Build
 FROM node:22-slim AS builder
 WORKDIR /app
 
-# Copy monorepo files needed for build
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY tsconfig.base.json ./
-COPY packages/core/ packages/core/
-COPY packages/schema/ packages/schema/
-COPY examples/docker/ examples/docker/
+# The whole workspace is copied because pnpm needs every workspace member
+# listed in pnpm-lock.yaml to resolve a frozen install. Dockerfile.dockerignore
+# keeps node_modules and build output out of the context.
+COPY . .
 
-# Install pnpm and dependencies
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 RUN pnpm install --frozen-lockfile
 
-# Build the example
+# @celsian/core and @celsian/schema publish from dist/, so they must be
+# compiled before esbuild can bundle the example against them.
+RUN pnpm --filter @celsian/core build
+
+# Bundle the example into a single file
 WORKDIR /app/examples/docker
 RUN node build.mjs
 

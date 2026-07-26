@@ -1,4 +1,4 @@
-// @celsian/cli — celsian generate command
+// @celsian/cli: celsian generate command
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -60,7 +60,7 @@ import { procedure, RPCHandler, router } from '@celsian/rpc';
 
 // RPC procedures for the "${name}" namespace. Add \`.input(schema)\` (Zod,
 // TypeBox, or Valibot) before \`.query\`/\`.mutation\` to validate and type \`input\`
-// — without a schema, \`input\` is \`unknown\`.
+//: without a schema, \`input\` is \`unknown\`.
 export const ${name}Router = router({
   ${name}: {
     list: procedure.query(async () => {
@@ -84,7 +84,7 @@ export const ${name}Router = router({
 // Register on your Celsian app. In src/index.ts:
 //   import ${name}Rpc from './routes/${name}.js';
 //   await app.register(${name}Rpc);
-// Procedures are served under \`/_rpc/*\` — GET for queries, POST for mutations
+// Procedures are served under \`/_rpc/*\`: GET for queries, POST for mutations
 // (e.g. GET /_rpc/${name}.list).
 const ${name}Rpc: PluginFunction = async (app) => {
   new RPCHandler(${name}Router).mount(app);

@@ -58,8 +58,30 @@ Example:
 const app = createApp();
 app.get('/hello', () => ({ message: 'world' }));
 const res = await app.inject({ method: 'GET', url: '/hello' });
-expect(res.statusCode).toBe(200);
+expect(res.status).toBe(200);              // NOT res.statusCode
+expect(await res.json()).toEqual({ message: 'world' });
 ```
+
+`inject()` returns a standard web `Response`. Its property is `res.status`; there is no
+`res.statusCode` (Fastify's name), and reading it yields `undefined`, which makes
+`expect(res.statusCode).toBe(200)` fail rather than silently pass. Body access is
+`await res.json()` / `await res.text()`, both of which are async.
+
+**The request body option is `payload`, not `body`.** `InjectOptions` is
+`{ method, url, headers, payload, query }`. Passing `body:` sends NO body at all, silently:
+the request goes out empty, `req.parsedBody` is `undefined`, and the route either 400s or
+sees nothing. It looks exactly like a framework bug and is not one.
+
+```ts
+// Correct: an object is JSON-stringified and content-type is set for you.
+const res = await app.inject({ method: 'POST', url: '/users', payload: { name: 'Ada' } });
+
+// Silently sends an EMPTY body:
+const res = await app.inject({ method: 'POST', url: '/users', body: JSON.stringify(...) });
+```
+
+Since `packages/*/test/**` is now covered by `pnpm typecheck` (see `tsconfig.typecheck.json`),
+a stray `body:` in a real test file is a compile error rather than a mystery failure.
 
 ## Conventions
 

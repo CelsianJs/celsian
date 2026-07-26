@@ -14,11 +14,19 @@ Deploy a CelsianJS API to AWS Lambda behind API Gateway v2 (HTTP API) using AWS 
 ```
 examples/aws-lambda/
   src/handler.ts     # Lambda entry point with routes
+  events/            # Sample API Gateway v2 events for `sam local invoke`
   build.mjs          # esbuild bundler script
   template.yaml      # SAM/CloudFormation template
   samconfig.toml     # Deployment defaults per stage
   package.json
   tsconfig.json
+```
+
+`src/handler.ts` exports the app as `app` alongside the Lambda `handler`, so
+routes can be listed without deploying:
+
+```bash
+celsian routes src/handler.ts   # needs @celsian/cli
 ```
 
 ## Setup
@@ -55,6 +63,17 @@ curl -X POST http://127.0.0.1:3000/users \
 curl -X POST http://127.0.0.1:3000/echo \
   -H 'Content-Type: application/json' \
   -d '{"message":"hello"}'
+```
+
+### Invoking with a sample event
+
+`events/` holds API Gateway v2 (payload format 2.0) events, so a single
+invocation can be tested without starting the emulator:
+
+```bash
+pnpm build
+pnpm invoke                                                    # events/get-health.json
+sam local invoke CelsianFunction --event events/post-users.json
 ```
 
 ## Deploy
@@ -100,9 +119,9 @@ The Lambda handler file is set to `index.handler` in `template.yaml`, which maps
 
 The SAM template provisions:
 
-- **AWS::Serverless::HttpApi** — API Gateway v2 HTTP API with CORS enabled
-- **AWS::Serverless::Function** — Lambda function (arm64, 256MB, 30s timeout)
-- **AWS::Logs::LogGroup** — CloudWatch log group with 14-day retention
+- **AWS::Serverless::HttpApi**: API Gateway v2 HTTP API with CORS enabled
+- **AWS::Serverless::Function**: Lambda function (arm64, 256MB, 30s timeout)
+- **AWS::Logs::LogGroup**: CloudWatch log group with 14-day retention
 
 ### Configuration
 

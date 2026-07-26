@@ -163,13 +163,31 @@ describe("deployCommand file generation", () => {
     }
   });
 
-  it("serverless targets include @celsian/core import", () => {
-    const serverlessTargets: DeployTarget[] = ["vercel", "lambda", "cloudflare"];
-    for (const target of serverlessTargets) {
+  // Rewritten 2026-07-26. This used to assert the entrypoint imported
+  // `@celsian/core`, which it did only because it built a brand-new EMPTY app
+  // with `// TODO: Import your routes here`. Shipping that deployed a
+  // health-check-only application. The entrypoint now imports the user's real
+  // app, so the meaningful assertions are the adapter import and the app
+  // import, and the absence of the TODO stub.
+  it("serverless entrypoints import the user's app, not a fresh empty one", () => {
+    const expectedAdapter: Record<string, string> = {
+      vercel: "@celsian/adapter-vercel",
+      lambda: "@celsian/adapter-lambda",
+      cloudflare: "@celsian/adapter-cloudflare",
+    };
+
+    for (const target of ["vercel", "lambda", "cloudflare"] as DeployTarget[]) {
       const files = getFilesForTarget(target);
       const tsFile = files.find(([p]) => p.endsWith(".ts"));
-      expect(tsFile).toBeDefined();
-      expect(tsFile?.[1]).toContain("@celsian/core");
+      expect(tsFile, `${target}: no .ts entrypoint generated`).toBeDefined();
+      const content = tsFile?.[1] ?? "";
+
+      expect(content, `${target}: missing adapter import`).toContain(expectedAdapter[target]);
+      // Imports the user's app from their source tree.
+      expect(content, `${target}: does not import the user's app`).toMatch(/from\s+["'][./][^"']*src\/index\.js["']/);
+      // The regression this guards: a stub app with no routes.
+      expect(content, `${target}: still scaffolds an empty app`).not.toContain("TODO: Import your routes");
+      expect(content, `${target}: still calls createApp()`).not.toContain("createApp(");
     }
   });
 

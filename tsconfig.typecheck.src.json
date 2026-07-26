@@ -1,0 +1,9 @@
+// Source-only slice of tsconfig.typecheck.json.
+//
+// `pnpm typecheck` is the real gate and covers `src` and `test` together.
+// This narrower program exists so you can answer "is the shipped source
+// clean?" without wading through test-file errors while you work.
+{
+  "extends": "./tsconfig.typecheck.json",
+  "include": ["packages/*/src/**/*.ts"]
+}

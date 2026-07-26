@@ -2,6 +2,8 @@
 // Demonstrates: JWT auth, refresh tokens, rate limiting, password hashing
 
 import { randomBytes, scrypt, timingSafeEqual } from "node:crypto";
+import { realpathSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { cors, createApp, HttpError, serve } from "@celsian/core";
 import { createJWTGuard, type JWTNamespace, jwt } from "@celsian/jwt";
@@ -11,7 +13,11 @@ import { z } from "zod";
 const scryptAsync = promisify(scrypt);
 
 // ─── Config ───
-const DEFAULT_JWT_SECRET = "dev-secret-change-in-production";
+// Obvious placeholder, and at least 32 bytes so @celsian/jwt does not warn
+// about a brute-forceable HMAC secret on every boot. Never ship this value:
+// generate a real one with
+//   node -e "console.log(crypto.randomBytes(32).toString('hex'))"
+const DEFAULT_JWT_SECRET = "celsian-auth-flow-dev-secret-change-me";
 const JWT_SECRET = process.env.JWT_SECRET ?? DEFAULT_JWT_SECRET;
 
 if (process.env.NODE_ENV === "production" && JWT_SECRET === DEFAULT_JWT_SECRET) {
@@ -222,18 +228,24 @@ export function createAuthApp() {
   return app;
 }
 
-// Start server only when executed directly, not when imported by tests/examples.
+// A ready-made instance, exported as the default so tooling that loads this
+// file (for example `celsian routes`) can find it. Tests call createAuthApp()
+// to get their own isolated instance.
+const app = createAuthApp();
+export default app;
+
+// Start server only when executed directly, not when imported by tests/tooling.
 const isDirectRun = (() => {
-  if (!process.argv[1]) return false;
+  const entry = process.argv[1];
+  if (!entry) return false;
   try {
-    return import.meta.url === new URL(process.argv[1], `file://${process.cwd()}/`).href;
+    return pathToFileURL(realpathSync(entry)).href === import.meta.url;
   } catch {
     return false;
   }
 })();
 
 if (isDirectRun) {
-  const app = createAuthApp();
   await app.ready();
   await serve(app, { port: parseInt(process.env.PORT ?? "3000", 10) });
 }

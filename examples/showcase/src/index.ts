@@ -1,10 +1,11 @@
-// Pulse — CelsianJS Showcase API
+// Pulse -- CelsianJS Showcase API
 // Demonstrates: hooks, middleware, RPC, SSE, caching, sessions, tasks
 
-import { createServer } from "node:http";
+import { realpathSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import { createResponseCache, createSessionManager, MemoryKVStore } from "@celsian/cache";
-import { cors, createApp, createSSEHub } from "@celsian/core";
-import { procedure, router } from "@celsian/rpc";
+import { cors, createApp, createSSEHub, serve } from "@celsian/core";
+import { procedure, RPCHandler, router } from "@celsian/rpc";
 import { z } from "zod";
 
 // ─── Data Store ───
@@ -31,15 +32,19 @@ const hub = createSSEHub();
 // Background task: use core's built-in task system
 app.task({
   name: "notify",
-  handler: async ({ input }) => {
+  // A task handler receives the enqueued input as its first argument
+  // (and a TaskContext as its second), not a wrapper object.
+  handler: async (input) => {
     const payload = input as { type: string; message: string };
     console.log(`[notification] ${payload.type}: ${payload.message}`);
   },
   retries: 2,
 });
 
-// Cron: clean up completed tasks older than 1 hour
-app.cron("cleanup-done-tasks", "5m", () => {
+// Cron: clean up completed tasks older than 1 hour.
+// Schedules are 5-field unix cron expressions, so "every 5 minutes" is
+// "*/5 * * * *". Shorthand like "5m" is not supported and throws on boot.
+app.cron("cleanup-done-tasks", "*/5 * * * *", () => {
   const cutoff = Date.now() - 3600_000;
   let cleaned = 0;
   for (const [id, task] of tasks) {
@@ -58,16 +63,11 @@ await app.register(cors({ origin: "http://localhost:3000", credentials: true }),
 app.health();
 
 // ─── REST: Auth ───
-const _JWT_SECRET =
-  process.env.JWT_SECRET ??
-  (() => {
-    throw new Error("Set JWT_SECRET env var");
-  })();
-const PASSWORD_SALT =
-  process.env.PASSWORD_SALT ??
-  (() => {
-    throw new Error("Set PASSWORD_SALT env var");
-  })();
+// Sessions are cookie-based here, so the only secret needed is the password
+// salt. The fallback is an obvious placeholder so the demo boots with no
+// setup. Generate a real one with:
+//   node -e "console.log(crypto.randomBytes(32).toString('hex'))"
+const PASSWORD_SALT = process.env.PASSWORD_SALT ?? "celsian-showcase-dev-salt-change-me";
 
 const RegisterSchema = z.object({
   email: z.string().email(),
@@ -256,7 +256,7 @@ const TaskInput = z.object({
   assignee: z.string().optional(),
 });
 
-const _appRouter = router({
+const appRouter = router({
   tasks: {
     list: procedure.query(() => Array.from(tasks.values())),
 
@@ -303,6 +303,13 @@ const _appRouter = router({
   },
 });
 
+// Mount the RPC router. mount() registers GET + POST wildcard routes, so
+// procedures are reachable at /rpc/<namespace>.<procedure>, plus
+// /rpc/manifest.json and /rpc/openapi.json.
+new RPCHandler(appRouter).mount(app, "/rpc");
+
+export type AppRouter = typeof appRouter;
+
 // ─── Session info ───
 app.get("/api/me", async (req, reply) => {
   const session = await sessions.fromRequest(req);
@@ -314,65 +321,35 @@ app.get("/api/me", async (req, reply) => {
 // ─── Start Server ───
 const PORT = parseInt(process.env.PORT || "4000", 10);
 
-const server = createServer(async (nodeReq, nodeRes) => {
-  const url = new URL(nodeReq.url ?? "/", `http://127.0.0.1:${PORT}`);
-  const headers = new Headers();
-  for (const [key, val] of Object.entries(nodeReq.headers)) {
-    if (val) headers.set(key, Array.isArray(val) ? val.join(", ") : val);
-  }
+// Exported so tooling that loads this file (for example `celsian routes`)
+// and the smoke test in test/ can use the app without starting a server.
+export default app;
 
-  let body: ReadableStream | null = null;
-  if (nodeReq.method !== "GET" && nodeReq.method !== "HEAD") {
-    body = new ReadableStream({
-      start(controller) {
-        nodeReq.on("data", (chunk: Buffer) => controller.enqueue(chunk));
-        nodeReq.on("end", () => controller.close());
-        nodeReq.on("error", (err) => controller.error(err));
-      },
-    });
-  }
-
-  const webReq = new Request(url.toString(), {
-    method: nodeReq.method ?? "GET",
-    headers,
-    body,
-    // @ts-expect-error — Node.js 20+ supports duplex
-    duplex: body ? "half" : undefined,
-  });
-
+const isDirectRun = (() => {
+  const entry = process.argv[1];
+  if (!entry) return false;
   try {
-    const response = await app.handle(webReq);
-    nodeRes.writeHead(response.status, Object.fromEntries(response.headers.entries()));
-
-    if (response.body) {
-      const reader = response.body.getReader();
-      const pump = async () => {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            nodeRes.end();
-            break;
-          }
-          nodeRes.write(value);
-        }
-      };
-      pump().catch(() => nodeRes.end());
-    } else {
-      nodeRes.end();
-    }
+    return pathToFileURL(realpathSync(entry)).href === import.meta.url;
   } catch {
-    nodeRes.writeHead(500);
-    nodeRes.end("Internal Server Error");
+    return false;
   }
-});
+})();
 
-server.listen(PORT, () => {
-  console.log(`
-  Pulse — CelsianJS Showcase
-  http://localhost:${PORT}
+if (isDirectRun) {
+  // serve() handles the Node/Bun/Deno differences, starts the task worker and
+  // the cron scheduler, and wires up graceful shutdown.
+  await serve(app, {
+    port: PORT,
+    onReady({ port }) {
+      console.log(`
+  Pulse, the CelsianJS showcase
+  http://localhost:${port}
 
-  REST:  /api/tasks, /api/auth/*
-  SSE:   /api/events
+  REST:   /api/tasks, /api/auth/*
+  RPC:    /rpc/tasks.list, /rpc/manifest.json
+  SSE:    /api/events
   Health: /health
-  `);
-});
+`);
+    },
+  });
+}
