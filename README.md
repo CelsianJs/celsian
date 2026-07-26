@@ -123,18 +123,22 @@ scheduling, and DB analytics in one framework.
 No hunting for middleware packages:
 
 ```typescript
-// NOTE the `{ encapsulate: false }` on every plugin whose hooks must apply to
-// routes registered OUTSIDE the plugin. Without it the plugin's request hooks
-// stay inside its own scope and silently do nothing to your routes. This is the
-// single easiest thing to get wrong: `rateLimit` registered without it lets
-// 6 of 6 requests through at `max: 2`.
-await app.register(security(), { encapsulate: false });  // Helmet-style headers
-await app.register(cors({ origin: 'https://myapp.com' }), { encapsulate: false });
+// A plugin registered WITHOUT a prefix applies to every route in the app, so
+// these work as middleware. `{ encapsulate: false }` says the same thing
+// explicitly and is still supported; it is no longer required.
+// To scope a plugin instead, give it a prefix: `{ prefix: '/admin' }`.
+await app.register(security());                          // Helmet-style headers
+await app.register(cors({ origin: 'https://myapp.com' }));
 await app.register(csrf(), { encapsulate: false });      // CSRF token protection
-// trustProxy lets the limiter read the client IP from X-Forwarded-For behind a proxy.
-// Set it (or pass a keyGenerator). Without one of them, rateLimit() throws at registration.
-await app.register(rateLimit({ max: 100, window: 60_000, trustProxy: true }), { encapsulate: false });
-await app.register(compress(), { encapsulate: false });
+// The limiter needs a trustworthy way to identify a client, so it throws at
+// registration rather than run without one. In order of preference:
+//   1. keyGenerator on an authenticated user id (immune to header spoofing)
+//   2. trustedProxies: the CIDRs of proxies you actually run
+//   3. trustProxy: true, which trusts X-Forwarded-For unconditionally. Only use
+//      this when a proxy you control REWRITES that header; if anything can reach
+//      the app directly, a client can rotate the header and bypass the limit.
+await app.register(rateLimit({ max: 100, window: 60_000, trustedProxies: ['10.0.0.0/8'] }));
+await app.register(compress());
 await app.register(jwt({ secret: process.env.JWT_SECRET! }), { encapsulate: false });
 await app.register(openapi({ title: 'My API' }));
 
@@ -266,8 +270,11 @@ reply.json({ data: [] });                            // JSON response
 reply.html('<h1>Hello</h1>');                         // HTML response
 reply.stream(readableStream);                         // Streaming
 reply.redirect('/new-path', 301);                     // Redirect
-await reply.sendFile('/path/to/report.pdf');          // Serve file
-await reply.download('/path/to/data.csv', 'export');  // Download
+// File serving is confined: `root` defaults to process.cwd(), and any resolved
+// path outside it is a 403, symlinks included. Pass `root` to serve elsewhere.
+await reply.sendFile('reports/q3.pdf');                          // relative to cwd
+await reply.sendFile('q3.pdf', { root: '/srv/reports' });        // explicit root
+await reply.download('data.csv', { root: '/srv/exports', filename: 'export.csv' });
 
 // Structured error responses
 reply.notFound('User not found');     // 404

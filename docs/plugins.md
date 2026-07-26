@@ -58,11 +58,15 @@ await app.register(myPlugin, { prefix: '/api' });
 
 ## Encapsulation
 
-By default, plugins are **encapsulated**. This means:
+A plugin registered **with a prefix** is encapsulated. This means:
 
-- Hooks registered inside a plugin only run for routes defined in that plugin.
-- Decorations registered inside a plugin are visible to the plugin and its children, but not to the parent or siblings.
+- Hooks registered inside it only run for routes defined in that plugin.
+- Decorations are visible to the plugin and its children, but not to the parent or siblings.
 - Route prefixes are scoped.
+
+A plugin registered **without a prefix** is app-wide, which is what lets
+`await app.register(cors())` behave as middleware. Give a plugin a prefix when you
+want it scoped.
 
 ### Example: Scoped Auth
 
@@ -98,7 +102,10 @@ The `onRequest` hook in `protectedRoutes` does not affect `publicRoutes`.
 
 ### Breaking Out of Encapsulation
 
-Some plugins need to affect all routes globally. Pass `{ encapsulate: false }` to disable scoping:
+A plugin registered without a prefix is already app-wide, so `{ encapsulate: false }` is
+not required for the calls below. It remains useful in two cases: to state the intent
+explicitly, and to make a plugin app-wide from *inside* a prefixed parent, where the
+prefix would otherwise scope it.
 
 ```typescript
 // CORS headers should apply to every route
@@ -291,9 +298,23 @@ Serves an OpenAPI 3.1 JSON spec at `/docs/openapi.json` and a Swagger UI at `/do
 
 **Important:** Rate-limit and compress install their logic as an `onRequest` hook. That hook applies to routes in the *same* encapsulation scope as where the hook is added. Always register these plugins with `{ encapsulate: false }`, both globally **and** inside a feature plugin.
 
-Why `{ encapsulate: false }` even for scoped use? When you `app.register(rateLimit(...))` with the default (encapsulated) registration, the plugin runs in a fresh **child** scope and adds its `onRequest` hook there. Your feature's routes live in the parent scope, so the hook never runs against them, the limiter is silently disabled. Passing `{ encapsulate: false }` runs the plugin against your feature's own scope, so its hook protects that feature's routes. To get a *per-feature* limit, register the limiter with `{ encapsulate: false }` inside each feature plugin (see [Pattern: Feature Plugin](#pattern-feature-plugin)).
+Since 0.6.0 an un-prefixed plugin is app-wide and a prefixed one is scoped, so
+`app.register(rateLimit(...))` protects your routes without `{ encapsulate: false }`.
+Passing it is still valid and is the explicit way to say "app-wide". For a per-feature
+limit, register the limiter inside that feature's plugin (see
+[Pattern: Feature Plugin](#pattern-feature-plugin)).
 
-> `rateLimit()` also requires either `trustProxy: true` (to read the client IP from `X-Forwarded-For`/`X-Real-IP`) or a custom `keyGenerator`. With neither, it throws at registration so the limiter can never silently run without a way to identify clients.
+> `rateLimit()` needs a trustworthy way to identify a client and throws at registration
+> if given none, so it can never silently run without one. Prefer, in order:
+>
+> 1. `keyGenerator` keyed on an authenticated user id. Immune to header spoofing.
+> 2. `trustedProxies: ['10.0.0.0/8']`, the CIDRs of proxies you actually operate.
+> 3. `trustProxy: true`, which trusts `X-Forwarded-For` unconditionally.
+>
+> Option 3 is only safe when a proxy you control **rewrites** `X-Forwarded-For`. If
+> anything can reach the app directly, a client rotating that header bypasses the limit
+> entirely. `X-Real-IP` is no longer consulted unless you set `trustXRealIp`, because a
+> proxy cannot append to it, so it is fully client-controlled.
 
 ## Pattern: Feature Plugin
 
