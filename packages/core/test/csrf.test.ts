@@ -28,7 +28,21 @@ describe("CSRF middleware", () => {
     expect(setCookie).toContain("_csrf=");
   });
 
-  it("does not set cookie if already present", async () => {
+  it("does not re-issue a cookie that already carries a valid token", async () => {
+    const app = await setupApp();
+
+    const first = await app.inject({ url: "/page" });
+    const token = (first.headers.get("set-cookie") ?? "").match(/_csrf=([^;]+)/)?.[1] ?? "";
+
+    const res = await app.inject({
+      url: "/page",
+      headers: { cookie: `_csrf=${token}` },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("set-cookie")).toBeNull();
+  });
+
+  it("replaces a cookie token that carries no valid signature", async () => {
     const app = await setupApp();
 
     const res = await app.inject({
@@ -36,10 +50,8 @@ describe("CSRF middleware", () => {
       headers: { cookie: "_csrf=existing-token" },
     });
     expect(res.status).toBe(200);
-
-    const setCookie = res.headers.get("set-cookie");
-    // Should NOT re-set the cookie
-    expect(setCookie).toBeNull();
+    // An attacker-planted token must not be adopted as this session's token.
+    expect(res.headers.get("set-cookie")).toContain("_csrf=");
   });
 
   it("rejects POST without CSRF token", async () => {
@@ -172,8 +184,8 @@ describe("CSRF middleware", () => {
     expect(token2).toBeTruthy();
     expect(token1).not.toBe(token2);
 
-    // Token should be 64 hex chars (32 bytes)
-    expect(token1?.length).toBe(64);
+    // Token is "<64 hex nonce>.<32 hex signature>"
+    expect(token1).toMatch(/^[0-9a-f]{64}\.[0-9a-f]{32}$/);
   });
 });
 

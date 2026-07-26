@@ -399,21 +399,21 @@ describe("SSE: Migrated from @celsian/server to @celsian/core", () => {
 // ─── ETag Migration ───
 
 describe("ETag: Migrated withETag from @celsian/server to @celsian/core", () => {
-  it("should generate ETag and respond with 200", () => {
+  it("should generate ETag and respond with 200", async () => {
     const request = new Request("http://localhost/data");
-    const response = withETag(request, { hello: "world" });
+    const response = await withETag(request, { hello: "world" });
     expect(response.status).toBe(200);
     expect(response.headers.get("etag")).toBeTruthy();
   });
 
-  it("should respond with 304 when If-None-Match matches", () => {
+  it("should respond with 304 when If-None-Match matches", async () => {
     const data = { hello: "world" };
     // First request to get the ETag
-    const first = withETag(new Request("http://localhost/data"), data);
+    const first = await withETag(new Request("http://localhost/data"), data);
     const etag = first.headers.get("etag")!;
 
     // Second request with If-None-Match
-    const second = withETag(new Request("http://localhost/data", { headers: { "if-none-match": etag } }), data);
+    const second = await withETag(new Request("http://localhost/data", { headers: { "if-none-match": etag } }), data);
     expect(second.status).toBe(304);
   });
 });

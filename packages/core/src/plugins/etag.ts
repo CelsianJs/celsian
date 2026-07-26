@@ -5,18 +5,23 @@ export interface ETagOptions {
   weak?: boolean;
 }
 
+const textEncoder = new TextEncoder();
+
 /**
- * Generate a simple hash for ETag.
- * Uses a fast non-cryptographic hash for performance.
+ * Hash a body for use as an ETag: SHA-256 truncated to 128 bits.
+ *
+ * The previous 32-bit non-cryptographic hash collided easily, and an ETag
+ * collision is not cosmetic: it makes the server answer 304 for a body the
+ * client has never seen.
  */
-function simpleHash(str: string): string {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash |= 0; // Convert to 32-bit integer
+async function hashBody(str: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", textEncoder.encode(str));
+  const bytes = new Uint8Array(digest, 0, 16);
+  let hex = "";
+  for (const byte of bytes) {
+    hex += byte.toString(16).padStart(2, "0");
   }
-  return Math.abs(hash).toString(36);
+  return hex;
 }
 
 /**
@@ -24,16 +29,16 @@ function simpleHash(str: string): string {
  * Use this in route handlers for fine-grained control:
  *
  * ```ts
- * app.get('/data', (req, reply) => {
+ * app.get('/data', async (req, reply) => {
  *   const data = getExpensiveData();
- *   return withETag(req, data);
+ *   return await withETag(req, data);
  * });
  * ```
  */
-export function withETag(request: Request, data: unknown, options?: ETagOptions): Response {
+export async function withETag(request: Request, data: unknown, options?: ETagOptions): Promise<Response> {
   const weak = options?.weak !== false;
   const body = typeof data === "string" ? data : JSON.stringify(data);
-  const hash = simpleHash(body);
+  const hash = await hashBody(body);
   const etagValue = weak ? `W/"${hash}"` : `"${hash}"`;
 
   // Check If-None-Match

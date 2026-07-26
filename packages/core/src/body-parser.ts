@@ -3,8 +3,21 @@
 import { HttpError } from "./errors.js";
 import type { CelsianRequest } from "./types.js";
 
-// Keys that must never be set via user input (prototype pollution prevention)
-const BLOCKED_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+/**
+ * Keys that must never be set via user input (prototype pollution prevention).
+ * Shared so every user-controlled key/value map in core rejects the same set.
+ */
+export const BLOCKED_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+/** Actionable 413: names the byte limit and the config key that raises it. */
+function payloadTooLarge(limit: number, actual?: number): HttpError {
+  const seen = actual === undefined ? "" : ` (received at least ${actual} bytes)`;
+  return new HttpError(
+    413,
+    `Payload Too Large: request body exceeds the ${limit} byte limit${seen}. ` +
+      `Raise it with createApp({ bodyLimit: <bytes> }) or lower the payload size.`,
+  );
+}
 
 /**
  * Recursively strip dangerous keys (`__proto__`, `constructor`, `prototype`)
@@ -33,7 +46,7 @@ function scrubPrototypePollution(value: unknown): unknown {
 export async function readBodyText(request: Request, limit: number): Promise<string> {
   const contentLength = request.headers.get("content-length");
   if (contentLength && parseInt(contentLength, 10) > limit) {
-    throw new HttpError(413, "Payload Too Large");
+    throw payloadTooLarge(limit, parseInt(contentLength, 10));
   }
 
   if (!request.body || limit <= 0) {
@@ -51,7 +64,7 @@ export async function readBodyText(request: Request, limit: number): Promise<str
       if (done) break;
       totalBytes += value.byteLength;
       if (totalBytes > limit) {
-        throw new HttpError(413, "Payload Too Large");
+        throw payloadTooLarge(limit, totalBytes);
       }
       result += decoder.decode(value, { stream: true });
     }
@@ -71,13 +84,13 @@ export async function readBodyText(request: Request, limit: number): Promise<str
 async function readBodyBytes(request: Request, limit: number): Promise<Uint8Array> {
   const contentLength = request.headers.get("content-length");
   if (contentLength && parseInt(contentLength, 10) > limit) {
-    throw new HttpError(413, "Payload Too Large");
+    throw payloadTooLarge(limit, parseInt(contentLength, 10));
   }
 
   if (!request.body) {
     const buf = await request.arrayBuffer();
     if (buf.byteLength > limit) {
-      throw new HttpError(413, "Payload Too Large");
+      throw payloadTooLarge(limit, buf.byteLength);
     }
     return new Uint8Array(buf);
   }
@@ -92,7 +105,7 @@ async function readBodyBytes(request: Request, limit: number): Promise<Uint8Arra
       if (done) break;
       totalBytes += value.byteLength;
       if (totalBytes > limit) {
-        throw new HttpError(413, "Payload Too Large");
+        throw payloadTooLarge(limit, totalBytes);
       }
       chunks.push(value);
     }

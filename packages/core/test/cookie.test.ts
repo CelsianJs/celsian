@@ -94,14 +94,11 @@ describe("Cookie secure defaults", () => {
     expect(cookie).toContain("SameSite=Lax");
   });
 
-  it("secure defaults to false in non-production (NODE_ENV not set)", () => {
-    // In test environment, NODE_ENV may or may not be 'production'
-    const cookie = serializeCookie("session", "xyz");
-    if (process.env.NODE_ENV === "production") {
-      expect(cookie).toContain("Secure");
-    } else {
-      expect(cookie).not.toContain("Secure");
-    }
+  it("secure defaults to true regardless of NODE_ENV", () => {
+    // Containers routinely run without NODE_ENV, so "not production" must not
+    // be inferred from a missing env var: default Secure, opt out explicitly.
+    expect(serializeCookie("session", "xyz")).toContain("Secure");
+    expect(serializeCookie("session", "xyz", { secure: false })).not.toContain("Secure");
   });
 
   it("user options override secure defaults", () => {

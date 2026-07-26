@@ -24,21 +24,34 @@ export interface SSEStreamOptions {
 const encoder = new TextEncoder();
 
 /**
+ * Strip line terminators from a single-line SSE field.
+ *
+ * `event:` and `id:` are single-line fields per the SSE spec. A CR/LF smuggled
+ * into either one lets the value close the frame and forge additional events
+ * into the victim's stream, so they are removed rather than trusted.
+ */
+function sanitizeSSEField(value: string): string {
+  return value.replace(/[\r\n]/g, "");
+}
+
+/**
  * Format an SSE event into the wire format.
  */
 function formatSSEEvent(event: SSEEvent): string {
   let result = "";
 
   if (event.event) {
-    result += `event: ${event.event}\n`;
+    result += `event: ${sanitizeSSEField(event.event)}\n`;
   }
 
   if (event.id !== undefined) {
-    result += `id: ${event.id}\n`;
+    result += `id: ${sanitizeSSEField(String(event.id))}\n`;
   }
 
-  if (event.retry !== undefined) {
-    result += `retry: ${event.retry}\n`;
+  // `retry` is a millisecond count; anything non-numeric would be interpolated
+  // straight into the frame, so only finite numbers are emitted.
+  if (event.retry !== undefined && Number.isFinite(Number(event.retry))) {
+    result += `retry: ${Math.trunc(Number(event.retry))}\n`;
   }
 
   // Data can be multi-line — each line needs its own `data:` prefix
