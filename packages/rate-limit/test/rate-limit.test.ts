@@ -118,20 +118,24 @@ describe("@celsian/rate-limit", () => {
     expect(blocked.headers.get("retry-after")).toBeTruthy();
   });
 
-  it("should NOT affect routes outside scope when encapsulated (default)", async () => {
+  it("should NOT affect routes outside scope when registered under a prefix", async () => {
     const app = createApp();
 
-    // Register rate-limit without encapsulate: false
+    // Scoping a plugin is expressed with a prefix. A plugin registered with no
+    // prefix is app-wide middleware and its hooks apply to every route in the
+    // scope it was registered into (that is what makes `app.register(csrf())`,
+    // `cors()` and `rateLimit()` work as documented); a prefixed plugin's hooks
+    // stay inside that prefix.
     await app.register(
       rateLimit({
         max: 2,
         window: 60_000,
         keyGenerator: () => "test-key",
       }),
+      { prefix: "/api" },
     );
 
-    // Route on the root context -- should NOT be rate-limited because
-    // the rate-limit onRequest hook is scoped to the child context
+    // Route outside the plugin's prefix -- must NOT be rate-limited
     app.get("/health", (_req, reply) => reply.json({ ok: true }));
 
     const r1 = await app.inject({ url: "/health" });

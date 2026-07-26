@@ -87,16 +87,24 @@ export function runHooksFireAndForget(
       const result = hook(request, reply);
       // If the hook returns a thenable, log errors instead of silently swallowing
       if (result && typeof (result as any).catch === "function") {
-        (result as Promise<unknown>).catch((err: unknown) => {
-          if (logger) {
-            logger.error("fire-and-forget hook error", { error: err instanceof Error ? err.message : String(err) });
-          } else {
-            console.error("[celsian] fire-and-forget hook error:", err);
-          }
-        });
+        (result as Promise<unknown>).catch((err: unknown) => reportHookError(err, logger));
       }
-    } catch {
-      // Fire and forget — synchronous errors are intentionally ignored
+    } catch (err) {
+      // A synchronous throw must not abort the remaining hooks, but it is still
+      // a bug — report it through the same path as an async rejection instead of
+      // letting it vanish.
+      reportHookError(err, logger);
     }
+  }
+}
+
+function reportHookError(
+  err: unknown,
+  logger?: { error: (msg: string, meta?: Record<string, unknown>) => void },
+): void {
+  if (logger) {
+    logger.error("fire-and-forget hook error", { error: err instanceof Error ? err.message : String(err) });
+  } else {
+    console.error("[celsian] fire-and-forget hook error:", err);
   }
 }

@@ -607,9 +607,13 @@ describe("Plugin registration ergonomics", () => {
     expect(res.headers.get("x-ratelimit-remaining")).toBe("9");
   });
 
-  it("encapsulated plugin hooks should not leak to sibling routes", async () => {
+  it("prefixed plugin hooks should not leak to sibling routes", async () => {
     const app = createApp();
 
+    // A prefix is what scopes a plugin. Registering with no prefix declares
+    // app-wide middleware, whose hooks apply to every route in the scope it was
+    // registered into -- that is what makes `app.register(csrf())` actually
+    // guard routes declared on the app.
     await app.register(
       (instance) => {
         instance.addHook("onRequest", (_req, reply) => {
@@ -617,12 +621,12 @@ describe("Plugin registration ergonomics", () => {
         });
         instance.get("/plugin-route", () => ({ from: "plugin" }));
       },
-      { encapsulate: true },
+      { prefix: "/scoped" },
     );
 
     app.get("/app-route", () => ({ from: "app" }));
 
-    const pluginRes = await app.inject({ url: "/plugin-route" });
+    const pluginRes = await app.inject({ url: "/scoped/plugin-route" });
     expect(pluginRes.headers.get("x-plugin-only")).toBe("true");
 
     const appRes = await app.inject({ url: "/app-route" });
