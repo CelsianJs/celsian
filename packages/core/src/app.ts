@@ -1,8 +1,8 @@
 // @celsian/core — CelsianApp: hook-based server with plugin encapsulation
 
-import { fromSchema, type StandardSchema } from "@celsian/schema";
+import { fromSchema, type InferOutput, type StandardSchema } from "@celsian/schema";
 import { parseBody } from "./body-parser.js";
-import { EncapsulationContext } from "./context.js";
+import { EncapsulationContext, type ScopeRegistry } from "./context.js";
 import { parseCookies } from "./cookie.js";
 import { type CronJob, CronScheduler } from "./cron.js";
 import { handleError as handleErrorFn } from "./error-handler.js";
@@ -16,25 +16,29 @@ import { createReply } from "./reply.js";
 import { buildRequest, buildRequestFast } from "./request.js";
 import { Router } from "./router.js";
 import { createEnqueue, type TaskDefinition, TaskRegistry, TaskWorker, type TaskWorkerOptions } from "./task.js";
-import type {
-  CelsianAppOptions,
-  CelsianReply,
-  CelsianRequest,
-  ExtractRouteParams,
-  HookHandler,
-  HookName,
-  InternalRoute,
-  OnErrorHandler,
-  PluginContext,
-  PluginFunction,
-  PluginOptions,
-  RouteHandler,
-  RouteManifestEntry,
-  RouteOptions,
-  RouteSchemaOptions,
-  TypedRouteHandler,
-  TypedRouteOptions,
-  TypedSchemaHandler,
+import {
+  type CelsianAppOptions,
+  type CelsianReply,
+  type CelsianRequest,
+  type ExtractRouteParams,
+  type HookHandler,
+  type HookName,
+  type InferQuery,
+  type InternalRoute,
+  type OnErrorHandler,
+  type PluginContext,
+  type PluginFunction,
+  type PluginOptions,
+  type ResolvedScope,
+  type ResponseSchemaMap,
+  ROUTE_SCOPE,
+  type RouteHandler,
+  type RouteManifestEntry,
+  type RouteOptions,
+  type RouteSchemaOptions,
+  type TypedRouteHandler,
+  type TypedRouteOptions,
+  type TypedSchemaHandler,
 } from "./types.js";
 import { type WSHandler, WSRegistry } from "./websocket.js";
 
@@ -56,6 +60,11 @@ export class CelsianApp {
     statusCode: 405,
     code: "METHOD_NOT_ALLOWED",
   });
+  private static readonly RESPONSE_VALIDATION_BODY = JSON.stringify({
+    error: "Internal Server Error",
+    statusCode: 500,
+    code: "RESPONSE_VALIDATION_FAILED",
+  });
   private static readonly JSON_CONTENT_TYPE: Record<string, string> = {
     "content-type": "application/json; charset=utf-8",
   };
@@ -63,6 +72,10 @@ export class CelsianApp {
   private router = new Router();
   private rootContext: EncapsulationContext;
   private pluginContext: PluginContext;
+  /** Shared registry that resolves every route's hook chain from its context chain. */
+  private readonly scopes: ScopeRegistry;
+  /** Scope of the root context — used by requests that never matched a route. */
+  private readonly rootScope: ResolvedScope;
   private pendingPlugins: Promise<void>[] = [];
   private readyPromise: Promise<void> | null = null;
   readonly log: Logger;
@@ -96,6 +109,7 @@ export class CelsianApp {
   private readonly hasLogger: boolean;
   private readonly cachedBodyLimit: number;
   private readonly cachedRequestTimeout: number;
+  private readonly responseValidationEnabled: boolean;
 
   // True when the user supplied no logger and we fell back to the silent no-op.
   // Safety warnings escalate to console.warn in that case so they stay visible.
@@ -104,11 +118,14 @@ export class CelsianApp {
   constructor(private options: CelsianAppOptions = {}) {
     this.rootContext = new EncapsulationContext(null, options.prefix ?? "", this.router);
     this.pluginContext = this.rootContext.toPluginContext();
+    this.scopes = this.rootContext.scopes;
+    this.rootScope = this.rootContext.createContextScope();
 
     // Cache hot-path options
     this.hasLogger = !!options.logger;
     this.cachedBodyLimit = options.bodyLimit ?? 1_048_576;
     this.cachedRequestTimeout = options.requestTimeout ?? 30_000;
+    this.responseValidationEnabled = options.validateResponses !== false;
 
     // Logger setup
     this.usingNoopLogger = !options.logger;
@@ -152,9 +169,15 @@ export class CelsianApp {
     return p;
   }
 
-  /** Register a route with full options (method, url, schema, hooks, handler). */
-  route(options: RouteOptions): void;
+  /**
+   * Register a route with full options (method, url, schema, hooks, handler).
+   *
+   * The typed overload is declared first so a `schema` actually reaches the
+   * handler: overload resolution picks the first match, and the untyped
+   * `RouteOptions` signature would otherwise always win and erase the inference.
+   */
   route<TBody, TQuery>(options: TypedRouteOptions<TBody, TQuery>): void;
+  route(options: RouteOptions): void;
   route(options: RouteOptions | TypedRouteOptions): void {
     this.pluginContext.route(options as RouteOptions);
   }
@@ -163,12 +186,14 @@ export class CelsianApp {
   get<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void;
   get<T extends string, TBody, TQuery>(
     url: T,
-    options: RouteSchemaOptions<TBody, TQuery>,
-    handler: TypedSchemaHandler<ExtractRouteParams<T>>,
+    options: RouteSchemaOptions<TBody, TQuery, ExtractRouteParams<T>>,
+    handler: TypedSchemaHandler<ExtractRouteParams<T>, InferOutput<TBody>, InferQuery<TQuery>>,
   ): void;
   get<T extends string, TBody, TQuery>(
     url: T,
-    options: RouteSchemaOptions<TBody, TQuery> & { handler: TypedSchemaHandler<ExtractRouteParams<T>> },
+    options: RouteSchemaOptions<TBody, TQuery, ExtractRouteParams<T>> & {
+      handler: TypedSchemaHandler<ExtractRouteParams<T>, InferOutput<TBody>, InferQuery<TQuery>>;
+    },
   ): void;
   get<T extends string>(
     url: T,
@@ -185,12 +210,14 @@ export class CelsianApp {
   post<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void;
   post<T extends string, TBody, TQuery>(
     url: T,
-    options: RouteSchemaOptions<TBody, TQuery>,
-    handler: TypedSchemaHandler<ExtractRouteParams<T>>,
+    options: RouteSchemaOptions<TBody, TQuery, ExtractRouteParams<T>>,
+    handler: TypedSchemaHandler<ExtractRouteParams<T>, InferOutput<TBody>, InferQuery<TQuery>>,
   ): void;
   post<T extends string, TBody, TQuery>(
     url: T,
-    options: RouteSchemaOptions<TBody, TQuery> & { handler: TypedSchemaHandler<ExtractRouteParams<T>> },
+    options: RouteSchemaOptions<TBody, TQuery, ExtractRouteParams<T>> & {
+      handler: TypedSchemaHandler<ExtractRouteParams<T>, InferOutput<TBody>, InferQuery<TQuery>>;
+    },
   ): void;
   post<T extends string>(
     url: T,
@@ -207,12 +234,14 @@ export class CelsianApp {
   put<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void;
   put<T extends string, TBody, TQuery>(
     url: T,
-    options: RouteSchemaOptions<TBody, TQuery>,
-    handler: TypedSchemaHandler<ExtractRouteParams<T>>,
+    options: RouteSchemaOptions<TBody, TQuery, ExtractRouteParams<T>>,
+    handler: TypedSchemaHandler<ExtractRouteParams<T>, InferOutput<TBody>, InferQuery<TQuery>>,
   ): void;
   put<T extends string, TBody, TQuery>(
     url: T,
-    options: RouteSchemaOptions<TBody, TQuery> & { handler: TypedSchemaHandler<ExtractRouteParams<T>> },
+    options: RouteSchemaOptions<TBody, TQuery, ExtractRouteParams<T>> & {
+      handler: TypedSchemaHandler<ExtractRouteParams<T>, InferOutput<TBody>, InferQuery<TQuery>>;
+    },
   ): void;
   put<T extends string>(
     url: T,
@@ -229,12 +258,14 @@ export class CelsianApp {
   patch<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void;
   patch<T extends string, TBody, TQuery>(
     url: T,
-    options: RouteSchemaOptions<TBody, TQuery>,
-    handler: TypedSchemaHandler<ExtractRouteParams<T>>,
+    options: RouteSchemaOptions<TBody, TQuery, ExtractRouteParams<T>>,
+    handler: TypedSchemaHandler<ExtractRouteParams<T>, InferOutput<TBody>, InferQuery<TQuery>>,
   ): void;
   patch<T extends string, TBody, TQuery>(
     url: T,
-    options: RouteSchemaOptions<TBody, TQuery> & { handler: TypedSchemaHandler<ExtractRouteParams<T>> },
+    options: RouteSchemaOptions<TBody, TQuery, ExtractRouteParams<T>> & {
+      handler: TypedSchemaHandler<ExtractRouteParams<T>, InferOutput<TBody>, InferQuery<TQuery>>;
+    },
   ): void;
   patch<T extends string>(
     url: T,
@@ -251,12 +282,14 @@ export class CelsianApp {
   delete<T extends string>(url: T, handler: TypedRouteHandler<ExtractRouteParams<T>>): void;
   delete<T extends string, TBody, TQuery>(
     url: T,
-    options: RouteSchemaOptions<TBody, TQuery>,
-    handler: TypedSchemaHandler<ExtractRouteParams<T>>,
+    options: RouteSchemaOptions<TBody, TQuery, ExtractRouteParams<T>>,
+    handler: TypedSchemaHandler<ExtractRouteParams<T>, InferOutput<TBody>, InferQuery<TQuery>>,
   ): void;
   delete<T extends string, TBody, TQuery>(
     url: T,
-    options: RouteSchemaOptions<TBody, TQuery> & { handler: TypedSchemaHandler<ExtractRouteParams<T>> },
+    options: RouteSchemaOptions<TBody, TQuery, ExtractRouteParams<T>> & {
+      handler: TypedSchemaHandler<ExtractRouteParams<T>, InferOutput<TBody>, InferQuery<TQuery>>;
+    },
   ): void;
   delete<T extends string>(
     url: T,
@@ -321,7 +354,7 @@ export class CelsianApp {
 
   /** Add a named property to every CelsianReply. */
   decorateReply(name: string, value: unknown): void {
-    this.rootContext.replyDecorations.set(name, value);
+    this.pluginContext.decorateReply(name, value);
   }
 
   /** Set a custom handler for 404 responses. */
@@ -528,6 +561,10 @@ export class CelsianApp {
       await this.ready();
     }
 
+    // Resolve every route's hook chain and decorations from its encapsulation
+    // context chain. Only runs when something changed since the last request.
+    if (this.scopes.dirty) this.scopes.flush();
+
     // Serverless safety: warn once if cron jobs registered but scheduler not started
     if (!this._cronNotStartedWarned && this.cronScheduler.getJobs().length > 0 && !this.cronScheduler.isRunning) {
       const count = this.cronScheduler.getJobs().length;
@@ -612,13 +649,18 @@ export class CelsianApp {
       // Malformed URI in a param/wildcard segment (HttpError 400) — return a
       // structured error response instead of crashing the request.
       const missContext = await this.createMissContext(request, rawUrl, fullUrl);
-      const response = await this.handleError(wrapNonError(matchError), missContext.request, missContext.reply);
-      return this.applyRootOnSend(response, missContext.request, missContext.reply);
+      const response = await this.handleError(
+        wrapNonError(matchError),
+        missContext.request,
+        missContext.reply,
+        this.rootScope,
+      );
+      return this.applyOnSend(response, missContext.request, missContext.reply, this.rootScope.onSend);
     }
 
     if (!match) {
       const missContext = await this.createMissContext(request, rawUrl, fullUrl);
-      const earlyResponse = await runHooks(this.rootContext.hooks.onRequest, missContext.request, missContext.reply);
+      const earlyResponse = await runHooks(this.rootScope.onRequest, missContext.request, missContext.reply);
       if (earlyResponse) return earlyResponse;
       const missHeaders = this.mergeReplyHeaders(CelsianApp.JSON_CONTENT_TYPE, missContext.reply);
 
@@ -628,12 +670,13 @@ export class CelsianApp {
           status: 405,
           headers: missHeaders,
         });
-        return this.applyRootOnSend(r405, missContext.request, missContext.reply);
+        return this.applyOnSend(r405, missContext.request, missContext.reply, this.rootScope.onSend);
       }
       if (this.notFoundHandler) {
         try {
           const result = await this.notFoundHandler(missContext.request, missContext.reply);
-          if (result instanceof Response) return this.applyRootOnSend(result, missContext.request, missContext.reply);
+          if (result instanceof Response)
+            return this.applyOnSend(result, missContext.request, missContext.reply, this.rootScope.onSend);
           if (missContext.reply.sent) return new Response(null, { status: missContext.reply.statusCode });
           return new Response(null, { status: 404 });
         } catch (error) {
@@ -648,22 +691,28 @@ export class CelsianApp {
             status: 404,
             headers: missHeaders,
           });
-          return this.applyRootOnSend(r404, missContext.request, missContext.reply);
+          return this.applyOnSend(r404, missContext.request, missContext.reply, this.rootScope.onSend);
         }
       }
       const r404 = new Response(CelsianApp.NOT_FOUND_BODY, {
         status: 404,
         headers: missHeaders,
       });
-      return this.applyRootOnSend(r404, missContext.request, missContext.reply);
+      return this.applyOnSend(r404, missContext.request, missContext.reply, this.rootScope.onSend);
     }
+
+    // Hooks and decorations that apply to this route, resolved from the chain of
+    // encapsulation contexts it was registered in. Attached to the route's own
+    // hook array at registration; the fallback covers routes added directly to
+    // the router without going through a context.
+    const scope = match.route.hooks.onRequest[ROUTE_SCOPE] ?? this.rootScope;
 
     // Build CelsianRequest with fast query parsing (skip URL object when possible)
     const celsianRequest = buildRequestFast(request, pathname, queryString, match.params, fullUrl);
 
     // Apply request decorations (skip loop if none registered)
-    if (this.rootContext.requestDecorations.size > 0) {
-      for (const [key, value] of this.rootContext.requestDecorations) {
+    if (scope.requestDecorations.size > 0) {
+      for (const [key, value] of scope.requestDecorations) {
         if (!(key in celsianRequest)) {
           (celsianRequest as unknown as Record<PropertyKey, unknown>)[key] =
             typeof value === "function" ? value() : value;
@@ -694,8 +743,8 @@ export class CelsianApp {
     const reply = createReply();
 
     // Apply reply decorations (skip loop if none registered)
-    if (this.rootContext.replyDecorations.size > 0) {
-      for (const [key, value] of this.rootContext.replyDecorations) {
+    if (scope.replyDecorations.size > 0) {
+      for (const [key, value] of scope.replyDecorations) {
         if (!(key in reply)) {
           (reply as Record<string, unknown>)[key] = typeof value === "function" ? value() : value;
         }
@@ -713,15 +762,15 @@ export class CelsianApp {
       this.log.info("incoming request", { method, url: pathname, requestId });
 
       try {
-        let response = await this.runWithTimeout(celsianRequest, reply, match.route, timeout);
+        let response = await this.runWithTimeout(celsianRequest, reply, match.route, scope, timeout);
         if (isHead) response = new Response(null, { status: response.status, headers: response.headers });
         const duration = Math.round(performance.now() - start);
         this.log.info("request completed", { method, url: pathname, statusCode: response.status, duration, requestId });
         return response;
       } catch (thrown) {
         const error = wrapNonError(thrown);
-        let response = await this.handleError(error, celsianRequest, reply);
-        response = await this.applyRootOnSend(response, celsianRequest, reply);
+        let response = await this.handleError(error, celsianRequest, reply, scope);
+        response = await this.applyOnSend(response, celsianRequest, reply, scope.onSend);
         if (isHead) response = new Response(null, { status: response.status, headers: response.headers });
         const duration = Math.round(performance.now() - start);
         this.log.error("request error", {
@@ -737,12 +786,12 @@ export class CelsianApp {
     }
 
     try {
-      let response = await this.runWithTimeout(celsianRequest, reply, match.route, timeout);
+      let response = await this.runWithTimeout(celsianRequest, reply, match.route, scope, timeout);
       if (isHead) response = new Response(null, { status: response.status, headers: response.headers });
       return response;
     } catch (thrown) {
-      let response = await this.handleError(wrapNonError(thrown), celsianRequest, reply);
-      response = await this.applyRootOnSend(response, celsianRequest, reply);
+      let response = await this.handleError(wrapNonError(thrown), celsianRequest, reply, scope);
+      response = await this.applyOnSend(response, celsianRequest, reply, scope.onSend);
       if (isHead) response = new Response(null, { status: response.status, headers: response.headers });
       return response;
     }
@@ -789,10 +838,11 @@ export class CelsianApp {
     request: CelsianRequest,
     reply: CelsianReply,
     route: InternalRoute,
+    scope: ResolvedScope,
     timeout: number,
   ): Promise<Response> {
     if (timeout <= 0) {
-      return this.runLifecycle(request, reply, route);
+      return this.runLifecycle(request, reply, route, scope);
     }
     // Per-request AbortController: exposed as request.signal so handlers can
     // observe cancellation, and aborted when the timeout fires (in addition to
@@ -801,7 +851,7 @@ export class CelsianApp {
     (request as Record<string, unknown>).signal = controller.signal;
     let timer: ReturnType<typeof setTimeout>;
     return Promise.race([
-      this.runLifecycle(request, reply, route).finally(() => clearTimeout(timer)),
+      this.runLifecycle(request, reply, route, scope).finally(() => clearTimeout(timer)),
       new Promise<Response>((_, reject) => {
         timer = setTimeout(() => {
           controller.abort(new HttpError(504, "Gateway Timeout"));
@@ -811,18 +861,23 @@ export class CelsianApp {
     ]);
   }
 
-  private async runLifecycle(request: CelsianRequest, reply: CelsianReply, route: InternalRoute): Promise<Response> {
+  private async runLifecycle(
+    request: CelsianRequest,
+    reply: CelsianReply,
+    route: InternalRoute,
+    scope: ResolvedScope,
+  ): Promise<Response> {
     let earlyResponse: Response | null;
 
     // 1. onRequest hooks (skip if empty)
-    if (route.hooks.onRequest.length > 0) {
-      earlyResponse = await runHooks(route.hooks.onRequest, request, reply);
+    if (scope.onRequest.length > 0) {
+      earlyResponse = await runHooks(scope.onRequest, request, reply);
       if (earlyResponse) return earlyResponse;
     }
 
     // 2. preParsing hooks (skip if empty)
-    if (this.rootContext.hooks.preParsing.length > 0) {
-      earlyResponse = await runHooks(this.rootContext.hooks.preParsing, request, reply);
+    if (scope.preParsing.length > 0) {
+      earlyResponse = await runHooks(scope.preParsing, request, reply);
       if (earlyResponse) return earlyResponse;
     }
 
@@ -830,8 +885,8 @@ export class CelsianApp {
     await this.parseBody(request);
 
     // 4. preValidation hooks (skip if empty)
-    if (this.rootContext.hooks.preValidation.length > 0) {
-      earlyResponse = await runHooks(this.rootContext.hooks.preValidation, request, reply);
+    if (scope.preValidation.length > 0) {
+      earlyResponse = await runHooks(scope.preValidation, request, reply);
       if (earlyResponse) return earlyResponse;
     }
 
@@ -841,8 +896,8 @@ export class CelsianApp {
     }
 
     // 6. preHandler hooks (skip if empty)
-    if (route.hooks.preHandler.length > 0) {
-      earlyResponse = await runHooks(route.hooks.preHandler, request, reply);
+    if (scope.preHandler.length > 0) {
+      earlyResponse = await runHooks(scope.preHandler, request, reply);
       if (earlyResponse) return earlyResponse;
     }
 
@@ -871,23 +926,25 @@ export class CelsianApp {
       response = new Response(null, { status: 204 });
     }
 
-    // 8. preSerialization hooks (skip if empty)
-    if (route.hooks.preSerialization.length > 0) {
-      await runHooks(route.hooks.preSerialization, request, reply);
+    // 8. Response schema validation (only for routes that declare schema.response)
+    if (route.schema?.response && this.responseValidationEnabled) {
+      response = await this.validateResponse(response, handlerResult, route);
     }
 
-    // 9. onSend hooks — run route-level then rootContext (skip entirely if both empty)
-    const hasRouteOnSend = route.hooks.onSend.length > 0;
-    const hasRootOnSend = this.rootContext.hooks.onSend.length > 0;
-    if (hasRouteOnSend || hasRootOnSend) {
+    // 9. preSerialization hooks (skip if empty)
+    if (scope.preSerialization.length > 0) {
+      await runHooks(scope.preSerialization, request, reply);
+    }
+
+    // 10. onSend hooks — the resolved chain already runs root → plugin → route
+    if (scope.onSend.length > 0) {
       const headersBefore = new Map<string, string>();
       for (const [k, v] of Object.entries(reply.headers)) {
         headersBefore.set(k, v);
       }
 
       try {
-        if (hasRouteOnSend) await runOnSendHooks(route.hooks.onSend, request, reply);
-        if (hasRootOnSend) await runOnSendHooks(this.rootContext.hooks.onSend, request, reply);
+        await runOnSendHooks(scope.onSend, request, reply);
       } catch (err) {
         this.log.error("onSend hook error", { error: err instanceof Error ? err.message : String(err) });
         return response;
@@ -916,9 +973,9 @@ export class CelsianApp {
       }
     }
 
-    // 10. onResponse hooks (fire-and-forget, skip if empty)
-    if (this.rootContext.hooks.onResponse.length > 0) {
-      runHooksFireAndForget(this.rootContext.hooks.onResponse, request, reply, this.log);
+    // 11. onResponse hooks (fire-and-forget, skip if empty)
+    if (scope.onResponse.length > 0) {
+      runHooksFireAndForget(scope.onResponse, request, reply, this.log);
     }
 
     return response;
@@ -932,8 +989,8 @@ export class CelsianApp {
     if (!fullUrl) fullUrl = new URL(rawUrl, "http://localhost");
     const celsianRequest = buildRequest(request, fullUrl, {});
     const reply = createReply();
-    if (this.rootContext.replyDecorations.size > 0) {
-      for (const [key, value] of this.rootContext.replyDecorations) {
+    if (this.rootScope.replyDecorations.size > 0) {
+      for (const [key, value] of this.rootScope.replyDecorations) {
         (reply as Record<string, unknown>)[key] = typeof value === "function" ? value() : value;
       }
     }
@@ -948,10 +1005,16 @@ export class CelsianApp {
     return headers;
   }
 
-  private async applyRootOnSend(response: Response, request: CelsianRequest, reply: CelsianReply): Promise<Response> {
-    if (this.rootContext.hooks.onSend.length === 0) return response;
+  /** Run an already-resolved onSend chain against a response built outside the normal lifecycle. */
+  private async applyOnSend(
+    response: Response,
+    request: CelsianRequest,
+    reply: CelsianReply,
+    hooks: HookHandler[],
+  ): Promise<Response> {
+    if (hooks.length === 0) return response;
     try {
-      await runOnSendHooks(this.rootContext.hooks.onSend, request, reply);
+      await runOnSendHooks(hooks, request, reply);
     } catch (err) {
       this.log.error("onSend hook error", { error: err instanceof Error ? err.message : String(err) });
       return response;
@@ -985,7 +1048,12 @@ export class CelsianApp {
       if (!result.success) {
         throw new ValidationError(result.issues ?? []);
       }
-      (request as Record<string, unknown>).parsedQuery = result.data;
+      // Write the validated output back to `request.query` too — reading the
+      // ergonomic property must never hand back the raw, uncoerced input.
+      // `parsedQuery` stays as an alias for the explicitly-typed accessor.
+      const validatedQuery = result.data as Record<string, string | string[]>;
+      request.query = validatedQuery;
+      (request as Record<string, unknown>).parsedQuery = validatedQuery;
     }
 
     if (schema.params) {
@@ -994,22 +1062,67 @@ export class CelsianApp {
       if (!result.success) {
         throw new ValidationError(result.issues ?? []);
       }
+      request.params = result.data as Record<string, string>;
     }
+  }
+
+  /**
+   * Validate a response against the route's `schema.response` entry for its
+   * status code (falling back to a `default` entry).
+   *
+   * A mismatch is a server bug, not a client one: the caller gets a generic 500
+   * and the offending payload is only ever written to the server-side log.
+   * Disable with `createApp({ validateResponses: false })`.
+   */
+  private async validateResponse(response: Response, handlerResult: unknown, route: InternalRoute): Promise<Response> {
+    const schemas = route.schema?.response as ResponseSchemaMap | undefined;
+    if (!schemas) return response;
+
+    const responseSchema = schemas[response.status] ?? schemas.default;
+    if (responseSchema === undefined || responseSchema === null) return response;
+
+    let payload: unknown;
+    if (handlerResult !== null && handlerResult !== undefined && !(handlerResult instanceof Response)) {
+      // Auto-serialized return value — validate it before it was stringified.
+      payload = handlerResult;
+    } else {
+      // The handler built its own Response (reply.json(...), reply.send(...)).
+      if (!(response.headers.get("content-type") ?? "").includes("json")) return response;
+      try {
+        payload = await response.clone().json();
+      } catch {
+        // Unreadable or non-JSON body (streams, already-consumed) — nothing to check.
+        return response;
+      }
+    }
+
+    const result = fromSchema(responseSchema).validate(payload);
+    if (result.success) return response;
+
+    const detail = {
+      method: route.method,
+      url: route.url,
+      statusCode: response.status,
+      issues: result.issues ?? [],
+    };
+    this.log.error("response schema validation failed", detail);
+    if (this.usingNoopLogger) {
+      console.error("[celsian] response schema validation failed", detail);
+    }
+    return fastResponse(CelsianApp.RESPONSE_VALIDATION_BODY, 500, CelsianApp.JSON_CONTENT_TYPE);
   }
 
   private parseBody(request: CelsianRequest): Promise<void> {
     return parseBody(request, this.cachedBodyLimit, this.contentTypeParsers);
   }
 
-  private handleError(error: Error, request: CelsianRequest, reply: CelsianReply): Promise<Response> {
-    return handleErrorFn(
-      error,
-      request,
-      reply,
-      this.errorHandler,
-      this.rootContext.hooks.onError,
-      this.hasLogger ? this.log : null,
-    );
+  private handleError(
+    error: Error,
+    request: CelsianRequest,
+    reply: CelsianReply,
+    scope: ResolvedScope,
+  ): Promise<Response> {
+    return handleErrorFn(error, request, reply, this.errorHandler, scope.onError, this.hasLogger ? this.log : null);
   }
 }
 

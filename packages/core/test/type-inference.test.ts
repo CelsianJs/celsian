@@ -1,7 +1,8 @@
 import type { InferOutput, StandardSchema } from "@celsian/schema";
 import { describe, expectTypeOf, it } from "vitest";
+import { z } from "zod";
 import { createApp } from "../src/app.js";
-import type { CelsianRequest, ExtractRouteParams, TypedCelsianRequest } from "../src/types.js";
+import type { CelsianRequest, ExtractRouteParams, InferQuery, TypedCelsianRequest } from "../src/types.js";
 
 // ─── ExtractRouteParams utility type tests ───
 
@@ -434,5 +435,130 @@ describe("app.route() typed schema inference", () => {
         return reply.json({ ok: true });
       },
     });
+  });
+});
+
+// ─── parsedBody + parsedQuery across every registration form (real Zod schemas) ───
+//
+// These assertions guard TASK-1.8: the CelsianApp route-method overloads used to
+// declare TBody/TQuery and then never reference them, and the query type was
+// written as `TQuery extends unknown ? raw : InferOutput<TQuery>` — always true,
+// so the typed branch was unreachable and no schema could ever type parsedQuery.
+
+describe("parsedBody and parsedQuery inference (Zod)", () => {
+  const Body = z.object({ name: z.string(), age: z.number() });
+  const Query = z.object({ page: z.coerce.number(), tag: z.string() });
+
+  type BodyOut = { name: string; age: number };
+  type QueryOut = { page: number; tag: string };
+  type RawQuery = Record<string, string | string[]>;
+
+  it("app.post(path, opts, handler) types both parsedBody and parsedQuery", () => {
+    const app = createApp();
+    app.post("/users/:id", { schema: { body: Body, querystring: Query } }, (req, reply) => {
+      expectTypeOf(req.parsedBody).toEqualTypeOf<BodyOut>();
+      expectTypeOf(req.parsedQuery).toEqualTypeOf<QueryOut>();
+      expectTypeOf(req.params).toEqualTypeOf<{ id: string }>();
+      return reply.json({ ok: true });
+    });
+  });
+
+  it("app.post(path, { schema, handler }) types both parsedBody and parsedQuery", () => {
+    const app = createApp();
+    app.post("/users/:id", {
+      schema: { body: Body, querystring: Query },
+      handler(req, reply) {
+        expectTypeOf(req.parsedBody).toEqualTypeOf<BodyOut>();
+        expectTypeOf(req.parsedQuery).toEqualTypeOf<QueryOut>();
+        expectTypeOf(req.params).toEqualTypeOf<{ id: string }>();
+        return reply.json({ ok: true });
+      },
+    });
+  });
+
+  it("app.route({ ... }) types both parsedBody and parsedQuery", () => {
+    const app = createApp();
+    app.route({
+      method: "POST",
+      url: "/users",
+      schema: { body: Body, querystring: Query },
+      handler(req, reply) {
+        expectTypeOf(req.parsedBody).toEqualTypeOf<BodyOut>();
+        expectTypeOf(req.parsedQuery).toEqualTypeOf<QueryOut>();
+        return reply.json({ ok: true });
+      },
+    });
+  });
+
+  it("the plugin form types both parsedBody and parsedQuery", async () => {
+    const app = createApp();
+    await app.register(async (ctx) => {
+      ctx.post("/plugin/:id", { schema: { body: Body, querystring: Query } }, (req, reply) => {
+        expectTypeOf(req.parsedBody).toEqualTypeOf<BodyOut>();
+        expectTypeOf(req.parsedQuery).toEqualTypeOf<QueryOut>();
+        expectTypeOf(req.params).toEqualTypeOf<{ id: string }>();
+        return reply.json({ ok: true });
+      });
+      ctx.route({
+        method: "PUT",
+        url: "/plugin-route",
+        schema: { body: Body, querystring: Query },
+        handler(req, reply) {
+          expectTypeOf(req.parsedBody).toEqualTypeOf<BodyOut>();
+          expectTypeOf(req.parsedQuery).toEqualTypeOf<QueryOut>();
+          return reply.json({ ok: true });
+        },
+      });
+    });
+  });
+
+  it("falls back to the raw string record when no querystring schema is given", () => {
+    const app = createApp();
+    app.post("/body-only", { schema: { body: Body } }, (req, reply) => {
+      expectTypeOf(req.parsedBody).toEqualTypeOf<BodyOut>();
+      expectTypeOf(req.parsedQuery).toEqualTypeOf<RawQuery>();
+      return reply.json({ ok: true });
+    });
+  });
+
+  it("types parsedQuery with a querystring schema and no body schema", () => {
+    const app = createApp();
+    app.get("/search", { schema: { querystring: Query } }, (req, reply) => {
+      expectTypeOf(req.parsedQuery).toEqualTypeOf<QueryOut>();
+      return reply.json({ ok: true });
+    });
+  });
+
+  it("types parsedBody on every verb", () => {
+    const app = createApp();
+    app.put("/p", { schema: { body: Body } }, (req) => {
+      expectTypeOf(req.parsedBody).toEqualTypeOf<BodyOut>();
+    });
+    app.patch("/p", { schema: { body: Body } }, (req) => {
+      expectTypeOf(req.parsedBody).toEqualTypeOf<BodyOut>();
+    });
+    app.delete("/p", { schema: { body: Body } }, (req) => {
+      expectTypeOf(req.parsedBody).toEqualTypeOf<BodyOut>();
+    });
+  });
+
+  it("InferQuery resolves the schema output, not the raw record", () => {
+    expectTypeOf<InferQuery<typeof Query>>().toEqualTypeOf<QueryOut>();
+    expectTypeOf<InferQuery<unknown>>().toEqualTypeOf<RawQuery>();
+  });
+});
+
+// ─── Handlers may return serializable data, not just Response ───
+
+describe("RouteHandler return types", () => {
+  it("accepts plain data, strings, Response, void and promises", () => {
+    const app = createApp();
+    app.get("/object", () => ({ message: "world" }));
+    app.get("/string", () => "plain text");
+    app.get("/array", () => [1, 2, 3]);
+    app.get("/response", () => new Response("hi"));
+    app.get("/void", () => {});
+    app.get("/async-object", async () => ({ message: "world" }));
+    expectTypeOf(app.get).toBeFunction();
   });
 });
