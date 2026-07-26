@@ -88,9 +88,73 @@ export function shouldRun(parsed: ParsedCron, date: Date): boolean {
   );
 }
 
+/** A runtime where an in-process interval cannot be relied on to fire cron jobs. */
+export interface ServerlessCronRuntime {
+  /** Human-readable platform name. */
+  platform: string;
+  /** The platform-native scheduling mechanism to use instead. */
+  alternative: string;
+}
+
+/**
+ * Detect runtimes where {@link CronScheduler} cannot work.
+ *
+ * `CronScheduler` is an in-process `setInterval`. That requires a process that
+ * stays alive between ticks. On request-scoped serverless runtimes the process
+ * is frozen or torn down as soon as a response is returned, so the interval
+ * simply never fires again: cron jobs silently do nothing. There is no way to
+ * fix that from inside the process, only to schedule externally.
+ */
+export function detectServerlessCronRuntime(): ServerlessCronRuntime | null {
+  const g = globalThis as {
+    navigator?: { userAgent?: string };
+    Deno?: { env?: { get(key: string): string | undefined } };
+    process?: { env?: Record<string, string | undefined> };
+  };
+
+  if (g.navigator?.userAgent === "Cloudflare-Workers") {
+    return {
+      platform: "Cloudflare Workers",
+      alternative:
+        "a Cron Trigger in wrangler.toml wired to a scheduled() handler (see createScheduledHandler in @celsian/adapter-cloudflare)",
+    };
+  }
+
+  const denoDeployment = g.Deno?.env?.get?.("DENO_DEPLOYMENT_ID");
+  if (denoDeployment) {
+    return { platform: "Deno Deploy", alternative: "Deno.cron() or a Deno Deploy scheduled job" };
+  }
+
+  const env = g.process?.env;
+  if (!env) return null;
+
+  if (env.AWS_LAMBDA_FUNCTION_NAME || env.LAMBDA_TASK_ROOT) {
+    return {
+      platform: "AWS Lambda",
+      alternative: "an EventBridge Scheduler rule invoking the function, routed to your cron handler",
+    };
+  }
+  if (env.VERCEL) {
+    return { platform: "Vercel Functions", alternative: "a `crons` entry in vercel.json hitting a cron route" };
+  }
+  if (env.NETLIFY) {
+    return { platform: "Netlify Functions", alternative: "a Netlify scheduled function" };
+  }
+  if (env.FUNCTION_TARGET || env.K_SERVICE) {
+    return { platform: "Google Cloud Functions / Cloud Run", alternative: "a Cloud Scheduler job" };
+  }
+  return null;
+}
+
 /**
  * Scheduler that ticks every second and fires registered jobs on minute boundaries.
  * Zero external dependencies -- uses a simple interval timer.
+ *
+ * **Node-style long-lived processes only.** See
+ * {@link detectServerlessCronRuntime}: on request-scoped serverless runtimes the
+ * interval stops firing between invocations, so jobs never run. `start()` warns
+ * loudly when it detects such a runtime; compiling cron expressions to
+ * platform-native triggers is not something this class does.
  */
 export class CronScheduler {
   private jobs: Array<{ job: CronJob; parsed: ParsedCron }> = [];
@@ -99,6 +163,7 @@ export class CronScheduler {
   // Per-job double-fire guard: absolute epoch minute each job last fired in.
   // Survives scheduler stop/start within the same minute, unlike lastMinute alone.
   private lastFiredEpochMinute = new Map<string, number>();
+  private warnedServerless = false;
 
   add(job: CronJob): void {
     const parsed = parseCronExpression(job.schedule);
@@ -108,9 +173,29 @@ export class CronScheduler {
   start(): void {
     if (this.timer) return;
 
+    this.warnIfServerless();
+
     // Tick every second, but only fire jobs on minute boundary
     this.timer = setInterval(() => this.tick(), 1000);
     this.timer.unref?.();
+  }
+
+  /**
+   * Warn once, loudly, when starting on a runtime that cannot keep an interval
+   * alive. Uses console.warn deliberately: this must not be swallowed by a noop
+   * or JSON-only logger, because the failure mode is completely silent.
+   */
+  private warnIfServerless(): void {
+    if (this.warnedServerless || this.jobs.length === 0) return;
+    const runtime = detectServerlessCronRuntime();
+    if (!runtime) return;
+    this.warnedServerless = true;
+    const names = this.jobs.map((j) => j.job.name).join(", ");
+    console.warn(
+      `[celsian] Cron will NOT run on ${runtime.platform}. app.cron() uses an in-process timer, and this runtime ` +
+        `freezes or discards the process between requests, so these jobs will never fire: ${names}. ` +
+        `Use ${runtime.alternative} instead, and have it invoke the job handler.`,
+    );
   }
 
   stop(): void {

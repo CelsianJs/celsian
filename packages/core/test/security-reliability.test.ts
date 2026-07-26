@@ -189,13 +189,14 @@ describe("CronScheduler timer.unref()", () => {
 
 describe("TaskWorker stop timeout", () => {
   it("should resolve stop() even when tasks are still running", async () => {
-    const warnings: string[] = [];
+    const logged: Array<{ level: string; msg: string; abandonedJobs?: number }> = [];
     const logger = createLogger({
       destination: (line: string) => {
         const parsed = JSON.parse(line);
-        if (parsed.level === "warn") warnings.push(parsed.msg);
+        logged.push(parsed);
       },
     });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     const queue = new MemoryQueue();
     const registry = new TaskRegistry();
 
@@ -231,8 +232,13 @@ describe("TaskWorker stop timeout", () => {
     // Should have resolved within timeout + some margin
     expect(elapsed).toBeLessThan(1000);
 
-    // Should have logged a warning about active jobs
-    expect(warnings.some((w) => w.includes("active jobs remaining"))).toBe(true);
+    // Abandoning running jobs is an error, and it must state exactly how many.
+    const abandoned = logged.find((l) => l.msg === "Task worker abandoned running jobs at shutdown");
+    expect(abandoned?.level).toBe("error");
+    expect(abandoned?.abandonedJobs).toBe(1);
+    // And it must also escape the structured logger, which may be a noop.
+    expect(consoleError.mock.calls.some(([m]) => String(m).includes("still running"))).toBe(true);
+    consoleError.mockRestore();
   });
 
   it("should resolve immediately if no active jobs", async () => {
