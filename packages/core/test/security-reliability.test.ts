@@ -50,16 +50,16 @@ describe("Redirect URL validation", () => {
     expect(response.headers.get("location")).toBe("/dashboard");
   });
 
-  it("should allow http:// URLs", () => {
+  it("should allow http:// URLs to an allow-listed host", () => {
     const reply = createReply();
-    const response = reply.redirect("http://example.com/page");
+    const response = reply.redirect("http://example.com/page", 302, { allowedHosts: ["example.com"] });
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe("http://example.com/page");
   });
 
-  it("should allow https:// URLs", () => {
+  it("should allow https:// URLs to an allow-listed host", () => {
     const reply = createReply();
-    const response = reply.redirect("https://example.com/page");
+    const response = reply.redirect("https://example.com/page", 302, { allowedHosts: ["example.com"] });
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe("https://example.com/page");
   });

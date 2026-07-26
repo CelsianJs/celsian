@@ -59,13 +59,17 @@ export async function handleError(
     });
   }
 
-  const status = (error as { statusCode?: number }).statusCode ?? 500;
+  // Anything that reaches here is not an HttpError, so its `statusCode` is
+  // untrusted: a driver/library error carrying `statusCode: 400` would
+  // otherwise both downgrade the status AND skip production sanitization,
+  // leaking the raw message. Unknown errors are 500s, always sanitized in prod.
+  const status = 500;
   const isProduction =
     typeof process !== "undefined" &&
     (process.env.NODE_ENV === "production" || process.env.CELSIAN_ENV === "production");
 
   const body: Record<string, unknown> = {
-    error: status >= 500 && isProduction ? "Internal Server Error" : error.message || "Internal Server Error",
+    error: isProduction ? "Internal Server Error" : error.message || "Internal Server Error",
     statusCode: status,
     code: (error as { code?: string }).code ?? "INTERNAL_SERVER_ERROR",
   };

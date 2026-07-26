@@ -12,7 +12,34 @@ export interface OpenAPIOptions {
   jsonPath?: string;
   /** Path to serve the Swagger UI (default: '/docs') */
   uiPath?: string;
+  /**
+   * Serve the Swagger UI page (default: true). `/docs` is unauthenticated and
+   * is visited by logged-in developers, so gate it behind auth in production,
+   * or set this to false and keep only the JSON spec.
+   */
+  ui?: boolean;
+  /**
+   * Swagger UI assets to load from jsdelivr. Pinned by exact version with
+   * subresource-integrity hashes: an unpinned CDN URL means whatever that path
+   * serves tomorrow runs on your developers' authenticated browsers.
+   * Override both fields together when bumping the version.
+   */
+  swaggerUi?: SwaggerUIAssets;
 }
+
+/** Pinned Swagger UI assets: exact version plus subresource-integrity hashes. */
+export interface SwaggerUIAssets {
+  version: string;
+  jsIntegrity: string;
+  cssIntegrity: string;
+}
+
+/** Pinned Swagger UI release with verified SRI hashes (sha384). */
+const SWAGGER_UI: SwaggerUIAssets = {
+  version: "5.17.14",
+  jsIntegrity: "sha384-wmyclcVGX/WhUkdkATwhaK1X1JtiNrr2EoYJ+diV3vj4v6OC5yCeSu+yW13SYJep",
+  cssIntegrity: "sha384-wxLW6kwyHktdDGr6Pv1zgm/VGJh99lfUbzSn6HNHBENZlCN7W602k9VkGdxuFvPn",
+};
 
 interface OpenAPISpec {
   openapi: string;
@@ -256,29 +283,30 @@ export function escapeHtml(str: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function swaggerHTML(jsonPath: string, title: string): string {
+function swaggerHTML(jsonPath: string, title: string, assets: SwaggerUIAssets): string {
   const safeTitle = escapeHtml(title);
   const safeJsonPath = escapeHtml(jsonPath);
+  const base = `https://cdn.jsdelivr.net/npm/swagger-ui-dist@${encodeURIComponent(assets.version)}`;
+  // Per-response nonce so the bootstrap script runs without script-src
+  // 'unsafe-inline'; the CDN bundle is covered by SRI instead.
+  const nonce = crypto.randomUUID().replace(/-/g, "");
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' cdn.jsdelivr.net 'unsafe-inline'; style-src 'self' cdn.jsdelivr.net 'unsafe-inline';" />
-  <title>${safeTitle} — API Docs</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist/swagger-ui.css" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src 'self'; img-src 'self' data:; script-src 'nonce-${nonce}' cdn.jsdelivr.net; style-src cdn.jsdelivr.net 'unsafe-inline';" />
+  <title>${safeTitle} API Docs</title>
+  <link rel="stylesheet" href="${base}/swagger-ui.css" integrity="${assets.cssIntegrity}" crossorigin="anonymous" />
 </head>
 <body>
   <div id="swagger-ui"></div>
-  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist/swagger-ui-bundle.js"></script>
-  <script>
+  <script src="${base}/swagger-ui-bundle.js" integrity="${assets.jsIntegrity}" crossorigin="anonymous"></script>
+  <script nonce="${nonce}">
     SwaggerUIBundle({
       url: '${safeJsonPath}',
       dom_id: '#swagger-ui',
-      presets: [
-        SwaggerUIBundle.presets.apis,
-        SwaggerUIBundle.SwaggerUIStandalonePreset,
-      ],
+      presets: [SwaggerUIBundle.presets.apis],
       layout: 'BaseLayout',
     });
   </script>
@@ -306,12 +334,14 @@ export function openapi(options: OpenAPIOptions = {}): PluginFunction {
     });
 
     // Serve the Swagger UI HTML page
+    if (options.ui === false) return;
+    const assets = options.swaggerUi ?? SWAGGER_UI;
     app.route({
       method: "GET",
       url: uiPath,
       handler(_request, reply) {
         const title = options.title ?? "CelsianJS API";
-        return reply.html(swaggerHTML(jsonPath, title));
+        return reply.html(swaggerHTML(jsonPath, title, assets));
       },
     });
   };

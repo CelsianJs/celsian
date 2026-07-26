@@ -77,10 +77,14 @@ export function serializeCookie(name: string, value: string, options: CookieOpti
     throw new CelsianError(`Invalid cookie path: ${JSON.stringify(options.path)} (contains illegal characters)`);
   }
 
-  // Secure defaults — user-provided options override via spread
+  // Secure defaults — user-provided options override via spread.
+  // `secure` defaults to true regardless of NODE_ENV: containers routinely run
+  // without NODE_ENV set, and inferring "not production" from a missing env var
+  // shipped session cookies without Secure. Local HTTP dev must opt out
+  // explicitly with `{ secure: false }`.
   const opts: CookieOptions = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: true,
     sameSite: "lax",
     ...options,
   };
