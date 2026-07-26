@@ -1,6 +1,6 @@
 # @celsian/adapter-node
 
-Node.js deployment adapter for CelsianJS. Generates a standalone `node:http` server entry from the build output, and provides a `serve()` function for running a `CelsianApp` at runtime.
+Node.js deployment adapter for CelsianJS. Provides a `serve()` function for running a `CelsianApp` on `node:http`, plus low-level Node/Web conversion helpers.
 
 ## Install
 
@@ -8,37 +8,9 @@ Node.js deployment adapter for CelsianJS. Generates a standalone `node:http` ser
 npm install @celsian/adapter-node
 ```
 
-Peer dependencies: `@celsian/core`, `@celsian/build`.
+Peer dependency: `@celsian/core`.
 
 ## Usage
-
-### Build Adapter
-
-Set the adapter in your config and the build pipeline will invoke it automatically:
-
-```typescript
-// celsian.config.ts
-import { defineConfig } from 'celsian';
-
-export default defineConfig({
-  build: {
-    adapter: 'node', // or 'auto' (detects Node when no platform env is set)
-  },
-});
-```
-
-After `celsian build`, the adapter generates a standalone server entry at `dist/server/` that:
-
-1. Serves static client assets with immutable cache headers
-2. Serves pre-rendered HTML from the static directory
-3. Converts incoming Node requests to Web Standard `Request` objects
-4. Passes them to the built CelsianApp handler
-
-Run the production server:
-
-```
-node dist/server/entry-server.js
-```
 
 ### Runtime `serve()`
 
@@ -79,7 +51,7 @@ await writeWebResponse(res, webResponse);
 
 | Export | Description |
 |---|---|
-| `default` (adapter) | Build adapter with `buildEnd()` hook -- generates standalone server entry |
+| `default` | Alias of `serve` |
 | `serve(app, options?)` | Start a `node:http` server from a `CelsianApp` |
 | `nodeToWebRequest(req, url)` | Convert `IncomingMessage` to Web Standard `Request` |
 | `writeWebResponse(res, response)` | Write a Web Standard `Response` to `ServerResponse` |

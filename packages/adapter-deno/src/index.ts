@@ -3,7 +3,7 @@
 // Deno.serve uses Web Standard Request/Response natively, so this adapter is thin:
 // it wraps app.handle(request) and returns a Deno.serve-compatible handler.
 
-import type { CelsianApp } from "@celsian/core";
+import { type CelsianApp, CelsianError } from "@celsian/core";
 
 /** Options for the Deno adapter. */
 export interface DenoAdapterOptions {
@@ -96,7 +96,10 @@ export function serveDeno(app: CelsianApp, options: DenoAdapterOptions = {}): vo
     | undefined;
 
   if (!Deno?.serve) {
-    throw new Error("Deno.serve is not available. This adapter requires the Deno runtime.");
+    throw new CelsianError(
+      "Deno.serve is not available. @celsian/adapter-deno requires the Deno runtime — " +
+        "on Node.js use serve() from @celsian/core (or @celsian/adapter-node), and on Bun use @celsian/adapter-bun.",
+    );
   }
 
   Deno.serve(
