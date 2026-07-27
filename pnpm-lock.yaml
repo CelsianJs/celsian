@@ -358,15 +358,9 @@ importers:
 
   packages/celsian:
     dependencies:
-      '@celsian/cli':
-        specifier: workspace:*
-        version: link:../cli
       '@celsian/core':
         specifier: workspace:*
         version: link:../core
-      '@celsian/rpc':
-        specifier: workspace:*
-        version: link:../rpc
       '@celsian/schema':
         specifier: workspace:*
         version: link:../schema

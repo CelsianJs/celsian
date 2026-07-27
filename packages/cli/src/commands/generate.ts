@@ -59,8 +59,8 @@ export function generateRpc(name: string): void {
 import { procedure, RPCHandler, router } from '@celsian/rpc';
 
 // RPC procedures for the "${name}" namespace. Add \`.input(schema)\` (Zod,
-// TypeBox, or Valibot) before \`.query\`/\`.mutation\` to validate and type \`input\`
-//: without a schema, \`input\` is \`unknown\`.
+// TypeBox, or Valibot) before \`.query\`/\`.mutation\` to validate and type \`input\`.
+// Without a schema, \`input\` is \`unknown\`.
 export const ${name}Router = router({
   ${name}: {
     list: procedure.query(async () => {
