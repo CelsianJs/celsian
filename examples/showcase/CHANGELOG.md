@@ -1,5 +1,14 @@
 # celsian-showcase
 
+## 1.0.10
+
+### Patch Changes
+
+- @celsian/core@0.6.1
+- @celsian/schema@0.6.1
+- @celsian/rpc@0.6.1
+- @celsian/cache@0.6.1
+
 ## 1.0.9
 
 ### Patch Changes

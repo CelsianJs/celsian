@@ -1,5 +1,11 @@
 # @celsian/adapter-lambda
 
+## 0.6.1
+
+### Patch Changes
+
+- @celsian/core@0.6.1
+
 ## 0.6.0
 
 ### Patch Changes
