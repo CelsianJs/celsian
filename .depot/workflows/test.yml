@@ -223,9 +223,16 @@ jobs:
         # hang or failure must never cancel the run or stall the pipeline.
         run: |
           cd packages/core
-          # -k 30: if bun ignores SIGTERM at 300s (a hung event loop from a
+          # -k 30: if bun ignores SIGTERM at 120s (a hung event loop from a
           # real-server test), SIGKILL it 30s later so the step always returns.
-          timeout -k 30 300 bun test || echo "::warning::bun test failed or exceeded its 5m budget (advisory; vitest on Node is authoritative)"
+          #
+          # 120s, down from 300s. A healthy run finishes in seconds, so the old
+          # budget was only ever reached by a hang, and it then burned five
+          # minutes of runner time producing no signal. Observed hanging at
+          # test/analytics.test.ts on Depot while completing normally on
+          # GitHub-hosted runners, so the budget must assume a hang is possible
+          # and cost little when it happens.
+          timeout -k 30 120 bun test || echo "::warning::bun test failed or exceeded its 2m budget (advisory; vitest on Node is authoritative)"
 
   # Deno smoke test: verifies the Deno adapter type-checks under Deno
   test-deno:
@@ -292,14 +299,20 @@ jobs:
   # Use this as the single required status check in branch protection.
   ci-passed:
     if: always()
-    needs: [test, lint, security-audit, examples, test-bun, test-deno, test-workerd]
+    # test-bun is deliberately NOT in `needs`. It is advisory, so it never
+    # changed this job's verdict, but listing it still made the one required
+    # check wait for it. When bun hangs (see that job) the wait was the whole
+    # 5m budget, which gated every merge on a job that cannot fail the build.
+    # It still runs and still reports its own check on the PR; it just no
+    # longer sits between a green pipeline and the merge button.
+    needs: [test, lint, security-audit, examples, test-deno, test-workerd]
     runs-on: depot-ubuntu-24.04
     steps:
       - name: Check all jobs passed
         run: |
           failed=0
-          # test-bun is advisory (Bun's test runner lacks some vitest APIs):
-          # surface its result but do not gate the pipeline on it.
+          # test-bun is absent by design: it is advisory (Bun's test runner
+          # lacks some vitest APIs) and reports its own check on the PR.
           for job in test lint security-audit examples test-deno test-workerd; do
             case "$job" in
               test)           result="${{ needs.test.result }}" ;;
@@ -314,9 +327,6 @@ jobs:
               failed=1
             fi
           done
-          if [[ "${{ needs.test-bun.result }}" != "success" ]]; then
-            echo "WARNING: test-bun did not pass (advisory, not blocking)"
-          fi
           if [[ "$failed" == "1" ]]; then
             exit 1
           fi
