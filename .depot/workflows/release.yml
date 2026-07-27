@@ -1,0 +1,125 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # Skip husky's prepare-time hook install in CI; the changesets action
+  # creates commits and must not run the local pre-commit hook.
+  HUSKY: 0
+
+# SUPPLY CHAIN: every third-party action below is pinned to a full commit SHA
+# with the human-readable version in a trailing comment. This job holds
+# NPM_TOKEN and NODE_AUTH_TOKEN and carries `contents: write`, `id-token: write`
+# and `pull-requests: write`. A floating tag (`@v4`) is a mutable pointer: the
+# action's owner, or anyone who compromises that repo, can retag it and have
+# their code run here with the publish token in scope. `changesets/action@v1` is
+# not even a tag, it is a BRANCH, so it moved on every upstream push.
+# Dependabot's github-actions ecosystem keeps these SHAs current.
+
+jobs:
+  # Gate: run the full test suite before any release happens
+  verify:
+    runs-on: depot-ubuntu-24.04-4
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: Run tests
+        run: pnpm test
+        env:
+          REDIS_URL: redis://127.0.0.1:6379
+
+      - name: Typecheck
+        # Real gate as of 2026-07-26. This step previously ran
+        # `tsc --noEmit` against a `files: []` root config, so it checked
+        # nothing and passed unconditionally. See tsconfig.typecheck.json.
+        run: pnpm typecheck
+
+      - name: Production dependency audit
+        run: pnpm audit --prod --audit-level=high
+
+      - name: Verify publish surface and packed packages
+        run: pnpm verify:publish
+
+  release:
+    needs: verify
+    runs-on: depot-ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      # NOTE: `changesets/action@v1` is a BRANCH ref upstream, not a tag.
+      # Pinned to the branch head as of 2026-07-26.
+      - uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1
+        id: changesets
+        with:
+          publish: pnpm release
+          title: "chore: version packages"
+          commit: "chore: version packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # REQUIRED for provenance. `changeset publish` has NO `--provenance`
+          # flag: passing one now hard-errors ("Unknown flag for publish:
+          # --provenance") and fails the whole release, so the `release` script
+          # must NOT pass it. npm DOES honor the equivalent npm_config_*
+          # environment variable, so provenance is enabled here instead.
+          # Requires the `id-token: write` permission above; keep both together.
+          NPM_CONFIG_PROVENANCE: true
+
+      - name: Verify npm registry packages
+        if: steps.changesets.outputs.published == 'true'
+        run: pnpm verify:registry
+
+      - name: Upload registry smoke artifact
+        if: ${{ always() && steps.changesets.outputs.published == 'true' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: celsian-registry-smoke
+          path: artifacts/registry-smoke.json
+          if-no-files-found: error

@@ -29,7 +29,7 @@ env:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-24.04-4
     strategy:
       matrix:
         node-version: [20, 22]
@@ -110,7 +110,7 @@ jobs:
         run: pnpm typecheck
 
   lint:
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -138,7 +138,7 @@ jobs:
         run: npx biome check . --diagnostic-level=error
 
   security-audit:
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -169,7 +169,7 @@ jobs:
   # before this job, which is how the flagship showcase example shipped with a
   # cron expression that made it throw on startup.
   examples:
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-24.04-4
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -188,7 +188,7 @@ jobs:
 
   # Bun smoke test: verifies the framework runs on Bun
   test-bun:
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-24.04
     # Backstop only; the run step self-bounds with `timeout` below.
     timeout-minutes: 12
     steps:
@@ -236,7 +236,7 @@ jobs:
 
   # Deno smoke test: verifies the Deno adapter type-checks under Deno
   test-deno:
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -268,7 +268,7 @@ jobs:
   # workerd smoke test: boots the built @celsian/adapter-cloudflare in the
   # real workerd runtime via `wrangler dev` and asserts a 200 response.
   test-workerd:
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -306,7 +306,7 @@ jobs:
     # It still runs and still reports its own check on the PR; it just no
     # longer sits between a green pipeline and the merge button.
     needs: [test, lint, security-audit, examples, test-deno, test-workerd]
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-24.04
     steps:
       - name: Check all jobs passed
         run: |
