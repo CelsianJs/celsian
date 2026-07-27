@@ -23,6 +23,7 @@
     "lint:ci": "biome ci .",
     "verify:registry": "node scripts/verify-registry-install.mjs",
     "assert:release-private": "node scripts/assert-release-private.mjs",
+    "check:action-pins": "node scripts/check-action-pins.mjs",
     "assert:public-metadata": "node scripts/assert-public-metadata.mjs",
     "docs": "typedoc",
     "size": "size-limit",
