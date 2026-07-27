@@ -214,7 +214,7 @@ describe("unbound createJWTGuard() outside every realm", () => {
 
     await app.inject({ url: "/root", headers: { authorization: `Bearer ${await realmB.sign({ sub: "user-b" })}` } });
 
-    expect(messages[0]).toMatch(/2 realms/);
+    expect(messages[0]).toMatch(/2 JWT realms/);
     expect(messages[0]).toMatch(/jwt\(\.\.\.\)\.guard\(\)/);
     expect(messages[0]).toMatch(/createJWTGuard\(\{ secret \}\)/);
   });

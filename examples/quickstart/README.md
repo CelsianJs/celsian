@@ -9,7 +9,8 @@ Copy this one when you are starting a project.
   (`app.register(todoRoutes, { encapsulate: false })`)
 - JWT auth with a shared guard (`preHandler: authGuard`) applied per route
 - Zod body validation
-- CORS, rate limiting, and the security headers `createApp()` enables by default
+- CORS and rate limiting. Note `createApp()` sets NO security headers on its own:
+  register the `security()` plugin if you want them (this example does not)
 - Health and readiness probes
 - Graceful shutdown via `serve()`'s `onShutdown`
 - Testing with `app.inject()`, no server required

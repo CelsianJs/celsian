@@ -69,12 +69,28 @@ function isNonRoutableHost(hostname: string): boolean {
   return false;
 }
 
+/**
+ * Cap on distinct hosts remembered for the warn-once check.
+ *
+ * The key is the `Host` header, which is client-controlled, so an unbounded set
+ * is a remote memory-growth primitive: spoofing 200k distinct hosts retained
+ * 91 MB permanently and emitted 200k log lines, none of which told the operator
+ * anything the first warning had not. A real deployment serves a handful of
+ * host names, so the cap is only ever reached under abuse or a wildcard-DNS
+ * setup, and in both cases the warning has already been delivered.
+ */
+const MAX_WARNED_HOSTS = 64;
+
 /** Hosts already warned about, so the warning is once per host, not per cookie. */
 const warnedInsecureHosts = new Set<string>();
+
+/** Whether the "no more warnings" notice has been emitted. */
+let insecureHostWarningsSuppressed = false;
 
 /** Reset the warn-once state. Exported for tests, not part of the public contract. */
 export function resetCookieSecurityWarnings(): void {
   warnedInsecureHosts.clear();
+  insecureHostWarningsSuppressed = false;
 }
 
 /**
@@ -145,15 +161,30 @@ export function resolveSecureDefault(contextOrUrl: CookieSecurityContext | strin
   const hostname = stripPort(browserFacingHost);
   if (isNonRoutableHost(hostname)) return false;
 
+  // The decision above is final; everything below is diagnostics, and must not
+  // let a client-chosen string grow this module's memory without limit.
   if (!warnedInsecureHosts.has(browserFacingHost)) {
-    warnedInsecureHosts.add(browserFacingHost);
-    console.warn(
-      `[celsian] Setting a Secure cookie over plain HTTP for host "${browserFacingHost}". ` +
-        "Browsers will accept the Set-Cookie header and then never send the cookie back, " +
-        "so sessions written this way silently do not persist. " +
-        "If this app sits behind a TLS-terminating proxy, have the proxy send x-forwarded-proto: https. " +
-        "If it genuinely serves plain HTTP, pass { secure: false } explicitly.",
-    );
+    if (warnedInsecureHosts.size >= MAX_WARNED_HOSTS) {
+      if (!insecureHostWarningsSuppressed) {
+        insecureHostWarningsSuppressed = true;
+        console.warn(
+          `[celsian] Seen more than ${MAX_WARNED_HOSTS} distinct plain-HTTP hosts setting Secure cookies; ` +
+            "further per-host warnings are suppressed for the lifetime of this process. " +
+            "The Host header is client-controlled, so remembering every value seen would grow without bound. " +
+            "The advice is unchanged: have the TLS-terminating proxy send x-forwarded-proto: https, " +
+            "or pass { secure: false } explicitly if this app genuinely serves plain HTTP.",
+        );
+      }
+    } else {
+      warnedInsecureHosts.add(browserFacingHost);
+      console.warn(
+        `[celsian] Setting a Secure cookie over plain HTTP for host "${browserFacingHost}". ` +
+          "Browsers will accept the Set-Cookie header and then never send the cookie back, " +
+          "so sessions written this way silently do not persist. " +
+          "If this app sits behind a TLS-terminating proxy, have the proxy send x-forwarded-proto: https. " +
+          "If it genuinely serves plain HTTP, pass { secure: false } explicitly.",
+      );
+    }
   }
   return true;
 }

@@ -63,7 +63,10 @@ type ConfinedPath = { ok: true; path: string } | { ok: false; status: 403 | 404 
  * both lexically and, unless `allowSymlinks` is set, after `realpath()`.
  * Returns 403 for an escape and 404 when the path does not exist.
  */
-async function resolveConfinedPath(filePath: string, options: SendFileOptions | undefined): Promise<ConfinedPath> {
+export async function resolveConfinedPath(
+  filePath: string,
+  options: SendFileOptions | undefined,
+): Promise<ConfinedPath> {
   const { resolve, sep } = await import("node:path");
   const { realpath } = await import("node:fs/promises");
 
@@ -98,7 +101,7 @@ async function resolveConfinedPath(filePath: string, options: SendFileOptions | 
 }
 
 /** Result of reading a confined file: the bytes plus the path they came from. */
-type ConfinedRead = { ok: true; data: Uint8Array; path: string } | { ok: false; status: 403 | 404 };
+export type ConfinedRead = { ok: true; data: Uint8Array; path: string } | { ok: false; status: 403 | 404 };
 
 /** Errno of a Node fs rejection, when it carries one. */
 function errnoOf(err: unknown): string | undefined {
@@ -117,7 +120,7 @@ function errnoOf(err: unknown): string | undefined {
  * kernel refuse a symlinked final component, so the check and the read can no
  * longer disagree, and the handle is read directly rather than looked up twice.
  */
-async function readConfinedFile(filePath: string, options: SendFileOptions | undefined): Promise<ConfinedRead> {
+export async function readConfinedFile(filePath: string, options: SendFileOptions | undefined): Promise<ConfinedRead> {
   const resolved = await resolveConfinedPath(filePath, options);
   if (!resolved.ok) return resolved;
 
@@ -181,23 +184,75 @@ function fileErrorResponse(status: 403 | 404, buildHeaders: (extra?: Record<stri
   });
 }
 
+/** True if `s` contains a C0 control character or DEL. */
+function hasControlChar(s: string): boolean {
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c <= 0x1f || c === 0x7f) return true;
+  }
+  return false;
+}
+
+/**
+ * Reduce a redirect target to the string a browser will actually act on.
+ *
+ * Two separate rewrites happen inside every URL parser before any structural
+ * check gets to run, so both have to happen here first or the checks inspect a
+ * string nobody will ever navigate to:
+ *
+ * - **ASCII tab, LF and CR are DELETED outright** (WHATWG URL, "strip leading
+ *   and trailing C0 control or space, and remove all ASCII tab or newline").
+ *   `"/\t/evil.com"` therefore parses as `//evil.com`, an open redirect that
+ *   sails past a `startsWith("//")` test performed on the raw string.
+ * - **Backslashes become forward slashes** in the authority position, which is
+ *   how `/\evil.com` becomes `//evil.com`.
+ *
+ * Applied to a fixed point, because in principle either rewrite could expose a
+ * new instance of the other. (It cannot today: deleting tabs never produces a
+ * backslash and mapping backslashes never produces a tab. The loop costs one
+ * extra comparison and removes the need to re-derive that argument whenever the
+ * character set here grows.)
+ */
+function normalizeRedirectTarget(url: string): string {
+  let current = url;
+  for (;;) {
+    let stripped = "";
+    for (let i = 0; i < current.length; i++) {
+      const c = current.charCodeAt(i);
+      // 0x09 TAB, 0x0a LF, 0x0d CR.
+      if (c === 0x09 || c === 0x0a || c === 0x0d) continue;
+      stripped += current[i];
+    }
+    const next = stripped.replace(/\\/g, "/");
+    if (next === current) return current;
+    current = next;
+  }
+}
+
 /**
  * Validate a redirect target and return the Location value to emit.
  *
  * Relative paths are allowed. Protocol-relative targets are rejected, including
- * the backslash variants (`/\evil.com`, `\\evil.com`) that browsers normalize
- * into `//evil.com`. Absolute http(s) URLs are rejected unless their host is in
- * `allowedHosts`. Everything else (javascript:, data:, garbage) is a 400, never
- * an uncaught 500.
+ * the backslash variants (`/\evil.com`, `\\evil.com`) and the tab/newline
+ * variants (`/\t/evil.com`) that URL parsers normalize into `//evil.com`.
+ * Absolute http(s) URLs are rejected unless their host is in `allowedHosts`.
+ * Everything else (javascript:, data:, garbage) is a 400, never an uncaught 500.
  */
 function safeRedirectLocation(url: string, allowedHosts?: string[]): string {
-  // Browsers treat "\" as "/" in the authority position, so normalize before
-  // every check rather than after.
-  const normalized = url.replace(/\\/g, "/");
+  const normalized = normalizeRedirectTarget(url);
 
   if (normalized.startsWith("/")) {
     if (normalized.startsWith("//")) {
       throw new HttpError(400, `Invalid redirect URL: "${url}". Protocol-relative redirects are not allowed.`, {
+        code: "INVALID_REDIRECT",
+      });
+    }
+    // Tab/CR/LF are gone by now; anything still in the C0 range (NUL above all)
+    // would be rejected by `new Headers()` with a TypeError, which the caller
+    // has no handler for and which surfaces as a 500 with a stack trace. This
+    // function promises a 400, so reject it here instead.
+    if (hasControlChar(normalized)) {
+      throw new HttpError(400, `Invalid redirect URL: "${url}". Control characters are not allowed.`, {
         code: "INVALID_REDIRECT",
       });
     }
@@ -230,6 +285,45 @@ function safeRedirectLocation(url: string, allowedHosts?: string[]): string {
   }
 
   return parsed.toString();
+}
+
+/**
+ * Build a `Content-Disposition: attachment` value for `name`.
+ *
+ * A header value is Latin-1 at best, and `new Response()` throws a TypeError on
+ * anything outside it, so a perfectly ordinary filename ("rapport-été.pdf",
+ * anything in Japanese) used to blow up response construction. Two parameters
+ * are emitted instead:
+ *
+ * - `filename=` carries a printable-ASCII reduction that every client
+ *   understands. Quotes and backslashes are dropped so they cannot terminate
+ *   the quoted string, and CR/LF go with them (header injection).
+ * - `filename*=` carries the real name, RFC 5987 / RFC 6266 percent-encoded as
+ *   UTF-8, and is preferred by every current browser.
+ *
+ * `filename*` is emitted only when the ASCII reduction actually lost something,
+ * so plain names keep the exact single-parameter header they have always had.
+ */
+function contentDisposition(name: string): string {
+  let ascii = "";
+  for (const ch of name) {
+    const code = ch.codePointAt(0) ?? 0;
+    if (ch === '"' || ch === "\\") continue;
+    // Printable ASCII only: control chars inject headers, and anything above
+    // 0x7e cannot survive a header value.
+    ascii += code >= 0x20 && code <= 0x7e ? ch : "_";
+  }
+  if (ascii === "") ascii = "download";
+
+  if (ascii === name) return `attachment; filename="${ascii}"`;
+
+  // encodeURIComponent leaves ' ( ) * unescaped, none of which are RFC 5987
+  // attr-chars, so they have to be encoded by hand.
+  const encoded = encodeURIComponent(name).replace(
+    /['()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`,
+  );
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}`;
 }
 
 /**
@@ -389,35 +483,43 @@ export function createReply(requestUrl?: string | URL, requestHeaders?: Headers)
 
     async download(filePath: string, filenameOrOptions?: string | DownloadOptions): Promise<Response> {
       sent = true;
+
+      const opts: DownloadOptions =
+        typeof filenameOrOptions === "string" ? { filename: filenameOrOptions } : (filenameOrOptions ?? {});
+
+      // Only the filesystem work is guarded. Wrapping the response construction
+      // too is how a real fault (a filename `new Response()` refuses, a bug in
+      // header building) got reported as "404 Not Found" for a file that had
+      // already been read successfully, which is a lie the caller cannot debug.
+      let pathModule: typeof import("node:path");
+      let file: ConfinedRead;
       try {
         // Lazy import, keeps reply.ts edge-compatible when download isn't used
-        const { extname, basename } = await import("node:path");
-
-        const opts: DownloadOptions =
-          typeof filenameOrOptions === "string" ? { filename: filenameOrOptions } : (filenameOrOptions ?? {});
-
+        pathModule = await import("node:path");
         // Confined exactly like sendFile: without a root, downloads are limited
         // to the process CWD. Serving outside it requires an explicit root.
-        const file = await readConfinedFile(filePath, opts);
-        if (!file.ok) return fileErrorResponse(file.status, buildHeaders);
-
-        const data = file.data;
-        const ext = extname(file.path).toLowerCase();
-        const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
-        const downloadName = opts.filename ?? basename(file.path);
-        // Sanitize filename to prevent header injection via Content-Disposition
-        const safeName = downloadName.replace(/["\r\n]/g, "");
-        return new Response(data, {
-          status: statusCode,
-          headers: buildHeaders({
-            "content-type": contentType,
-            "content-disposition": `attachment; filename="${safeName}"`,
-            ...headers,
-          }),
-        });
+        file = await readConfinedFile(filePath, opts);
       } catch {
         return fileErrorResponse(404, buildHeaders);
       }
+      if (!file.ok) return fileErrorResponse(file.status, buildHeaders);
+
+      const { extname, basename } = pathModule;
+      const ext = extname(file.path).toLowerCase();
+      const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
+      // `basename` applies to the caller-supplied name too: it is frequently a
+      // value from the request, and `filename="../../x"` is exactly what
+      // Content-Disposition's filename parameter is not allowed to carry.
+      const downloadName = basename(opts.filename ?? basename(file.path));
+
+      return new Response(file.data, {
+        status: statusCode,
+        headers: buildHeaders({
+          "content-type": contentType,
+          "content-disposition": contentDisposition(downloadName),
+          ...headers,
+        }),
+      });
     },
 
     // ─── Status Code Helpers ───

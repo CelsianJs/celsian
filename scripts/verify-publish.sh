@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# verify-publish.sh — Verify publishable package artifacts are npm-safe.
+# verify-publish.sh -- Verify publishable package artifacts are npm-safe.
 #
 # Source package.json files may legitimately contain pnpm workspace:* ranges.
 # pnpm resolves those ranges when creating publish artifacts, so this gate
@@ -214,7 +214,14 @@ writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}
 `);
 NODE
     npm install --cache "$NPM_CACHE_DIR" --ignore-scripts --no-audit --no-fund >/dev/null
-    npm run build >/dev/null
+    # Capture rather than discard: `npm run build` is `tsc`, and tsc reports
+    # diagnostics on STDOUT. Sending them to /dev/null turned a template that
+    # does not compile into a bare non-zero exit with no explanation.
+    if ! build_output="$(npm run build 2>&1)"; then
+      echo "ERROR: generated app in $app_dir failed to build:"
+      echo "$build_output"
+      exit 1
+    fi
     if [ "$health_check" = "1" ]; then
       node "$ROOT_DIR/scripts/smoke-start-health.mjs"
     fi

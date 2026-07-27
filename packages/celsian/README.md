@@ -49,8 +49,13 @@ serve(app, { port: 3000 })
 
 | Package | Re-exported here? | Contents |
 |---------|-------------------|----------|
-| `@celsian/core` | Yes | `createApp`, `serve`, `cors`, `csrf`, `security`, `openapi`, `database`, errors, logger, cookies, ETag, config |
-| `@celsian/schema` | Yes | `fromSchema`, `fromZod`, `fromTypeBox`, `fromValibot`, `coerceQueryParams`, `coerceString` |
+| `@celsian/core` | Yes, in full | Every export, including `createApp`, `serve`, `cors`, `csrf`, `security`, `openapi`, `database`, `upload`, `createSSEHub`, tasks and cron, WebSocket helpers, errors, logger, cookies, ETag, config |
+| `@celsian/schema` | Yes, in full | `fromSchema`, `fromZod`, `fromTypeBox`, `fromValibot`, `coerceQueryParams`, `coerceString` |
+
+Both are re-exported with `export *`, so anything `@celsian/core` exports is reachable
+from `celsian` under the same name. Before 0.6.0 this was a hand-maintained list that had
+drifted to 33 of core's 65 exports, which is why `upload` and `createSSEHub` used to come
+back `undefined` here despite being documented in the core README.
 
 Everything else is a separate install and is **not** available from `celsian`:
 

@@ -13,7 +13,7 @@ import { createInject, type InjectOptions } from "./inject.js";
 import { createLogger, generateRequestId, type Logger } from "./logger.js";
 import { MemoryQueue, type QueueBackend } from "./queue.js";
 import { createReply } from "./reply.js";
-import { buildRequest, buildRequestFast } from "./request.js";
+import { applyForwardedAuthority, buildRequest, buildRequestFast, type ForwardedTrustOptions } from "./request.js";
 import { resolveResponseSchema } from "./response-schema.js";
 import { Router } from "./router.js";
 import { createEnqueue, type TaskDefinition, TaskRegistry, TaskWorker, type TaskWorkerOptions } from "./task.js";
@@ -34,6 +34,7 @@ import {
   ROUTE_SCOPE,
   type RouteHandler,
   type RouteManifestEntry,
+  type RouteMethod,
   type RouteOptions,
   type RouteSchemaOptions,
   type TypedRouteHandler,
@@ -41,6 +42,16 @@ import {
   type TypedSchemaHandler,
 } from "./types.js";
 import { type WSHandler, WSRegistry } from "./websocket.js";
+
+/**
+ * True when `prefix` scopes `pathname`: an exact match, or a path-segment
+ * prefix. `/api` covers `/api` and `/api/chat`, but not `/apix`.
+ */
+function prefixCoversPath(prefix: string, pathname: string): boolean {
+  if (prefix === "" || prefix === "/") return true;
+  const base = prefix.endsWith("/") ? prefix.slice(0, -1) : prefix;
+  return pathname === base || pathname.startsWith(`${base}/`);
+}
 
 /**
  * The main application class. Provides routing, hooks, plugins, task queues, cron,
@@ -76,6 +87,8 @@ export class CelsianApp {
   private readonly scopes: ScopeRegistry;
   /** Scope of the root context, used by requests that never matched a route. */
   private readonly rootScope: ResolvedScope;
+  /** Memoized route-less scopes for contexts consulted by {@link onRequestHooksForPath}. */
+  private readonly pathScopes = new Map<EncapsulationContext, ResolvedScope>();
   private pendingPlugins: Promise<void>[] = [];
   private readyPromise: Promise<void> | null = null;
   readonly log: Logger;
@@ -348,21 +361,122 @@ export class CelsianApp {
   }
 
   /**
-   * The `onRequest` chain that applies to a connection upgrade (WebSocket).
+   * The `onRequest` chain that gates a connection upgrade (WebSocket) at `pathname`.
    *
-   * An upgrade never matches a route, so it is gated by the root scope: the
-   * app's own `addHook('onRequest', ...)` hooks PLUS every hook contributed by
-   * a plugin registered without a prefix (`csrf()`, `rateLimit()`, auth
-   * plugins). Reading `rootContext.hooks.onRequest` directly would see only the
-   * former, which silently ungated handshakes for the documented
-   * `app.register(plugin)` form.
+   * An upgrade never matches a route, so the chain is resolved from the
+   * encapsulation tree instead: the app's own `addHook('onRequest', ...)` hooks,
+   * plus every hook contributed by a plugin whose scope covers `pathname`. That
+   * covers both registration forms:
    *
-   * Hooks registered under a prefix are deliberately excluded: they are scoped
-   * to that prefix and an upgrade is not inside it.
+   * - `app.register(plugin)` -- transparent, applies app-wide, already folded
+   *   into the root scope;
+   * - `app.register(plugin, { prefix: '/api' })` -- encapsulated, so its hooks
+   *   live in a child scope the root scope cannot see. Returning only the root
+   *   scope (as this used to) meant an identical auth plugin gated
+   *   `ws://host/chat` but let `ws://host/api/chat` through with 101 Switching
+   *   Protocols, an authentication bypass that differed only by prefix.
+   *
+   * Omitting `pathname` keeps the old root-only behaviour, for callers that
+   * cannot say where the upgrade is aimed.
    */
-  getUpgradeHooks(): HookHandler[] {
+  getUpgradeHooks(pathname?: string): HookHandler[] {
     if (this.scopes.dirty) this.scopes.flush();
-    return this.rootScope.onRequest;
+    if (pathname === undefined) return this.rootScope.onRequest;
+    return this.onRequestHooksForPath(pathname);
+  }
+
+  /**
+   * Every `onRequest` hook whose scope covers `pathname`, root-first and
+   * de-duplicated by identity.
+   *
+   * Union rather than a single best-matching scope: two sibling plugins can be
+   * registered under the same prefix, and a gate that guessed between them
+   * would fail *open* on the one it did not pick. For an unrouted request the
+   * conservative answer is to run every guard that could apply.
+   */
+  private onRequestHooksForPath(pathname: string): HookHandler[] {
+    const matched: EncapsulationContext[] = [];
+    const visit = (ctx: EncapsulationContext): void => {
+      for (const child of ctx.children) {
+        // A transparent child adds no prefix of its own, so it is in scope
+        // exactly when its parent is, and its hooks are already folded into the
+        // parent's resolved scope. Descend anyway: it may have prefixed children.
+        if (child.transparent) {
+          visit(child);
+          continue;
+        }
+        if (!prefixCoversPath(child.prefix, pathname)) continue;
+        matched.push(child);
+        visit(child);
+      }
+    };
+    visit(this.rootContext);
+
+    if (matched.length === 0) return this.rootScope.onRequest;
+
+    const hooks: HookHandler[] = [...this.rootScope.onRequest];
+    const seen = new Set<HookHandler>(hooks);
+    for (const ctx of matched) {
+      for (const hook of this.contextScope(ctx).onRequest) {
+        if (seen.has(hook)) continue;
+        seen.add(hook);
+        hooks.push(hook);
+      }
+    }
+    return hooks;
+  }
+
+  /**
+   * A resolved scope for a context that owns no route of its own, memoized per
+   * context. `createContextScope()` registers a binding with the shared
+   * registry, so the scope is kept current by the same flush that maintains
+   * every route's chain, and creating one per context (not per path) keeps the
+   * registry bounded.
+   */
+  private contextScope(ctx: EncapsulationContext): ResolvedScope {
+    let scope = this.pathScopes.get(ctx);
+    if (scope === undefined) {
+      scope = ctx.createContextScope();
+      this.pathScopes.set(ctx, scope);
+      this.scopes.flush();
+    }
+    return scope;
+  }
+
+  /**
+   * Every `onRequest` hook guarding the routes registered at `pathname`,
+   * de-duplicated by identity. Used by the 405 branch, which discloses the set
+   * of methods a path accepts and so must be gated by the same hooks the routes
+   * themselves are.
+   */
+  private routeScopeHooks(pathname: string, methods: readonly RouteMethod[]): HookHandler[] {
+    const hooks: HookHandler[] = [];
+    const seen = new Set<HookHandler>();
+    for (const method of methods) {
+      let scope: ResolvedScope | undefined;
+      try {
+        scope = this.router.match(method, pathname)?.route.hooks.onRequest[ROUTE_SCOPE];
+      } catch {
+        // Malformed URI in a param segment: no scope to contribute.
+        continue;
+      }
+      if (scope === undefined) continue;
+      for (const hook of scope.onRequest) {
+        if (seen.has(hook)) continue;
+        seen.add(hook);
+        hooks.push(hook);
+      }
+    }
+    return hooks.length === 0 ? this.rootScope.onRequest : hooks;
+  }
+
+  /**
+   * How far this app trusts `x-forwarded-*` headers. Read by the WebSocket
+   * upgrade gate so a handshake resolves the client's host exactly as an HTTP
+   * request does.
+   */
+  getForwardedTrust(): ForwardedTrustOptions {
+    return { trustProxy: this.options.trustProxy, trustedHosts: this.options.trustedHosts };
   }
 
   /**
@@ -610,7 +724,9 @@ export class CelsianApp {
 
     let pathname: string;
     let queryString: string;
-    let fullUrl: URL | null = null; // Lazy, only created if needed
+    // Bounds of the authority ("host:port") inside rawUrl, -1 for a relative URL.
+    let authorityStart = -1;
+    let authorityEnd = -1;
 
     if (rawUrl.charCodeAt(0) === 47 /* '/' */) {
       // Path-only URL (e.g., "/json" or "/json?q=1")
@@ -630,7 +746,10 @@ export class CelsianApp {
       for (let i = 0; i < rawUrl.length; i++) {
         if (rawUrl.charCodeAt(i) === 47 /* '/' */) {
           slashCount++;
+          // The two slashes of "://" bracket the authority: it starts here...
+          if (slashCount === 2) authorityStart = i + 1;
           if (slashCount === 3) {
+            // ...and ends where the path begins.
             pathStart = i;
             break;
           }
@@ -640,7 +759,11 @@ export class CelsianApp {
         // No path component (e.g., "http://host"), default to "/"
         pathname = "/";
         queryString = "";
+        // "http://host" or "http://host?q" -- the authority runs to the query.
+        const markIdx = rawUrl.search(/[?#]/);
+        authorityEnd = markIdx === -1 ? rawUrl.length : markIdx;
       } else {
+        authorityEnd = pathStart;
         const qIdx = rawUrl.indexOf("?", pathStart);
         if (qIdx === -1) {
           pathname = rawUrl.substring(pathStart);
@@ -652,19 +775,16 @@ export class CelsianApp {
       }
     }
 
-    // Trust proxy: needs full URL object
-    if (this.options.trustProxy) {
-      if (!fullUrl) fullUrl = new URL(rawUrl, "http://localhost");
-      const proto = request.headers.get("x-forwarded-proto");
-      const host = request.headers.get("x-forwarded-host");
-      if (proto) fullUrl.protocol = `${proto}:`;
-      // Host-header injection guard: only honor x-forwarded-host when the value
-      // appears in the configured trustedHosts allowlist. Without an allowlist,
-      // keep the real Host to prevent attacker-controlled host/fullUrl.
-      if (host && this.options.trustedHosts?.includes(host)) {
-        fullUrl.host = host;
-      }
-    }
+    // The URL the *browser* addressed, not the address this process bound to.
+    // `serve()` builds `request.url` as `http://${bindHost}:${port}`, so without
+    // this the app's own host-sensitive controls (CSRF same-origin, response
+    // cache keys, absolute redirects) all compare against `0.0.0.0`. The
+    // computed value used to be dropped on the floor: it was passed to
+    // `buildRequestFast` as `_fullUrl` and never read.
+    //
+    // Returns `rawUrl` itself when nothing overrides the transport authority,
+    // so the hot path stays allocation-free and `new URL()`-free.
+    const effectiveUrl = applyForwardedAuthority(rawUrl, authorityStart, authorityEnd, request.headers, this.options);
 
     let match: import("./types.js").RouteMatch | null;
     try {
@@ -677,7 +797,7 @@ export class CelsianApp {
     } catch (matchError) {
       // Malformed URI in a param/wildcard segment (HttpError 400), return a
       // structured error response instead of crashing the request.
-      const missContext = await this.createMissContext(request, rawUrl, fullUrl);
+      const missContext = await this.createMissContext(request, effectiveUrl);
       const response = await this.handleError(
         wrapNonError(matchError),
         missContext.request,
@@ -688,17 +808,25 @@ export class CelsianApp {
     }
 
     if (!match) {
-      const missContext = await this.createMissContext(request, rawUrl, fullUrl);
-      const earlyResponse = await runHooks(this.rootScope.onRequest, missContext.request, missContext.reply);
+      const missContext = await this.createMissContext(request, effectiveUrl);
+
+      // Distinguish 404 (path not found) from 405 (wrong method)
+      const isMethodMismatch = this.router.hasPath(pathname);
+      // RFC 9110 makes `Allow` mandatory on a 405. Without it the client is
+      // told its method is wrong but never which ones would work, and
+      // `docs/errors.md` promised the header while nothing in core ever set it.
+      const allowed = isMethodMismatch ? this.router.allowedMethods(pathname) : [];
+
+      // A 405 enumerates the methods a path accepts, so it is a disclosure and
+      // has to clear the same gate the path's routes do. Running only the root
+      // scope listed `GET, HEAD, PUT, DELETE` for `/admin/users/1` behind an
+      // encapsulated auth guard that answered 401 to every real request.
+      const missHooks = allowed.length > 0 ? this.routeScopeHooks(pathname, allowed) : this.rootScope.onRequest;
+      const earlyResponse = await runHooks(missHooks, missContext.request, missContext.reply);
       if (earlyResponse) return earlyResponse;
       const missHeaders = this.mergeReplyHeaders(CelsianApp.JSON_CONTENT_TYPE, missContext.reply);
 
-      // Distinguish 404 (path not found) from 405 (wrong method)
-      if (this.router.hasPath(pathname)) {
-        // RFC 9110 makes `Allow` mandatory on a 405. Without it the client is
-        // told its method is wrong but never which ones would work, and
-        // `docs/errors.md` promised the header while nothing in core ever set it.
-        const allowed = this.router.allowedMethods(pathname);
+      if (isMethodMismatch) {
         if (allowed.length > 0) missHeaders.set("allow", allowed.join(", "));
         const r405 = new Response(CelsianApp.METHOD_NOT_ALLOWED_BODY, {
           status: 405,
@@ -742,7 +870,7 @@ export class CelsianApp {
     const scope = match.route.hooks.onRequest[ROUTE_SCOPE] ?? this.rootScope;
 
     // Build CelsianRequest with fast query parsing (skip URL object when possible)
-    const celsianRequest = buildRequestFast(request, pathname, queryString, match.params, fullUrl);
+    const celsianRequest = buildRequestFast(request, pathname, queryString, match.params, effectiveUrl);
 
     // Apply request decorations (skip loop if none registered)
     if (scope.requestDecorations.size > 0) {
@@ -774,11 +902,9 @@ export class CelsianApp {
       (celsianRequest as Record<string, unknown>).requestId = requestId;
     }
 
-    // `fullUrl` is only built when trustProxy is on (it carries the
-    // x-forwarded-proto override); otherwise hand over the raw URL string and
-    // let the reply parse it lazily, and only if a cookie is actually set. The
-    // hot path stays free of a `new URL()` call.
-    const reply = createReply(fullUrl ?? rawUrl, request.headers);
+    // Hand the reply the URL *string* and let it parse lazily, and only if a
+    // cookie is actually set. The hot path stays free of a `new URL()` call.
+    const reply = createReply(effectiveUrl, request.headers);
 
     // Apply reply decorations (skip loop if none registered)
     if (scope.replyDecorations.size > 0) {
@@ -1021,10 +1147,9 @@ export class CelsianApp {
 
   private async createMissContext(
     request: Request,
-    rawUrl: string,
-    fullUrl: URL | null,
+    effectiveUrl: string,
   ): Promise<{ request: CelsianRequest; reply: CelsianReply }> {
-    if (!fullUrl) fullUrl = new URL(rawUrl, "http://localhost");
+    const fullUrl = new URL(effectiveUrl, "http://localhost");
     const celsianRequest = buildRequest(request, fullUrl, {});
     const reply = createReply(fullUrl, request.headers);
     if (this.rootScope.replyDecorations.size > 0) {

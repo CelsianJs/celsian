@@ -9,6 +9,12 @@ import { fullTemplate } from "./templates/full.js";
 import { restApiTemplate } from "./templates/rest-api.js";
 import { rpcApiTemplate } from "./templates/rpc-api.js";
 
+// Re-exported so consumers of the templates (notably `celsian create` in
+// @celsian/cli, and the tests that guard against a stale pin) can read the
+// version the templates were generated against, instead of hard-coding a
+// literal that has to be edited in lockstep every release.
+export { CELSIAN_VERSION } from "./versions.js";
+
 // ─── Template Registry ───
 
 export const templates: Record<string, Record<string, string>> = {

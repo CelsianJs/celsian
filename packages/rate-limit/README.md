@@ -46,18 +46,42 @@ rotating a forged prefix cannot mint a fresh bucket. IPv4 and IPv6 CIDR blocks
 are both supported, as are bare addresses.
 
 If no untrusted entry exists (or the header is absent), all such requests share
-one bucket rather than each getting their own.
+one bucket rather than each getting their own. The same applies when the entry
+is not an address at all: unparseable text is client-chosen, so it is never used
+as a key.
+
+### One host is one bucket
+
+The key is the **canonical parsed address**, never the raw header text. All of
+these are the same host and share a single bucket:
+
+```
+1.2.3.4    01.02.03.04    ::ffff:1.2.3.4    [1.2.3.4]    1.2.3.4:1    1.2.3.4:65535
+```
+
+Keying on the raw text gave each spelling its own bucket, and because the
+`:<port>` suffix is unbounded that was an unlimited quota behind a
+one-character mutation. IPv6 is compared fully expanded and lowercased, so
+`2001:DB8::1` and `2001:0db8:0000:0000:0000:0000:0000:0001` are one bucket too.
 
 ### `trustProxy` (advanced)
 
 `trustProxy: true` with `trustedProxyHops: N` takes the IP N entries from the
 right **without verifying that a proxy appended it**.
 
-> **Deployment warning.** This is correct only when the hop count is fixed and
-> every request genuinely traverses your proxies. If a request can reach the app
-> directly, a misrouted health check, a leaked origin address, an internal
-> caller, the attacker controls the entry at that position and rate limiting is
-> bypassed. Prefer `trustedProxies` or a `keyGenerator`.
+If a request arrives with **fewer than N entries** it cannot have traversed your
+N proxies, so the limiter fails closed and puts it in the shared unidentified
+bucket. It does not fall back to the leftmost entry: that entry is exactly what
+the client supplies, so falling back to it handed the caller its own bucket key
+(rotate it for unlimited quota, or set it to a victim's address to burn the
+victim's bucket before they ever send a request).
+
+> **Deployment warning.** Failing closed on a short chain does not make this mode
+> safe. It is correct only when the hop count is fixed and every request
+> genuinely traverses your proxies. A request that reaches the app directly, a
+> misrouted health check, a leaked origin address, an internal caller, still
+> arrives with the attacker in control of the entry at position N, and rate
+> limiting is bypassed. Prefer `trustedProxies` or a `keyGenerator`.
 
 ### `X-Real-IP`
 
@@ -99,7 +123,14 @@ third-party runtime dependencies. Any client exposing
 | Option | Default | Description |
 | --- | --- | --- |
 | `maxKeys` | `100_000` | Distinct keys the in-memory store holds before evicting. |
-| `maxKeyLength` | `256` | Longer keys collapse into one shared oversized bucket. |
+| `maxKeyLength` | `256` | Longer keys are stored as a SHA-256 digest of themselves. |
+
+Hashing (rather than collapsing every long key into one shared bucket) keeps
+memory bounded **without** merging unrelated clients: a `keyGenerator` that
+legitimately returns long keys, a composite tenant+user key or a long token
+subject, used to make one user inherit another's count and get a 429 on their
+very first request. The digest is cryptographic, so an attacker cannot search
+for a value that lands in a chosen victim's bucket.
 
 Eviction prefers expired entries, then the **least-established** live entry
 (lowest count, tie-broken by soonest reset). Insertion-order eviction was the

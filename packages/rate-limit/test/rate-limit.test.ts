@@ -372,7 +372,7 @@ describe("rate-limit XFF key generation", () => {
     expect(r3.status).toBe(200);
   });
 
-  it("clamps to the leftmost entry when trustedProxyHops covers the whole list", async () => {
+  it("fails closed when trustedProxyHops exceeds the entries present", async () => {
     const app = createApp();
     await app.register(
       rateLimit({
@@ -386,8 +386,11 @@ describe("rate-limit XFF key generation", () => {
 
     app.get("/api", (_req, reply) => reply.json({ ok: true }));
 
-    // Only 2 entries but 5 trusted hops: every entry was appended by a trusted
-    // proxy, so index clamps to 0 (the true client as seen by the outermost proxy).
+    // Only 2 entries but 5 declared hops: the request did NOT traverse the
+    // declared proxies, so no entry here is trustworthy. This used to clamp the
+    // index to 0 and key on the LEFTMOST entry, which is exactly the value the
+    // client supplies, handing the caller its own bucket key. It now falls
+    // through to the shared unidentified bucket.
     const r1 = await app.inject({
       url: "/api",
       headers: { "x-forwarded-for": "10.0.0.1, proxy-inner" },
@@ -399,6 +402,14 @@ describe("rate-limit XFF key generation", () => {
       headers: { "x-forwarded-for": "10.0.0.1, proxy-inner" },
     });
     expect(r2.status).toBe(429);
+
+    // Changing the leftmost entry must NOT mint a fresh bucket. Under the old
+    // clamp this returned 200 forever, one rotating header value per bypass.
+    const r3 = await app.inject({
+      url: "/api",
+      headers: { "x-forwarded-for": "203.0.113.77, proxy-inner" },
+    });
+    expect(r3.status).toBe(429);
   });
 
   it("throws CelsianError for invalid trustedProxyHops", () => {

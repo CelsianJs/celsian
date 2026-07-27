@@ -22,13 +22,20 @@ export function generateOpenAPI(
     if (proc.inputSchema) {
       const schema = proc.inputSchema.toJsonSchema();
       if (method === "get") {
+        // `content` (not `schema`) is how OpenAPI describes a parameter whose
+        // value is a serialized media type, and it is the only spelling that
+        // carries the procedure's real input shape. `schema: { type: "string" }`
+        // said no more than "a string goes here". A parameter may declare one
+        // or the other, never both.
         operation.parameters = [
           {
             name: "input",
             in: "query",
             required: true,
-            schema: { type: "string" },
             description: "JSON-encoded input",
+            content: {
+              "application/json": { schema },
+            },
           },
         ];
       } else {

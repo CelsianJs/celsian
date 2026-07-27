@@ -43,8 +43,107 @@ const REQUEST_PROTO = {
 };
 
 /**
+ * A syntactically safe authority: `host[:port]`, or a bracketed IPv6 literal.
+ *
+ * `Host` and `x-forwarded-host` are attacker-controlled strings. Splicing one
+ * into a URL unchecked lets `Host: evil.com@real.com` (userinfo), `Host: a/b`
+ * (path) or a `Host` with a stray `?`/`#` re-point the parsed URL, or produce a
+ * string that throws on the next `new URL()`. Anything not matching is ignored
+ * and the transport-level authority is kept.
+ */
+const SAFE_AUTHORITY = /^(?:[a-zA-Z0-9._-]+|\[[0-9a-fA-F:.]+\])(?::\d{1,5})?$/;
+
+/** A URL scheme token, per RFC 3986: `ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )`. */
+const SAFE_SCHEME = /^[a-zA-Z][a-zA-Z0-9+.-]*$/;
+
+/** Options controlling how far `x-forwarded-*` is trusted. See `CelsianAppOptions`. */
+export interface ForwardedTrustOptions {
+  trustProxy?: boolean;
+  trustedHosts?: string[];
+}
+
+/**
+ * The URL the *client* addressed, rebuilt from `rawUrl` plus the request headers.
+ *
+ * Adapters synthesize `request.url` from the address the server is bound to
+ * (`serve()` uses `http://${host}:${port}`), so on a real deployment it reads
+ * `http://0.0.0.0:3000/...` no matter what the browser asked for. Every
+ * host-sensitive control downstream, the CSRF same-origin check, response-cache
+ * keys, absolute redirects, then compares against the bind address instead of
+ * the site. This restores the browser's view:
+ *
+ * - the `Host` header replaces the bind authority (this is what the client sent);
+ * - with `trustProxy`, `x-forwarded-proto` sets the scheme;
+ * - with `trustProxy`, `x-forwarded-host` replaces the authority *only* when it
+ *   appears in the `trustedHosts` allowlist. Un-allowlisted values are ignored,
+ *   which is the host-header-injection guard.
+ *
+ * Deliberately string surgery rather than `new URL()`: this runs on every
+ * request, and it returns `rawUrl` itself (same reference, no allocation) in the
+ * common case where nothing overrides the transport authority.
+ *
+ * @param rawUrl The adapter's URL. Relative URLs are returned untouched.
+ * @param authorityStart Index of the first authority character (after `://`), or -1.
+ * @param authorityEnd Index one past the last authority character.
+ */
+export function applyForwardedAuthority(
+  rawUrl: string,
+  authorityStart: number,
+  authorityEnd: number,
+  headers: Headers,
+  options: ForwardedTrustOptions,
+): string {
+  if (authorityStart < 3) return rawUrl;
+
+  const authority = rawUrl.slice(authorityStart, authorityEnd);
+  const scheme = rawUrl.slice(0, authorityStart - 3);
+  let nextAuthority = authority;
+  let nextScheme = scheme;
+
+  const hostHeader = headers.get("host");
+  if (hostHeader !== null && SAFE_AUTHORITY.test(hostHeader)) nextAuthority = hostHeader;
+
+  if (options.trustProxy) {
+    // A proxy chain appends, so the left-most entry is the original client's.
+    const proto = headers.get("x-forwarded-proto")?.split(",", 1)[0]?.trim();
+    if (proto && SAFE_SCHEME.test(proto)) nextScheme = proto;
+
+    const forwardedHost = headers.get("x-forwarded-host")?.split(",", 1)[0]?.trim();
+    if (forwardedHost && SAFE_AUTHORITY.test(forwardedHost) && options.trustedHosts?.includes(forwardedHost) === true) {
+      nextAuthority = forwardedHost;
+    }
+  }
+
+  if (nextAuthority === authority && nextScheme === scheme) return rawUrl;
+  return `${nextScheme}://${nextAuthority}${rawUrl.slice(authorityEnd)}`;
+}
+
+/**
+ * `applyForwardedAuthority` for callers that hold only the URL string, i.e. the
+ * paths (WebSocket upgrade, adapters) that are not the request hot path and so
+ * have not already scanned it. Locates the authority, then delegates.
+ */
+export function resolveEffectiveUrl(rawUrl: string, headers: Headers, options: ForwardedTrustOptions): string {
+  const schemeSep = rawUrl.indexOf("://");
+  if (schemeSep === -1) return rawUrl;
+  const authorityStart = schemeSep + 3;
+  let authorityEnd = rawUrl.length;
+  for (let i = authorityStart; i < rawUrl.length; i++) {
+    const code = rawUrl.charCodeAt(i);
+    if (code === 47 /* '/' */ || code === 63 /* '?' */ || code === 35 /* '#' */) {
+      authorityEnd = i;
+      break;
+    }
+  }
+  return applyForwardedAuthority(rawUrl, authorityStart, authorityEnd, headers, options);
+}
+
+/**
  * Build a CelsianRequest from a Web Standard Request, parsed URL, and route params.
  * Body-consuming methods are bound to the original Request to preserve internal slots.
+ *
+ * `url` is authoritative for `request.url`: callers pass the *effective* URL (see
+ * {@link resolveEffectiveUrl}), not the adapter's bind-address URL.
  */
 export function buildRequest(request: Request, url: URL, params: Record<string, string>): CelsianRequest {
   // Use frozen empty object when there's no query string to avoid per-request allocation
@@ -71,7 +170,7 @@ export function buildRequest(request: Request, url: URL, params: Record<string, 
   const req = celsianRequest as Record<string, unknown>;
   req.headers = request.headers;
   req.method = request.method;
-  req.url = request.url;
+  req.url = url.href;
   req.signal = request.signal;
   req.params = params;
   req.query = query;
@@ -106,13 +205,20 @@ export function buildRequest(request: Request, url: URL, params: Record<string, 
 /**
  * Fast request builder that accepts pre-parsed pathname and query string,
  * avoiding URL object creation on the hot path.
+ *
+ * `effectiveUrl` is the URL the client actually addressed, as resolved by
+ * `CelsianApp.handle` from the `Host` header (and the trusted `x-forwarded-*`
+ * headers). It is what `request.url` reports. Passing the source `Request`'s
+ * own `url` here would leak the server's *bind* address instead, because
+ * `serve()` builds it as `http://${bindHost}:${port}`, and every same-origin
+ * check and cache key downstream would then compare against `0.0.0.0`.
  */
 export function buildRequestFast(
   request: Request,
   _pathname: string,
   queryString: string,
   params: Record<string, string>,
-  _fullUrl: URL | null,
+  effectiveUrl: string,
 ): CelsianRequest {
   // Parse query string without creating a URL object
   let query: Record<string, string | string[]>;
@@ -141,7 +247,7 @@ export function buildRequestFast(
   req[SRC] = request;
   req.headers = request.headers;
   req.method = request.method;
-  req.url = request.url;
+  req.url = effectiveUrl;
   req.signal = request.signal;
   req.params = params;
   req.query = query;

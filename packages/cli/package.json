@@ -5,8 +5,6 @@
   "bin": {
     "celsian": "dist/index.js"
   },
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
   "files": [
     "dist"
   ],
@@ -42,7 +40,6 @@
     "routes",
     "typescript"
   ],
-  "sideEffects": false,
   "devDependencies": {
     "@celsian/rpc": "workspace:*",
     "@celsian/jwt": "workspace:*",

@@ -3,15 +3,15 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@celsian/core": "workspace:*",
+    "@celsian/core": "workspace:*"
+  },
+  "devDependencies": {
     "@hono/node-server": "^1.14.0",
+    "@types/autocannon": "^7.12.7",
     "@types/express": "^5.0.6",
     "autocannon": "^8.0.0",
     "express": "^5.2.1",
     "fastify": "^5.9.0",
     "hono": "^4.7.0"
-  },
-  "devDependencies": {
-    "@types/autocannon": "^7.12.7"
   }
 }

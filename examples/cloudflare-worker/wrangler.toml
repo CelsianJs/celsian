@@ -20,3 +20,12 @@ ENVIRONMENT = "production"
 name = "celsian-worker-dev"
 [env.dev.vars]
 ENVIRONMENT = "development"
+
+# Bindings are NOT inherited by named environments: wrangler warns
+# "is not inherited by environments" and the binding is simply absent. Since
+# `npm run dev` runs `wrangler dev --env dev`, the block above has to be
+# repeated here or every KV route 500s under the documented dev command.
+[[env.dev.kv_namespaces]]
+binding = "CACHE"
+id = "your-kv-namespace-id"
+preview_id = "your-kv-preview-namespace-id"

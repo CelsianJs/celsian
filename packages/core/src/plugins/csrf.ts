@@ -56,6 +56,28 @@ export interface CSRFOptions {
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 /**
+ * The request URL, resolved against the host the client addressed.
+ *
+ * `request.url` carries the effective host (see `CelsianApp.handle`), so the
+ * base only matters for adapters that hand over a path-only URL. Falling back to
+ * the `Host` header there is what `checkWSOrigin` does, and it keeps the
+ * same-origin comparison below from being made against the server's *bind*
+ * address, which inverted this control: honest same-origin POSTs were rejected
+ * with `CSRF origin mismatch` while Origin-less clients passed untouched.
+ */
+function requestUrl(request: CelsianRequest): URL {
+  const host = request.headers.get("host");
+  if (host !== null && host !== "") {
+    try {
+      return new URL(request.url, `http://${host}`);
+    } catch {
+      // Malformed Host header: fall through to the neutral base.
+    }
+  }
+  return new URL(request.url, "http://localhost");
+}
+
+/**
  * Generate a cryptographically random token using crypto.getRandomValues().
  */
 function generateToken(byteLength: number): string {
@@ -159,7 +181,7 @@ export function csrf(options: CSRFOptions = {}): PluginFunction {
   return function csrfPlugin(app) {
     const hook: HookHandler = async (request: CelsianRequest, reply: CelsianReply) => {
       const method = request.method.toUpperCase();
-      const url = new URL(request.url);
+      const url = requestUrl(request);
       const pathname = url.pathname;
 
       // Skip excluded paths (exact or path-segment prefix match)
@@ -210,11 +232,15 @@ export function csrf(options: CSRFOptions = {}): PluginFunction {
         if (origin && origin !== "null") {
           let originHost: string;
           try {
-            originHost = new URL(origin).host;
+            originHost = new URL(origin).host.toLowerCase();
           } catch {
             return reply.status(403).json({ error: "CSRF origin mismatch", statusCode: 403 });
           }
-          if (originHost !== url.host && !trustedOrigins.has(origin) && !trustedOrigins.has(originHost)) {
+          // Compare authorities, the same test `checkWSOrigin` applies to a
+          // handshake. `url.host` is the host the browser addressed, not the
+          // interface this process bound to.
+          const expectedHost = url.host.toLowerCase();
+          if (originHost !== expectedHost && !trustedOrigins.has(origin) && !trustedOrigins.has(originHost)) {
             return reply.status(403).json({ error: "CSRF origin mismatch", statusCode: 403 });
           }
         }

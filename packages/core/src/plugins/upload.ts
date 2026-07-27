@@ -42,9 +42,32 @@ function sniffMimeType(data: Uint8Array): string | null {
 }
 
 /**
- * Reduce a client-supplied file name to a safe basename: directory components,
- * NUL, control characters and leading dots removed. The original is kept as
- * `rawFileName` for display/audit only.
+ * Names Windows resolves to a device rather than a file, in any directory and
+ * with any extension: `CON.txt` opens the console, not a file. Matched against
+ * the stem (everything before the first dot), case-insensitively.
+ */
+const WINDOWS_RESERVED_NAMES = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+
+/**
+ * Reduce a client-supplied file name to a name that is safe to `join()` onto a
+ * directory: directory components, NUL, control characters, surrounding
+ * whitespace and leading dots removed. The original is kept as `rawFileName`
+ * for display/audit only.
+ *
+ * The stripping runs to a FIXED POINT, which is the whole difficulty. Each pass
+ * can uncover work for the other passes, so any single ordered sequence leaves
+ * a hole:
+ *
+ * - Stripping leading dots before trimming let whitespace shield them:
+ *   `" .."` survived dot-stripping intact and `trim()` then handed back a
+ *   literal `".."`, so `join(uploadDir, file.fileName)` resolved to the PARENT
+ *   of the upload directory. Non-breaking space and U+2028 work the same way,
+ *   both being whitespace to `trim()`.
+ * - Stripping trailing dots can expose trailing whitespace and vice versa.
+ *
+ * Trailing dots and spaces are removed because Windows removes them silently at
+ * creation time: `evil.php.` passes an extension check as a `.` file and lands
+ * on disk as `evil.php`.
  */
 function sanitizeFileName(name: string): string {
   const base = name.split(/[\\/]/).pop() ?? "";
@@ -54,8 +77,25 @@ function sanitizeFileName(name: string): string {
     if (code <= 0x1f || code === 0x7f) continue;
     cleaned += ch;
   }
-  cleaned = cleaned.replace(/^\.+/, "").trim();
-  return cleaned === "" ? "file" : cleaned;
+
+  // `trim()` already covers the full Unicode whitespace set (NBSP, U+2028,
+  // U+FEFF included), so the loop is about ordering, not about coverage.
+  let previous: string;
+  do {
+    previous = cleaned;
+    cleaned = cleaned.trim();
+    cleaned = cleaned.replace(/^\.+/, "");
+    cleaned = cleaned.replace(/[.\s]+$/u, "");
+  } while (cleaned !== previous);
+
+  // Belt and braces: the loop above cannot leave these, but the promise this
+  // function makes ("safe to join onto a directory") is worth stating twice.
+  if (cleaned === "" || cleaned === "." || cleaned === "..") return "file";
+
+  const stem = cleaned.split(".")[0] ?? "";
+  if (WINDOWS_RESERVED_NAMES.test(stem)) return `file_${cleaned}`;
+
+  return cleaned;
 }
 
 export interface UploadOptions {
@@ -70,9 +110,11 @@ export interface UploadOptions {
 export interface UploadedFile {
   fieldName: string;
   /**
-   * Sanitized file name: basename only, with path separators, NUL and leading
-   * dots stripped. Safe to join onto a directory. Still not unique, collisions
-   * are the caller's problem.
+   * Sanitized file name: basename only, with path separators, NUL, control
+   * characters, surrounding whitespace, leading dots and trailing dots/spaces
+   * stripped, and Windows device names (CON, NUL, COM1...) defused. Never `.`,
+   * `..` or empty, so it is safe to join onto a directory. Still not unique,
+   * collisions are the caller's problem.
    */
   fileName: string;
   /**

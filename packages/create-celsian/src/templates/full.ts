@@ -429,19 +429,19 @@ import type { PluginFunction } from '@celsian/core';
 const appRouter = router({
   greeting: {
     hello: procedure
-      .input<{ name: string }>(Type.Object({ name: Type.String() }))
+      .input(Type.Object({ name: Type.String() }))
       .query(({ input }) => {
         return { message: \`Hello, \${input.name}!\` };
       }),
   },
   math: {
     add: procedure
-      .input<{ a: number; b: number }>(Type.Object({ a: Type.Number(), b: Type.Number() }))
+      .input(Type.Object({ a: Type.Number(), b: Type.Number() }))
       .query(({ input }) => {
         return { result: input.a + input.b };
       }),
     multiply: procedure
-      .input<{ a: number; b: number }>(Type.Object({ a: Type.Number(), b: Type.Number() }))
+      .input(Type.Object({ a: Type.Number(), b: Type.Number() }))
       .mutation(({ input }) => {
         return { result: input.a * input.b };
       }),

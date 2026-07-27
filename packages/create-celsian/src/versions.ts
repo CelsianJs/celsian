@@ -3,8 +3,14 @@
 // Keeping these here prevents drift across the individual templates.
 
 /** Pin used for every Celsian package (celsian, @celsian/*). Tracks the unified
- *  fixed-group release line, bump in lockstep with the published version. */
-export const CELSIAN_VERSION = "^0.5.0";
+ *  fixed-group release line.
+ *
+ *  BUMP THIS IN THE RELEASE CHANGESET, not after publishing. A caret range on a
+ *  0.x version only covers that one minor line (`^0.5.0` does NOT include
+ *  0.6.0), so shipping `create-celsian@0.6.0` while this still reads `^0.5.0`
+ *  generates projects that install the PREVIOUS release. It is re-exported from
+ *  `scaffold.ts` so the pin tests read this value instead of a literal. */
+export const CELSIAN_VERSION = "^0.6.0";
 
 /** Third-party dependency pins shared across templates. */
 export const DEPS = {

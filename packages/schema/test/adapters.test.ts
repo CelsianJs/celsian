@@ -48,10 +48,15 @@ describe("fromZod", () => {
     expect(result.issues?.[1].path).toEqual(["email"]);
   });
 
-  it("should return fallback JSON Schema", () => {
+  it("should return an empty JSON Schema for an object with no Zod internals", () => {
+    // A hand-rolled Zod-like with no `_def`/`_zod` describes nothing, so `{}`
+    // ("any value") is the honest answer. This used to claim `{ type: "object" }`,
+    // and REAL Zod schemas got the same fabricated answer, which is what made
+    // every documented Zod route publish an object with zero properties. Real
+    // schemas are now converted, see `json-schema.test.ts`.
     const zodLike = { safeParse: () => ({ success: true, data: null }) };
     const schema = fromZod(zodLike);
-    expect(schema.toJsonSchema()).toEqual({ type: "object" });
+    expect(schema.toJsonSchema()).toEqual({});
   });
 
   it("should use toJsonSchema if available", () => {

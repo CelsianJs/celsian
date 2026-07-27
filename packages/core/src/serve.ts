@@ -3,6 +3,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { CelsianApp } from "./app.js";
 import { getFastPayload } from "./fast-response.js";
+import { readConfinedFile } from "./reply.js";
 import { authorizeWSUpgrade, type WSAllowedOrigins, WSConnectionLimiter } from "./websocket.js";
 
 /** Options for `serve()` -- port, host, static files, graceful shutdown. */
@@ -205,7 +206,6 @@ async function teardownApp(app: CelsianApp, options: ServeOptions): Promise<void
 
 async function serveNode(app: CelsianApp, port: number, host: string, options: ServeOptions): Promise<ServeResult> {
   const http = await import("node:http");
-  const { readFile, stat } = await import("node:fs/promises");
   const { join, extname } = await import("node:path");
 
   const MIME_TYPES: Record<string, string> = {
@@ -255,25 +255,30 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
         inFlight--;
         return;
       }
+      // `join` first, then confine: a URL path is always absolute ("/app.js"),
+      // and handing that straight to `resolve(root, path)` would let it replace
+      // the root outright, so every request would look like an escape.
       const filePath = resolve(join(staticRoot, decodedPath));
-      // Ensure the resolved path is within the static directory
-      if (!filePath.startsWith(`${staticRoot}/`) && filePath !== staticRoot) {
-        // Path traversal attempt, fall through to app handler
-      } else {
-        try {
-          const s = await stat(filePath);
-          if (s.isFile()) {
-            const content = await readFile(filePath);
-            const ext = extname(filePath);
-            res.setHeader("content-type", MIME_TYPES[ext] ?? "application/octet-stream");
-            res.setHeader("cache-control", "public, max-age=31536000, immutable");
-            res.end(content);
-            inFlight--;
-            return;
-          }
-        } catch {
-          // Not a static file
-        }
+      // Containment is delegated to the SAME helper reply.sendFile() uses, so
+      // this second file-serving path cannot drift from it again. It was
+      // lexical-only here (a `startsWith` on the resolved path) while sendFile
+      // had already been hardened with realpath() + O_NOFOLLOW, which meant a
+      // symlink planted inside staticDir served whatever it pointed at:
+      // `GET /avatar.png` returning the contents of `.env` with a 200.
+      //
+      // A rejection falls through to the app handler rather than answering 403,
+      // matching what the lexical check already did for traversal attempts, so
+      // the static layer still never reports on files outside its own root.
+      const file = await readConfinedFile(filePath, { root: staticRoot });
+      if (file.ok) {
+        // Extension comes from the requested path, not the realpath()-resolved
+        // one, so the content-type does not change under the client's feet.
+        const ext = extname(filePath);
+        res.setHeader("content-type", MIME_TYPES[ext] ?? "application/octet-stream");
+        res.setHeader("cache-control", "public, max-age=31536000, immutable");
+        res.end(file.data);
+        inFlight--;
+        return;
       }
     }
 

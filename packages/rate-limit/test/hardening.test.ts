@@ -127,13 +127,30 @@ describe("X-Real-IP is never a silent fallback (M-5/M-6)", () => {
 });
 
 describe("key length is bounded", () => {
-  it("collapses an over-long key into one shared bucket instead of storing it verbatim", async () => {
+  it("never stores a 20,000-character header value as a bucket key", async () => {
     const app = await buildApp({ max: 3, window: 60_000, trustedProxies: ["10.0.0.0/8"], trustXRealIp: true });
 
     // A 20,000-character X-Real-IP, different every time. Stored verbatim
     // against the 100k-key cap this is gigabytes of retained memory.
+    // Header-derived keys are now canonicalized addresses, so this never
+    // reaches the store at all: it is not an address, so it fails closed into
+    // the shared unidentified bucket and the limit applies.
     const blocked = await countBlocked(app, 20, (i) => ({ "x-real-ip": `${i}`.padEnd(20_000, "9") }));
     expect(blocked).toBe(17);
+  });
+
+  it("hashes an over-long keyGenerator key rather than merging unrelated clients", async () => {
+    // A legitimate `keyGenerator` may return more than `maxKeyLength` chars (a
+    // composite tenant+user key). Collapsing all of them into one shared bucket
+    // bounded memory but made unrelated users throttle each other. See
+    // key-derivation.test.ts for the full lockout regression.
+    const app = await buildApp({
+      max: 3,
+      window: 60_000,
+      keyGenerator: (req) => (req.headers.get("x-api-key") ?? "?").repeat(300),
+    });
+    const blocked = await countBlocked(app, 3, (i) => ({ "x-api-key": `tenant-${i}` }));
+    expect(blocked).toBe(0);
   });
 
   it("does not collapse normal-length keys", async () => {

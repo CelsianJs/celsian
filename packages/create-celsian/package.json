@@ -20,6 +20,9 @@
     "build": "tsc -b"
   },
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=20"
   },

@@ -75,6 +75,38 @@ export function parseIp(raw: string): ParsedIp | null {
   return null;
 }
 
+/**
+ * The canonical text form of a parsed address, used as the rate-limit bucket
+ * key. It is derived from the PARSED value, never from the raw header text, so
+ * every spelling of one host collapses to exactly one bucket:
+ * `1.2.3.4`, `01.02.03.04`, `::ffff:1.2.3.4`, `[1.2.3.4]` and `1.2.3.4:5000`
+ * all format as `1.2.3.4`. Keying on the raw text instead gave each spelling
+ * its OWN bucket, and since the `:<port>` suffix is unbounded that was an
+ * unbounded quota bypass.
+ *
+ * IPv6 is emitted fully expanded and lowercased rather than `::`-compressed:
+ * one address has many valid compressed spellings but only one expanded one,
+ * and this string is compared for equality, never displayed.
+ */
+export function formatIp(ip: ParsedIp): string {
+  if (ip.version === 4) {
+    const v = ip.value;
+    return `${(v >>> 24) & 0xff}.${(v >>> 16) & 0xff}.${(v >>> 8) & 0xff}.${v & 0xff}`;
+  }
+  return ip.groups.map((group) => group.toString(16).padStart(4, "0")).join(":");
+}
+
+/**
+ * Parse `raw` and return its canonical form, or `null` when it is not an
+ * address at all. Callers keying on a client-supplied header MUST fail closed
+ * on `null` rather than fall back to the raw text: unparseable text is
+ * attacker-chosen and rotating it mints an unlimited number of buckets.
+ */
+export function canonicalizeIp(raw: string): string | null {
+  const ip = parseIp(raw);
+  return ip === null ? null : formatIp(ip);
+}
+
 /** A CIDR block, or a single address (treated as a full-length prefix). */
 export interface Cidr {
   ip: ParsedIp;

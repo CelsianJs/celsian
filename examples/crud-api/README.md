@@ -11,7 +11,8 @@ and hand-written validation that raises structured `HttpError`s.
 - `HttpError` for 400 and 404 responses, so errors come back in the framework's
   structured shape
 - An app factory (`createCrudApp()`) so tests build their own isolated instance
-- CORS plus the security headers `createApp()` enables by default
+- CORS. Note `createApp()` sets NO security headers on its own: register the
+  `security()` plugin if you want them (this example does not)
 
 ## Run it
 

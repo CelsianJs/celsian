@@ -9,6 +9,7 @@ import { basicTemplate } from "../src/templates/basic.js";
 import { fullTemplate } from "../src/templates/full.js";
 import { restApiTemplate } from "../src/templates/rest-api.js";
 import { rpcApiTemplate } from "../src/templates/rpc-api.js";
+import { CELSIAN_VERSION } from "../src/versions.js";
 
 // ─── Template content tests (no filesystem) ───
 
@@ -250,15 +251,17 @@ describe("Celsian dependency version pins", () => {
     full: fullTemplate,
   };
 
-  it("pins every Celsian dependency to the unified release line ^0.5.0 (no ^0.3.x)", () => {
+  // Compare against the single source of truth rather than a literal: the pin
+  // moves every release, and a literal here just has to be edited in lockstep
+  // (which is exactly the drift this test exists to catch elsewhere).
+  it("pins every Celsian dependency to the unified release line", () => {
     for (const [templateName, template] of Object.entries(allTemplates)) {
       const pkg = JSON.parse(template["package.json"]);
       const deps = { ...pkg.dependencies, ...pkg.devDependencies };
       for (const [name, version] of Object.entries(deps)) {
         const isCelsian = name === "celsian" || name.startsWith("@celsian/");
         if (isCelsian) {
-          expect(version, `${templateName} -> ${name}`).toBe("^0.5.0");
-          expect(version, `${templateName} -> ${name}`).not.toMatch(/\^0\.3\./);
+          expect(version, `${templateName} -> ${name}`).toBe(CELSIAN_VERSION);
         }
       }
     }

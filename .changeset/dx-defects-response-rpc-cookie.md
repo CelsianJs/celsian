@@ -20,11 +20,41 @@ Each of these was proven by executing the documented sample, not by reading it.
   METHOD, handed a function to the schema adapter, and 500'd with
   `SchemaError: Unsupported schema: received a function (bound default)`. The
   lookup is now guarded with `Object.hasOwn`.
-- **RPC procedures infer their input.** `input<T>(schema: unknown)` mentioned
-  `T` nowhere in its parameter list, so there was no inference site and `T`
-  always collapsed to `unknown`. `procedure.input(zodSchema).query(({ input }) =>
-  ...)` now types `input`, and `.query()` / `.mutation()` infer the procedure's
-  output from the handler unless `.output()` pins it.
+- **BREAKING: RPC procedures infer their input, and `input<T>`'s type parameter
+  changed meaning.** `input<T>(schema: unknown)` mentioned `T` nowhere in its
+  parameter list, so there was no inference site and `T` always collapsed to
+  `unknown`. The signature is now
+  `input<TSchema>(schema: TSchema): ProcedureBuilder<InferOutput<TSchema>, TOutput>`.
+
+  `T` used to be **the parsed type**; it is now **the schema type**. Any call
+  that passes an explicit type argument, which is what 0.5.x documented and what
+  `create-celsian` scaffolded, is now a compile error: the explicit argument
+  pins `TSchema` to the parsed shape, so the schema no longer matches the
+  parameter and `input` falls back to `unknown`.
+
+  ```
+  src/routes/rpc.ts(12,32): error TS2345: Argument of type 'TObject<{ name: TString; }>'
+    is not assignable to parameter of type '{ name: string; }'.
+  src/routes/rpc.ts(14,37): error TS18046: 'input' is of type 'unknown'.
+  ```
+
+  Migration: delete the explicit type argument. Dropping it is what makes
+  inference work, and `input` ends up correctly typed rather than `unknown`.
+
+  ```ts
+  // 0.5.x
+  procedure
+    .input<{ name: string }>(Type.Object({ name: Type.String() }))
+    .query(({ input }) => ({ message: `Hello, ${input.name}!` }));
+
+  // 0.6.0
+  procedure
+    .input(Type.Object({ name: Type.String() }))
+    .query(({ input }) => ({ message: `Hello, ${input.name}!` }));
+  ```
+
+  `.query()` / `.mutation()` additionally infer the procedure's output from the
+  handler unless `.output()` pins it.
 - **Typed RPC clients resolve to the procedure map instead of `never`.**
   `RPCClientProxy` matched handlers against `ctx: unknown` while
   `ProcedureDefinition` declares `ctx: RPCContext`; under `strictFunctionTypes`

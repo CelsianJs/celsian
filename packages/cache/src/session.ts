@@ -40,7 +40,12 @@ export interface SessionData {
 }
 
 export interface Session {
-  /** Session ID */
+  /**
+   * Session ID.
+   *
+   * Rotates in place when {@link Session.regenerate} is called, so reading it
+   * after a privilege change always yields the NEW id.
+   */
   readonly id: string;
   /** Get a session value */
   get<T = unknown>(key: string): T | undefined;
@@ -52,7 +57,20 @@ export interface Session {
   all(): SessionData;
   /** Destroy the session (clear all data and remove from store) */
   destroy(): Promise<void>;
-  /** Regenerate the session ID (for security after login) */
+  /**
+   * Rotate the session id, keeping the data. Call this at every privilege
+   * boundary (login, role change, step-up auth).
+   *
+   * Rotation happens IN PLACE: `session.id` becomes the new id, the old store
+   * entry is deleted, and a later `save()` on this same object writes the new
+   * id. The session is also returned so `const s = await session.regenerate()`
+   * keeps reading naturally.
+   *
+   * Without this call an attacker who plants a session cookie in a victim's
+   * browser keeps a valid handle on the session the victim then logs into
+   * (session fixation). See the `/login` example on
+   * {@link createSessionManager}.
+   */
   regenerate(): Promise<Session>;
   /** Save the session to the store */
   save(): Promise<void>;
@@ -99,12 +117,22 @@ function defaultGenerateId(): string {
  * });
  *
  * app.post('/login', async (req, reply) => {
- *   const session = await sessions.create();
+ *   const session = await sessions.fromRequest(req);
+ *   // ALWAYS rotate the id at a privilege boundary. Without this, a session id
+ *   // an attacker planted in the victim's browser stays valid after the victim
+ *   // logs in, and the attacker reads the logged-in session (session fixation).
+ *   await session.regenerate();
  *   session.set('user', { name: 'Alice' });
  *   await session.save();
  *   return reply
  *     .header('set-cookie', sessions.cookie(session.id))
  *     .json({ ok: true });
+ * });
+ *
+ * app.post('/logout', async (req, reply) => {
+ *   const session = await sessions.fromRequest(req);
+ *   await session.destroy();
+ *   return reply.header('set-cookie', sessions.cookie(session.id, { maxAge: 0 })).json({ ok: true });
  * });
  * ```
  */
@@ -115,8 +143,13 @@ export function createSessionManager(options: SessionOptions) {
   const prefix = options.prefix ?? "sess:";
   const generateId = options.generateId ?? defaultGenerateId;
 
-  function makeSession(id: string, data: SessionData): Session {
+  function makeSession(initialId: string, data: SessionData): Session {
     const sessionData = { ...data };
+    // MUTABLE so `regenerate()` can rotate the id in place. When regenerate
+    // returned a separate object, `await session.regenerate()` (the natural
+    // call, ignoring the return value) left the caller holding, and setting a
+    // cookie for, the OLD id, so the session-fixation fix silently did nothing.
+    let id = initialId;
 
     const session: Session = {
       get id() {
@@ -141,13 +174,15 @@ export function createSessionManager(options: SessionOptions) {
         }
       },
       async regenerate(): Promise<Session> {
+        const previousId = id;
         const newId = generateId();
-        const dataCopy = { ...sessionData };
-        const newSession = makeSession(newId, dataCopy);
-        // Save new session first, then delete old, no race window
-        await newSession.save();
-        await store.delete(prefix + id);
-        return newSession;
+        if (newId === previousId) return session;
+        // Rotate in place, then persist under the new id BEFORE dropping the
+        // old entry so a concurrent read never sees the session missing.
+        id = newId;
+        await session.save();
+        await store.delete(prefix + previousId);
+        return session;
       },
       async save() {
         // An EMPTY session is not persisted. Writing one per cookie-less
@@ -193,7 +228,16 @@ export function createSessionManager(options: SessionOptions) {
 
   /**
    * Load session from a request (reads cookie header).
-   * Returns existing session or creates a new one.
+   * Returns the existing session, or a NEW one with a server-generated id.
+   *
+   * An id from the cookie is only ever used when it already names a stored
+   * session. An unrecognized id is never adopted, so a client cannot choose its
+   * own session id: `?sid=` links and planted cookies for ids the server never
+   * issued get a fresh server-generated id instead.
+   *
+   * That alone does NOT stop session fixation, because an attacker can obtain a
+   * real id from the server and plant that. Call {@link Session.regenerate} at
+   * every privilege boundary.
    */
   async function fromRequest(request: Request): Promise<Session> {
     const cookieHeader = request.headers.get("cookie") ?? "";

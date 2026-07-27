@@ -299,8 +299,8 @@ await adapter.buildEnd({
 ```
 
 `@celsian/adapter-railway` exposes the same `buildEnd()` shape. `@celsian/adapter-node`
-declares `buildEnd()` but it is a stub that throws: it depends on a build pipeline that
-has not shipped.
+has no `buildEnd()` at all: the stub was removed rather than left to throw, and the
+package's default export is `serve`.
 
 Deploy:
 
@@ -345,7 +345,7 @@ CelsianJS reads these environment variables automatically:
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
 | `PORT` | `3000` | Server port |
-| `HOST` | `0.0.0.0` | Bind address |
+| `HOST` | `0.0.0.0` in production, `localhost` otherwise | Bind address |
 | `NODE_ENV` | - | When `production`, stack traces are stripped from error responses |
 | `CELSIAN_ENV` | - | Alternative to `NODE_ENV` for CelsianJS-specific behavior |
 

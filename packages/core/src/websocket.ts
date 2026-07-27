@@ -2,7 +2,7 @@
 
 import { runHooks } from "./hooks.js";
 import { createReply } from "./reply.js";
-import { buildRequest } from "./request.js";
+import { buildRequest, type ForwardedTrustOptions, resolveEffectiveUrl } from "./request.js";
 import type { CelsianRequest, HookHandler } from "./types.js";
 
 /** WebSocket event handler with optional open, message, and close callbacks. */
@@ -209,28 +209,40 @@ export async function checkWSOrigin(request: Request, options: WSUpgradeGuardOpt
  * Minimal shape of the app needed to authorize an upgrade. Declared structurally
  * so `websocket.ts` never imports `app.ts` (which imports this module).
  *
- * `getUpgradeHooks()` is the public accessor on `CelsianApp`. It resolves the
- * root scope through the encapsulation chain, so hooks contributed by
- * `app.register(plugin)` are included. Reading `rootContext.hooks.onRequest`
- * (as this module used to) saw only `app.addHook` hooks and left every
- * plugin-registered guard off the handshake path.
+ * `getUpgradeHooks(pathname)` is the public accessor on `CelsianApp`. It resolves
+ * the chain from the encapsulation tree for the path being upgraded, so hooks
+ * contributed by `app.register(plugin)` AND by `app.register(plugin, { prefix })`
+ * are included. It is passed the pathname because a prefixed plugin's hooks live
+ * in a child scope: asking only for the root scope (as this module used to) let
+ * the identical auth plugin gate `/chat` but pass `/api/chat` straight to 101.
  */
 export interface WSUpgradeApp {
-  getUpgradeHooks?: () => HookHandler[];
+  getUpgradeHooks?: (pathname?: string) => HookHandler[];
+  /** How far this app trusts `x-forwarded-*`, so the handshake resolves the same host HTTP does. */
+  getForwardedTrust?: () => ForwardedTrustOptions;
 }
 
-/** Read the app's upgrade hook chain, tolerating an app that exposes none. */
-function getUpgradeHooks(app: unknown): HookHandler[] {
+/** Read the app's proxy-trust settings, defaulting to trusting nothing. */
+function upgradeTrust(app: unknown): ForwardedTrustOptions {
+  const accessor = (app as WSUpgradeApp | undefined)?.getForwardedTrust;
+  if (typeof accessor !== "function") return {};
+  const trust = accessor.call(app);
+  return trust !== null && typeof trust === "object" ? trust : {};
+}
+
+/** Read the app's upgrade hook chain for `pathname`, tolerating an app that exposes none. */
+function getUpgradeHooks(app: unknown, pathname: string): HookHandler[] {
   const accessor = (app as WSUpgradeApp | undefined)?.getUpgradeHooks;
   if (typeof accessor !== "function") return [];
-  const hooks = accessor.call(app);
+  const hooks = accessor.call(app, pathname);
   return Array.isArray(hooks) ? hooks : [];
 }
 
 /**
- * Full upgrade gate: Origin check, then the `onUpgrade` callback, then the app's
- * root-scope `onRequest` hooks so auth guards and rate limiters apply to
- * handshakes however they were registered (`addHook` or `register`).
+ * Full upgrade gate: Origin check, then the `onUpgrade` callback, then every
+ * `onRequest` hook whose scope covers `pathname`, so auth guards and rate
+ * limiters apply to handshakes however they were registered (`addHook`,
+ * `register(plugin)`, or `register(plugin, { prefix })`).
  *
  * A hook that returns a `Response` (or sends the reply) rejects the handshake
  * with that response's status.
@@ -259,12 +271,15 @@ export async function authorizeWSUpgrade(
 
   if (options.runRequestHooks === false) return UPGRADE_OK;
 
-  const hooks = getUpgradeHooks(app);
+  const hooks = getUpgradeHooks(app, pathname);
   if (hooks.length === 0) return UPGRADE_OK;
 
   let url: URL;
   try {
-    url = new URL(request.url);
+    // The handshake Request carries the adapter's bind-address URL, same as an
+    // HTTP request does. Hooks that gate on the host (CSRF, tenant routing) must
+    // see what the client addressed, not `http://0.0.0.0:port`.
+    url = new URL(resolveEffectiveUrl(request.url, request.headers, upgradeTrust(app)));
   } catch {
     return { allowed: false, status: 400, reason: "Malformed upgrade request URL" };
   }

@@ -1,6 +1,7 @@
 // @celsian/core, OpenAPI 3.1 documentation plugin for REST routes
 
 import { fromSchema, type StandardSchema } from "@celsian/schema";
+import { isStatusKeyedResponseMap } from "../response-schema.js";
 import type { InternalRoute, PluginFunction } from "../types.js";
 
 export interface OpenAPIOptions {
@@ -66,7 +67,23 @@ function extractJsonSchema(schema: unknown): Record<string, unknown> | null {
     return s.toJsonSchema() as Record<string, unknown>;
   }
 
-  // TypeBox / plain JSON Schema, has `type` at the top level
+  // Try the adapters BEFORE any structural guess. `fromSchema` recognizes
+  // TypeBox (by its Kind symbol), Zod, Valibot, and plain JSON Schema object
+  // schemas, and converts each one properly.
+  //
+  // Order matters: a `"type" in s` shortcut used to run first, and every
+  // Valibot schema natively carries `type: "object"`, so Valibot routes shipped
+  // their raw internal AST (`kind`, `expects`, `entries`, `~standard`) into the
+  // document verbatim. That is not JSON Schema, and Swagger UI rendered it as
+  // an empty model.
+  try {
+    const wrapped: StandardSchema = fromSchema(s);
+    return wrapped.toJsonSchema() as Record<string, unknown>;
+  } catch {
+    // Not a recognized schema library, fall through to the structural forms.
+  }
+
+  // Plain JSON Schema fragment, has `type` at the top level (e.g. { type: "string" }).
   if ("type" in s) {
     return s;
   }
@@ -74,17 +91,6 @@ function extractJsonSchema(schema: unknown): Record<string, unknown> | null {
   // If it has `properties`, treat it as an object schema missing `type`
   if ("properties" in s) {
     return { type: "object", ...s };
-  }
-
-  // Try wrapping through @celsian/schema (handles Zod, Valibot, etc.)
-  // These schemas have _def (Zod) or other internal markers that fromSchema detects.
-  try {
-    const wrapped: StandardSchema = fromSchema(s);
-    if (typeof wrapped.toJsonSchema === "function") {
-      return wrapped.toJsonSchema() as Record<string, unknown>;
-    }
-  } catch {
-    // Not a recognized schema library, fall through
   }
 
   return null;
@@ -171,6 +177,49 @@ function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+/** Build one OpenAPI response object for `code` from a (possibly unusable) schema. */
+function responseObject(description: string, responseSchema: unknown): Record<string, unknown> {
+  const json = extractJsonSchema(responseSchema);
+  if (!json) return { description };
+  return {
+    description,
+    content: {
+      "application/json": { schema: json },
+    },
+  };
+}
+
+/**
+ * Turn a route's `schema.response` into the OpenAPI `responses` object.
+ *
+ * `schema.response` has two accepted spellings (see `resolveResponseSchema` in
+ * `response-schema.ts`): the status-keyed map `{ 200: schema }` and a bare
+ * schema applied to 2xx. This used to iterate `Object.entries()` over whichever
+ * one it got, so a bare Zod schema enumerated the Zod INSTANCE'S OWN METHODS as
+ * status codes and emitted ~29 responses called `spa`, `_def`, `parse`,
+ * `safeParse`, `refine`, and so on. That is not a valid OpenAPI document.
+ *
+ * `isStatusKeyedResponseMap` is the same guard the runtime validator uses, so
+ * the document and the enforcement can no longer disagree about which spelling
+ * a route used.
+ */
+function buildResponses(response: unknown): Record<string, unknown> {
+  const fallback: Record<string, unknown> = { "200": { description: "Successful response" } };
+  if (response == null || typeof response !== "object") return fallback;
+
+  if (!isStatusKeyedResponseMap(response)) {
+    return { "200": responseObject("Successful response", response) };
+  }
+
+  const responses: Record<string, unknown> = {};
+  for (const [code, responseSchema] of Object.entries(response)) {
+    responses[code] = responseObject(`Response ${code}`, responseSchema);
+  }
+  // An empty map documents nothing; keep the generic 200 rather than emitting
+  // an operation with no responses at all.
+  return Object.keys(responses).length > 0 ? responses : fallback;
+}
+
 // ─── Spec Generator ───
 
 function generateSpec(routes: InternalRoute[], options: OpenAPIOptions): OpenAPISpec {
@@ -226,27 +275,7 @@ function generateSpec(routes: InternalRoute[], options: OpenAPIOptions): OpenAPI
     }
 
     // Responses
-    if (route.schema?.response) {
-      const responses: Record<string, unknown> = {};
-      for (const [code, responseSchema] of Object.entries(route.schema.response)) {
-        const json = extractJsonSchema(responseSchema);
-        if (json) {
-          responses[String(code)] = {
-            description: `Response ${code}`,
-            content: {
-              "application/json": { schema: json },
-            },
-          };
-        } else {
-          responses[String(code)] = { description: `Response ${code}` };
-        }
-      }
-      operation.responses = responses;
-    } else {
-      operation.responses = {
-        "200": { description: "Successful response" },
-      };
-    }
+    operation.responses = buildResponses(route.schema?.response);
 
     if (!paths[openAPIPath]) {
       paths[openAPIPath] = {};

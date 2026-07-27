@@ -217,7 +217,7 @@ describe("stampede protection", () => {
     store.destroy();
   });
 
-  it("never makes a no-cache request wait on someone else's in-flight execution", async () => {
+  it("coalesces a no-cache request onto an in-flight origin execution (M1)", async () => {
     const store = new MemoryKVStore({ cleanupIntervalMs: 0 });
     const cache = createResponseCache({ store });
     let calls = 0;
@@ -231,11 +231,53 @@ describe("stampede protection", () => {
     const leader = cache.cached(request("https://app.example/x"), handler);
     await new Promise((resolve) => setTimeout(resolve, 5));
 
-    // A `no-cache` request explicitly wants the origin, not a coalesced result.
+    // A `no-cache` request must not be served the PREVIOUSLY stored entry, but
+    // it does wait for the execution already running: that result is an origin
+    // response fetched while it waited. Letting it skip the single-flight was a
+    // client-controlled amplifier, one header turned 100 concurrent requests
+    // into 100 origin executions.
     const revalidating = cache.cached(request("https://app.example/x", { "cache-control": "no-cache" }), handler);
 
     await Promise.all([leader, revalidating]);
-    expect(calls).toBe(2);
+    expect(calls).toBe(1);
+    store.destroy();
+  });
+
+  it.each([
+    ["cache-control", "no-cache"],
+    ["cache-control", "no-store"],
+    ["cache-control", "max-age=0"],
+    ["pragma", "no-cache"],
+  ])("keeps origin executions at one for 50 concurrent %s: %s requests (M1)", async (header, value) => {
+    const store = new MemoryKVStore({ cleanupIntervalMs: 0 });
+    const cache = createResponseCache({ store });
+    let calls = 0;
+    const handler = async () => {
+      calls++;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return jsonResponse({ calls });
+    };
+
+    await Promise.all(
+      Array.from({ length: 50 }, () =>
+        cache.cached(request("https://app.example/flood", { [header]: value }), handler),
+      ),
+    );
+
+    expect(calls).toBe(1);
+    store.destroy();
+  });
+
+  it("still serves a bypassing request the origin result rather than a stale entry (M1)", async () => {
+    const store = new MemoryKVStore({ cleanupIntervalMs: 0 });
+    const cache = createResponseCache({ store });
+    let calls = 0;
+    const handler = () => jsonResponse({ n: ++calls });
+
+    await cache.cached(request("https://app.example/stale"), handler);
+    const refreshed = await cache.cached(request("https://app.example/stale", { pragma: "no-cache" }), handler);
+
+    expect(await refreshed.json()).toEqual({ n: 2 });
     store.destroy();
   });
 
@@ -299,18 +341,51 @@ describe("cache key hygiene", () => {
     store.destroy();
   });
 
-  it("bypasses the cache entirely for an over-long key", async () => {
+  it("hashes an over-long key instead of disabling the cache for it (M2)", async () => {
     const store = new MemoryKVStore({ cleanupIntervalMs: 0 });
     const cache = createResponseCache({ store, maxKeyLength: 64 });
     let calls = 0;
     const handler = () => jsonResponse({ n: ++calls });
 
+    // Length-capping meant an over-long key skipped the read, the write AND the
+    // single-flight, so ~250 bytes of a header turned the cache (and stampede
+    // protection) off for any URL an attacker chose. Hashing bounds the stored
+    // key by construction, so the entry is still cached and still bounded.
     const long = `https://app.example/x?q=${"a".repeat(500)}`;
-    await cache.cached(request(long), handler);
-    await cache.cached(request(long), handler);
+    const first = await cache.cached(request(long), handler);
+    const second = await cache.cached(request(long), handler);
 
-    expect(calls).toBe(2);
-    expect(await store.keys()).toEqual([]);
+    expect(first.headers.get("x-cache")).toBe("MISS");
+    expect(second.headers.get("x-cache")).toBe("HIT");
+    expect(calls).toBe(1);
+
+    const keys = await store.keys();
+    expect(keys.length).toBe(1);
+    expect(keys[0]!.length).toBeLessThanOrEqual(64);
+    store.destroy();
+  });
+
+  it("does not let an oversized request header disable the cache or the single flight (M2)", async () => {
+    const store = new MemoryKVStore({ cleanupIntervalMs: 0 });
+    const cache = createResponseCache({ store });
+    let calls = 0;
+    const handler = async () => {
+      calls++;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return jsonResponse({ calls });
+    };
+
+    // The measured exploit: ~250 bytes of `Origin:` pushed the key past the
+    // 512-character budget, and every request then executed the origin.
+    const headers = { origin: `https://${"a".repeat(600)}.example` };
+    await Promise.all(
+      Array.from({ length: 50 }, () => cache.cached(request("https://app.example/big-header", headers), handler)),
+    );
+
+    expect(calls).toBe(1);
+    for (const key of await store.keys()) {
+      expect(key.length).toBeLessThanOrEqual(512);
+    }
     store.destroy();
   });
 });

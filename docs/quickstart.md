@@ -4,7 +4,7 @@ Get a CelsianJS API running from zero to deployed in under 10 minutes.
 
 ## Prerequisites
 
-- Node.js 18+ (or Bun, or Deno)
+- Node.js 20+ (every package declares `engines.node: ">=20"`), or Bun, or Deno
 - npm, pnpm, or yarn
 
 ## Scaffold a Project
@@ -260,7 +260,7 @@ Use CelsianJS as the API backend for a [WhatFW](https://whatfw.com) frontend:
 ```bash
 # Backend
 npx create-celsian my-api
-cd my-api && npm run dev  # localhost:3000
+cd my-api && npm install && npm run dev  # localhost:3000
 
 # Frontend (in another terminal)
 npm create what@latest my-app

@@ -87,13 +87,33 @@ A no-argument guard resolves the realm from the request and there is no
 process-global fallback, so an undecorated request fails closed rather than
 inheriting another app's secret.
 
+Note the `prefix` on each registration. **A realm registered without a prefix is
+app-wide**, because Celsian treats an un-prefixed plugin as transparent: its
+hooks and request decorations apply to the whole surrounding scope, siblings
+included. Two un-prefixed realms therefore both cover every route in that scope,
+and no ambient guard can tell them apart.
+
 ### The ambient guard fails closed with two or more realms
 
-A no-argument guard on a route INSIDE a realm's scope resolves that realm, which
-is why the pattern above keeps working. On a route OUTSIDE every realm's scope
-(a root route, say) there is nothing to resolve, and with several realms
-registered the guard would otherwise authenticate against whichever realm
-registered last. It now throws instead:
+A no-argument guard resolves the realm from the matched route: it uses the realm
+whose scope covers the route, which is why the prefixed pattern above keeps
+working. It refuses, at request time, in the two cases where that answer is a
+guess.
+
+**Case 1, the route lies inside several realms at once.** This is what
+un-prefixed realms produce:
+
+```typescript
+await app.register(tenantA);                       // no prefix: app-wide
+await app.register(tenantB);                       // no prefix: app-wide
+
+// Throws: /a lies inside BOTH realms. Before this fix it authenticated against
+// whichever realm registered LAST, so tenant B's token was accepted here and
+// tenant A's own users were rejected.
+app.get('/a', { preHandler: createJWTGuard() }, handler);
+```
+
+**Case 2, the route lies inside no realm at all.**
 
 ```typescript
 await app.register(tenantA, { prefix: '/tenant-a' });
@@ -101,13 +121,48 @@ await app.register(tenantB, { prefix: '/tenant-b' });
 
 // Throws: this route belongs to no realm and there are two to choose from.
 app.get('/root', { preHandler: createJWTGuard() }, handler);
-
-// Say which realm you mean:
-app.get('/root', { preHandler: tenantA.guard() }, handler);
 ```
 
+Either way, say which realm you mean:
+
+```typescript
+app.get('/root', { preHandler: tenantA.guard() }, handler);
+app.get('/root', { preHandler: createJWTGuard({ secret: TENANT_A_SECRET }) }, handler);
+```
+
+Or give each realm its own prefix so exactly one realm covers each route.
+
+The refusal happens **when the route is served, not when the realm is
+registered**: whether an ambiguity exists depends on which routes each realm's
+scope ends up covering, and the plugin cannot see that from inside a
+registration. It fails closed, so no request is ever authenticated against a
+guessed realm, but a misconfiguration surfaces as a 500 on the affected route
+rather than at boot.
+
 With exactly one realm registered, the no-argument guard still resolves it
-anywhere on the app.
+anywhere on the app, inside its scope or outside it.
+
+### `app.jwt` with more than one realm
+
+`app.jwt` is a single app-wide property, and Celsian hoists decorations
+first-writer-wins, so with several realms it used to bind to whichever realm
+registered FIRST for the entire app. A second tenant's login route calling
+`app.jwt.sign()` got back a credential signed with the FIRST tenant's secret.
+
+`app.jwt.sign()` and `app.jwt.verify()` now reject with an actionable error as
+soon as a second realm registers. Go through the realm handle instead, which is
+always bound to its own key material:
+
+```typescript
+const tenantB = jwt({ secret: process.env.TENANT_B_SECRET! });
+await app.register(tenantB, { prefix: '/tenant-b' });
+
+await tenantB.sign({ sub: userId });     // correct: tenant B's secret
+await tenantB.verify(token);
+```
+
+Single-realm apps are unaffected: `app.jwt.sign()` and `app.jwt.verify()` work
+exactly as before and use that realm.
 
 ## Asymmetric keys
 

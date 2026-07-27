@@ -23,6 +23,7 @@ The batteries-included TypeScript backend that goes serverless without leaving i
 ```bash
 npx create-celsian my-api
 cd my-api
+npm install
 npm run dev
 ```
 
@@ -154,11 +155,11 @@ app.ws('/chat', { open, message, close });                // WebSocket
 
 Plugins get isolated scopes by default. Decorations, and `onRequest` / `preHandler` hooks, registered inside a plugin do not leak to sibling plugins or the parent scope.
 
-> **Known gap (0.5.5).** Encapsulation is not yet complete: `onSend` and `onResponse`
-> hooks registered inside a plugin DO run for routes registered outside it. Verified
-> 2026-07-26: a plugin registering all four hook types under a `/p` prefix still fired
-> its `onSend` and `onResponse` for a sibling `GET /outside`. Do not rely on those two
-> hook types being scoped. `onRequest` and `preHandler` scope correctly.
+> **Fixed in 0.6.0.** All four hook types (`onRequest`, `preHandler`, `onSend`,
+> `onResponse`) are scoped to the plugin's prefix. Re-verified against a plugin
+> registering all four under `/p`: routes inside it saw all four, while a sibling
+> plugin and a bare `GET /outside` saw none. Earlier releases discarded
+> `onRequest`/`preHandler` and leaked `onSend`/`onResponse` to every ancestor.
 
 ```typescript
 // Auth plugin -- hooks only apply to routes registered inside

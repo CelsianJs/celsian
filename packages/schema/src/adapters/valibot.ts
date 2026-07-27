@@ -1,5 +1,6 @@
 // @celsian/schema -- Valibot adapter
 
+import { valibotToJsonSchema } from "../json-schema.js";
 import type { SchemaResult, StandardSchema } from "../standard.js";
 
 export function fromValibot<T>(valibotSchema: any): StandardSchema<T, T> {
@@ -55,7 +56,11 @@ export function fromValibot<T>(valibotSchema: any): StandardSchema<T, T> {
       }
     },
     toJsonSchema(): Record<string, unknown> {
-      return { type: "object" };
+      // Valibot's own JSON Schema converter lives in a separate package
+      // (`@valibot/to-json-schema`), which Celsian cannot depend on, so this
+      // reads Valibot's internal schema representation directly. It used to
+      // return a bare `{ type: "object" }`, which documented no fields at all.
+      return valibotToJsonSchema(valibotSchema);
     },
     _input: undefined as unknown as T,
     _output: undefined as unknown as T,

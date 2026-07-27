@@ -64,7 +64,26 @@ describe("JWT realm isolation, nested and un-prefixed", () => {
     expect(await legit.json()).toEqual({ realm: "A" });
   });
 
-  it("isolates two un-prefixed realms on one app", async () => {
+  /**
+   * Two un-prefixed realms cannot be isolated by an unbound guard, so the
+   * unbound guard now refuses instead of pretending.
+   *
+   * A plugin registered without a prefix is APP-WIDE by core's own definition
+   * (see `collectScopeContexts` in packages/core/src/context.ts: an un-prefixed
+   * child is "transparent", and its hooks and decorations apply to the whole
+   * surrounding scope, siblings included). So here both realms cover /a/me AND
+   * /b/me, and both `createJWTGuard()` hooks run on both routes.
+   *
+   * This shape used to produce the right answer only because core's decoration
+   * merge is last-writer-wins over a chain that happens to end at the route's
+   * own context. That tie-break is not isolation: register the realms directly
+   * on the app instead of inside a wrapper closure and the exact same code
+   * authenticated tenant B on tenant A's route (see realm-ambiguity.test.ts).
+   * Relying on it would have left that bypass in place, so the guard now fails
+   * CLOSED whenever more than one realm covers the matched route, and names the
+   * two ways to say which realm you mean.
+   */
+  it("refuses to guess between two un-prefixed realms rather than relying on a tie-break", async () => {
     const realmA = jwt({ secret: SECRET_A });
     const realmB = jwt({ secret: SECRET_B });
     const app = createApp();
@@ -78,6 +97,47 @@ describe("JWT realm isolation, nested and un-prefixed", () => {
       await t.register(realmB, { encapsulate: false });
       t.addHook("preHandler", createJWTGuard());
       t.get("/b/me", (_r, reply) => reply.json({ realm: "B" }));
+    });
+
+    const messages: string[] = [];
+    app.setErrorHandler((error) => {
+      messages.push(error.message);
+      return new Response("handled", { status: 500 });
+    });
+
+    const tokenA = await realmA.sign({ sub: "user-a" });
+    const tokenB = await realmB.sign({ sub: "user-b" });
+
+    // Neither the cross-tenant token nor the realm's own token authenticates:
+    // no route here belongs to exactly one realm.
+    for (const url of ["/a/me", "/b/me"]) {
+      for (const token of [tokenA, tokenB]) {
+        expect((await app.inject({ url, headers: { authorization: `Bearer ${token}` } })).status).not.toBe(200);
+      }
+    }
+
+    expect(messages[0]).toMatch(/2 JWT realms/);
+    expect(messages[0]).toMatch(/prefix: '\/tenant-a'/);
+  });
+
+  /**
+   * The remedy for the shape above. `addHook` on an un-prefixed context is
+   * app-wide, so BOTH scope hooks run on BOTH routes there, which is why no
+   * guard placed that way can isolate anything. A realm-bound guard attached to
+   * the route itself runs only for that route.
+   */
+  it("isolates two un-prefixed realms once each route carries its own realm-bound guard", async () => {
+    const realmA = jwt({ secret: SECRET_A });
+    const realmB = jwt({ secret: SECRET_B });
+    const app = createApp();
+
+    await app.register(async (t) => {
+      await t.register(realmA, { encapsulate: false });
+      t.get("/a/me", { preHandler: realmA.guard() }, (_r, reply) => reply.json({ realm: "A" }));
+    });
+    await app.register(async (t) => {
+      await t.register(realmB, { encapsulate: false });
+      t.get("/b/me", { preHandler: realmB.guard() }, (_r, reply) => reply.json({ realm: "B" }));
     });
 
     const tokenA = await realmA.sign({ sub: "user-a" });

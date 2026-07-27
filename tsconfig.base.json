@@ -12,8 +12,25 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
+    // No source maps in the published build. Every package ships
+    // `files: ["dist"]` and deliberately does NOT ship `src`, so a `.js.map` /
+    // `.d.ts.map` whose `sources` is `["../src/index.ts"]` points at a file
+    // that is never in the tarball: the consumer's debugger cannot step into
+    // it and "Go to Definition" lands on a path that does not exist, while the
+    // maps cost real bytes (30.1 kB of dead weight in @celsian/core's
+    // app.js.map alone, roughly 40% of the tarball across the maps).
+    //
+    // The alternative, adding `src` to every package's `files`, would make the
+    // maps work but roughly double each tarball to provide a debugging
+    // affordance the project has never offered. Dropping the maps is the
+    // smaller, honest change: without a map, tooling falls back to the emitted
+    // .js/.d.ts, which is correct rather than broken.
+    //
+    // In-repo development is unaffected: tsconfig.typecheck.json and vitest
+    // resolve @celsian/* to `packages/*/src`, so nothing local relies on these
+    // maps to reach source.
+    "declarationMap": false,
+    "sourceMap": false,
     "outDir": "dist",
     "rootDir": "src"
   }

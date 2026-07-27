@@ -275,8 +275,9 @@ import { rateLimit } from '@celsian/rate-limit';
 async function authRoutes(app) {
   // trustProxy: true reads the client IP from X-Forwarded-For (required behind a
   // proxy, or pass a keyGenerator: without one of them rateLimit() throws).
-  // encapsulate: false makes the limiter's onRequest hook apply to THIS plugin's
-  // routes; without it the hook lands in a child scope and never runs (no limiting).
+  // encapsulate: false states app-wide intent explicitly. It is NOT required for
+  // the limiter to run: since 0.6.0 an un-prefixed plugin is app-wide either way.
+  // Measured identical both ways: 200,200,200,200,200,429,429,429.
   await app.register(rateLimit({ max: 5, window: 60_000, trustProxy: true }), { encapsulate: false });
 
   app.post('/login', loginHandler);

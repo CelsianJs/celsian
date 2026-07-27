@@ -1,5 +1,6 @@
 // @celsian/schema, Zod adapter
 
+import { zodToJsonSchema } from "../json-schema.js";
 import type { SchemaResult, StandardSchema } from "../standard.js";
 
 /**
@@ -91,10 +92,16 @@ export function fromZod<T>(zodSchema: ZodLike): StandardSchema<T, T> {
       };
     },
     toJsonSchema(): Record<string, unknown> {
+      // `toJsonSchema()` is honoured first for hand-rolled Zod-like objects that
+      // supply their own. No real Zod release has it: Zod 3 has no JSON Schema
+      // export at all and Zod 4 puts one on the top-level `z.toJSONSchema()`
+      // function, not on the schema. Trusting that method to exist is what made
+      // every documented Zod route publish a bare `{"type":"object"}` with no
+      // properties, so the fallback now actually converts the schema.
       if (typeof zodSchema.toJsonSchema === "function") {
         return zodSchema.toJsonSchema();
       }
-      return { type: "object" };
+      return zodToJsonSchema(zodSchema);
     },
     _input: undefined as unknown as T,
     _output: undefined as unknown as T,

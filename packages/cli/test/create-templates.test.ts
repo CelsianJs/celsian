@@ -4,7 +4,7 @@
 
 import { createApp, csrf } from "@celsian/core";
 import { Type } from "@sinclair/typebox";
-import { templates } from "create-celsian";
+import { CELSIAN_VERSION, templates } from "create-celsian";
 import { describe, expect, it } from "vitest";
 
 describe("celsian create, template registry", () => {
@@ -18,7 +18,7 @@ describe("celsian create, template registry", () => {
       const deps = { ...pkg.dependencies, ...pkg.devDependencies };
       for (const [dep, version] of Object.entries(deps)) {
         if (dep === "celsian" || dep.startsWith("@celsian/")) {
-          expect(version, `${name} -> ${dep}`).toBe("^0.5.0");
+          expect(version, `${name} -> ${dep}`).toBe(CELSIAN_VERSION);
         }
       }
     }

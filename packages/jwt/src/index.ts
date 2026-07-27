@@ -10,42 +10,42 @@ import {
 import * as jose from "jose";
 
 /**
- * Request key for the realm config bound to the encapsulation context that
- * registered the plugin. Resolved through the matched route's context chain.
+ * Request key for the per-app realm registry.
+ *
+ * Decorated with `scope: "app"` so it reaches EVERY request on the app, and the
+ * unbound guard can enumerate the realms this app runs. The registry lives on
+ * the app root (not in a module global) so separate `CelsianApp` instances in
+ * one process cannot contaminate each other.
  */
-const REQUEST_CONFIG_KEY = Symbol("@celsian/jwt/config");
+const REQUEST_REGISTRY_KEY = Symbol("@celsian/jwt/realm-registry");
 
 /**
- * Request key for the app-wide single-realm compatibility fallback.
+ * One registered realm.
  *
- * The context-scoped {@link REQUEST_CONFIG_KEY} above is the authority. This
- * key exists only so that the ONE-realm-per-app case keeps working while
- * plugin-scoped request decorations are hoisted to the root context, it is
- * last-writer-wins by construction and is therefore consulted ONLY when the
- * context-scoped config is absent. With more than one realm on a single app
- * you must pass an explicit `{ secret }` to `createJWTGuard()`, or use the
- * realm-bound `jwt(...).guard()` (see README).
+ * `presenceKey` is decorated at the realm's own PLUGIN scope, so core's
+ * context-chain resolution attaches it to exactly the requests whose matched
+ * route lies inside that realm's encapsulation scope. Counting how many
+ * presence keys are on a request is what tells "this route belongs to one
+ * realm" apart from "this route sits inside several at once".
+ *
+ * A single shared key cannot answer that question: a Map holds one value per
+ * key, so two realms in the same scope silently collapse into whichever
+ * registered last. That collapse WAS the bypass, an un-prefixed realm creates a
+ * transparent context whose decorations propagate into the parent scope, so
+ * tenant B's config overwrote tenant A's on every route in that scope.
  */
-const REQUEST_FALLBACK_KEY = Symbol("@celsian/jwt/config-fallback");
+interface RealmEntry {
+  readonly presenceKey: symbol;
+  readonly config: ResolvedJWTConfig;
+  readonly instance: JWTNamespace;
+}
 
-/**
- * Request key for the per-app realm census.
- *
- * The fallback above is last-writer-wins, so with two realms on one app an
- * unbound `createJWTGuard()` silently authenticated every unscoped route against
- * whichever realm registered LAST: tenant B's token was accepted on a root
- * route while tenant A's was rejected. Counting registrations lets the guard
- * keep the single-realm convenience and fail CLOSED the moment the answer
- * becomes a guess.
- *
- * The counter lives on the app root (not in a module global) so separate
- * `CelsianApp` instances in one process do not contaminate each other.
- */
-const REQUEST_REALM_CENSUS_KEY = Symbol("@celsian/jwt/realm-census");
-
-/** Mutable per-app count of registered JWT realms. */
-interface RealmCensus {
-  count: number;
+/** Mutable per-app record of every registered JWT realm. */
+interface RealmRegistry {
+  /** In registration order. */
+  readonly realms: RealmEntry[];
+  /** The one object decorated as `app.jwt`, shared by every realm on this app. */
+  readonly namespace: JWTNamespace;
 }
 
 /** Default lifetime applied by `sign()` when no `expiresIn` is given. */
@@ -361,6 +361,63 @@ export interface JWTNamespace {
 }
 
 /**
+ * The shared `app.jwt` namespace for one app.
+ *
+ * `app.jwt` is a single app-wide property, but core hoists decorations
+ * first-writer-wins, so with several realms it silently bound to realm #1 for
+ * the whole app: tenant B's login route called the documented `app.jwt.sign()`
+ * and got back a credential signed with TENANT A's secret. There is no correct
+ * answer to "which realm is `app.jwt`" once a second realm registers, so it
+ * stops answering and says how to ask unambiguously.
+ *
+ * Every realm on the app decorates this SAME object, so the hoisted value is
+ * the same one no matter which realm registered first.
+ */
+function createSharedNamespace(getRegistry: () => RealmRegistry): JWTNamespace {
+  const soleRealm = (method: "sign" | "verify"): RealmEntry => {
+    const { realms } = getRegistry();
+    if (realms.length === 1) return realms[0]!;
+    throw new CelsianError(
+      `[@celsian/jwt] app.jwt.${method}() is ambiguous: this app has ${realms.length} JWT realms registered ` +
+        "and app.jwt is a single app-wide property, so it cannot know which realm's key material you mean. " +
+        "Signing here would mint one tenant's credential with another tenant's secret. Go through the realm " +
+        "itself instead: keep the handle returned by jwt({ secret }) and call realm.sign() / realm.verify() " +
+        "on it, which is always bound to that realm's key material.",
+    );
+  };
+
+  return {
+    async sign(payload, signOptions) {
+      return soleRealm("sign").instance.sign(payload, signOptions);
+    },
+    async verify(token) {
+      return soleRealm("verify").instance.verify(token);
+    },
+  };
+}
+
+/**
+ * Fetch this app's realm registry, creating it on the first realm to register.
+ *
+ * The registry is stored as an app-scoped request decoration purely because
+ * that is the only per-app storage a plugin can reach: `getRequestDecoration`
+ * reads back what a previous registration wrote on the same app root.
+ */
+function getOrCreateRegistry(app: Parameters<PluginFunction>[0]): RealmRegistry {
+  const existing = app.getRequestDecoration(REQUEST_REGISTRY_KEY, { scope: "app" }) as RealmRegistry | undefined;
+  if (existing) return existing;
+
+  const realms: RealmEntry[] = [];
+  const registry: RealmRegistry = {
+    realms,
+    // Resolved lazily: the namespace must see realms added AFTER it was built.
+    namespace: createSharedNamespace(() => registry),
+  };
+  app.decorateRequest(REQUEST_REGISTRY_KEY, registry, { scope: "app" });
+  return registry;
+}
+
+/**
  * A registered JWT realm: a plugin function that also exposes a guard bound to
  * this exact realm. Use `.guard()` whenever an app runs more than one realm,
  * it never depends on ambient request state, so it cannot resolve to a
@@ -378,6 +435,12 @@ export interface JWTPlugin extends PluginFunction {
 /**
  * JWT authentication plugin. Decorates `app.jwt` with `sign()` and `verify()`.
  *
+ * With a SECOND realm on the same app, `app.jwt` becomes ambiguous (it is one
+ * app-wide property) and starts rejecting: sign and verify through the realm
+ * handle instead. Give each realm a prefix as well, an un-prefixed realm is
+ * app-wide and two of them cover the same routes, which no ambient guard can
+ * resolve.
+ *
  * @example
  * ```ts
  * // Single realm
@@ -385,10 +448,11 @@ export interface JWTPlugin extends PluginFunction {
  * const token = await app.jwt.sign({ sub: userId });
  * app.addHook('preHandler', createJWTGuard());
  *
- * // Multiple realms on one app, bind each guard to its realm explicitly
+ * // Multiple realms on one app: one prefix each, and a guard bound to its realm
  * const tenantA = jwt({ secret: process.env.TENANT_A_SECRET!, issuer: 'tenant-a' });
  * await app.register(tenantA, { prefix: '/tenant-a' });
  * app.addHook('preHandler', tenantA.guard());
+ * const token = await tenantA.sign({ sub: userId });  // NOT app.jwt.sign()
  * ```
  */
 export function jwt(options: JWTOptions): JWTPlugin {
@@ -404,23 +468,24 @@ export function jwt(options: JWTOptions): JWTPlugin {
   };
 
   function jwtPlugin(app: Parameters<PluginFunction>[0]): void {
-    // Bind the config to the encapsulation context that registered this plugin
-    // so a route resolves the realm it actually lives under. `scope: "app"`
-    // would hoist every realm onto the single root map, where the
-    // last-registered realm silently wins for the entire process.
-    app.decorateRequest(REQUEST_CONFIG_KEY, config);
-    // App-wide compatibility fallback for the single-realm case. See the
-    // REQUEST_FALLBACK_KEY doc comment for why this is not the authority.
-    app.decorateRequest(REQUEST_FALLBACK_KEY, config, { scope: "app" });
+    const registry = getOrCreateRegistry(app);
+    const entry: RealmEntry = {
+      presenceKey: Symbol(`@celsian/jwt/realm#${registry.realms.length + 1}`),
+      config,
+      instance: jwtInstance,
+    };
+    registry.realms.push(entry);
 
-    // Census the realms on this app so the unbound guard can tell "one realm,
-    // the fallback is unambiguous" from "several, refuse to guess".
-    const existing = app.getRequestDecoration(REQUEST_REALM_CENSUS_KEY, { scope: "app" }) as RealmCensus | undefined;
-    const census: RealmCensus = existing ?? { count: 0 };
-    census.count += 1;
-    app.decorateRequest(REQUEST_REALM_CENSUS_KEY, census, { scope: "app" });
+    // Plugin scope, NOT `scope: "app"`: core resolves this through the matched
+    // route's context chain, so the key is present exactly on the requests
+    // whose route lies inside this realm's scope. One key per realm, so two
+    // realms covering the same route are both visible instead of one silently
+    // overwriting the other.
+    app.decorateRequest(entry.presenceKey, entry);
 
-    app.decorate("jwt", jwtInstance);
+    // The same shared namespace object for every realm on this app, so the
+    // first-writer-wins hoist onto `app.jwt` cannot bind the app to realm #1.
+    app.decorate("jwt", registry.namespace);
   }
 
   return Object.assign(jwtPlugin as PluginFunction, {
@@ -460,11 +525,15 @@ function createGuardForConfig(resolve: (request: CelsianRequest) => ResolvedJWTC
  * Create a preHandler hook that verifies Bearer tokens and populates `request.user`.
  *
  * When called without arguments, the realm is resolved from the request at
- * request time. That is unambiguous only while the app runs a SINGLE realm.
- * With two or more, a route inside a realm's scope still resolves that realm,
- * but a route outside every realm's scope THROWS rather than authenticating
- * against an arbitrary one. Pass an explicit `{ secret }` here, or use the
- * realm-bound `jwt(...).guard()`, for those routes.
+ * request time: the realm whose scope covers the matched route. It THROWS
+ * rather than guessing whenever that answer is not exactly one realm, either
+ * because the route lies inside SEVERAL realms (what two un-prefixed realms
+ * produce, since an un-prefixed plugin is app-wide) or because it lies inside
+ * NONE while the app runs more than one. Pass an explicit `{ secret }` here, or
+ * use the realm-bound `jwt(...).guard()`, for those routes.
+ *
+ * A single-realm app is never ambiguous and resolves everywhere, inside that
+ * realm's scope or outside it.
  *
  * @example
  * ```ts
@@ -482,39 +551,54 @@ export function createJWTGuard(options?: JWTOptions): HookHandler {
     return createGuardForConfig(() => config);
   }
 
-  // No options, resolve the realm from the REQUEST. The context-scoped
-  // decoration is authoritative; the app-wide fallback covers the single-realm
-  // case. There is deliberately no module-global fallback: an undecorated
-  // request must fail closed rather than inherit another app's secret.
+  // No options: resolve the realm from the REQUEST. The realms whose presence
+  // key reached this request are exactly the realms whose scope covers the
+  // matched route. Exactly one is an answer, more than one is a guess, and a
+  // guess is how one tenant's token authenticates another's. There is
+  // deliberately no module-global fallback: an undecorated request must fail
+  // closed rather than inherit another app's secret.
   return createGuardForConfig((request) => {
     const bag = request as unknown as Record<PropertyKey, unknown>;
-    const scoped = bag[REQUEST_CONFIG_KEY] as ResolvedJWTConfig | undefined;
-    if (scoped) return scoped;
+    const registry = bag[REQUEST_REGISTRY_KEY] as RealmRegistry | undefined;
 
-    const census = bag[REQUEST_REALM_CENSUS_KEY] as RealmCensus | undefined;
-    const fallback = bag[REQUEST_FALLBACK_KEY] as ResolvedJWTConfig | undefined;
-
-    if (!fallback) {
+    if (!registry || registry.realms.length === 0) {
       throw new CelsianError(
         "createJWTGuard() called without options, but the JWT plugin has not been registered. " +
           "Either pass { secret } to createJWTGuard() or register the JWT plugin first with app.register(jwt({ secret })).",
       );
     }
 
-    // Several realms on this app and a route outside all of their contexts:
-    // the fallback would pick whichever realm registered last, i.e. one tenant's
-    // secret would authenticate on a route that belongs to no tenant. Refuse.
-    if (census && census.count > 1) {
+    const inScope = registry.realms.filter((realm) => bag[realm.presenceKey] !== undefined);
+
+    if (inScope.length === 1) return inScope[0]!.config;
+
+    // The route lies inside several realms at once. This is what an un-prefixed
+    // realm produces: it registers a transparent context, so its decorations
+    // and hooks apply to the whole surrounding scope, and a second one lands on
+    // the very same routes. Picking either would authenticate one tenant on the
+    // other's route.
+    if (inScope.length > 1) {
       throw new CelsianError(
-        `createJWTGuard() was called without options on a route that is outside every JWT realm's scope, ` +
-          `but this app has ${census.count} realms registered. Refusing to guess which one applies. ` +
+        `createJWTGuard() was called without options on a route that lies inside ${inScope.length} JWT realms ` +
+          `at once (this app has ${registry.realms.length} JWT realms registered). Refusing to guess which one ` +
+          "applies, since picking one would authenticate one realm's token on another realm's route. " +
           "Bind the guard explicitly: use the realm-bound jwt(...).guard(), or pass the realm's config as " +
-          "createJWTGuard({ secret }). To guard a route inside a realm, register that realm on the same " +
-          "prefix/scope as the route.",
+          "createJWTGuard({ secret }). A realm registered without a prefix is app-wide, so to give each realm " +
+          "its own routes, register it under a prefix: app.register(realm, { prefix: '/tenant-a' }).",
       );
     }
 
-    return fallback;
+    // No realm covers this route. With exactly one realm on the app that is
+    // still unambiguous, so the single-realm convenience keeps working.
+    if (registry.realms.length === 1) return registry.realms[0]!.config;
+
+    throw new CelsianError(
+      `createJWTGuard() was called without options on a route that is outside every JWT realm's scope, ` +
+        `but this app has ${registry.realms.length} JWT realms registered. Refusing to guess which one applies. ` +
+        "Bind the guard explicitly: use the realm-bound jwt(...).guard(), or pass the realm's config as " +
+        "createJWTGuard({ secret }). To guard a route inside a realm, register that realm on the same " +
+        "prefix/scope as the route.",
+    );
   });
 }
 

@@ -2,10 +2,11 @@
 
 import type { CelsianReply, CelsianRequest, HookHandler, PluginFunction } from "@celsian/core";
 import { CelsianError } from "@celsian/core";
-import { type Cidr, isTrustedProxy, parseCidr } from "./ip.js";
+import { sha256Hex } from "./hash.js";
+import { type Cidr, canonicalizeIp, isTrustedProxy, parseCidr } from "./ip.js";
 
 export type { Cidr, ParsedIp } from "./ip.js";
-export { ipInCidr, isTrustedProxy, parseCidr, parseIp } from "./ip.js";
+export { canonicalizeIp, formatIp, ipInCidr, isTrustedProxy, parseCidr, parseIp } from "./ip.js";
 export { createRedisRateLimitStore, type RedisRateLimitClient, type RedisRateLimitStoreOptions } from "./redis.js";
 
 /** Options for the rate limiter: max requests, window size, key generation, and store. */
@@ -42,6 +43,11 @@ export interface RateLimitOptions {
    * the `trustProxy` hop-count mode. The IP is taken this many entries from the
    * RIGHT, because trusted proxies append the address they saw on the right
    * while everything further left is client-supplied (spoofable). Default: 1.
+   *
+   * A request arriving with FEWER than `trustedProxyHops` entries did not
+   * traverse the declared proxies, so the limiter fails closed and puts it in
+   * the shared unidentified bucket. It does NOT fall back to the leftmost
+   * entry, which is client-supplied and would hand the caller its own key.
    */
   trustedProxyHops?: number;
   /**
@@ -60,8 +66,9 @@ export interface RateLimitOptions {
    */
   maxKeys?: number;
   /**
-   * Maximum key length in characters. Longer keys are collapsed into one shared
-   * oversized bucket rather than stored verbatim. Default: 256.
+   * Maximum key length in characters. Longer keys are replaced by a SHA-256
+   * digest of themselves rather than stored verbatim, which bounds memory
+   * without merging unrelated clients into a shared bucket. Default: 256.
    */
   maxKeyLength?: number;
 }
@@ -102,11 +109,20 @@ export interface MemoryRateLimitStoreOptions {
 const DEFAULT_MAX_KEYS = 100_000;
 const DEFAULT_MAX_KEY_LENGTH = 256;
 /**
- * Bucket every over-long key here. Hashing would be smaller but two distinct
- * attacker keys could then collide onto a victim; one shared bucket is fail
- * closed, abusive oversized keys throttle each other and nobody else.
+ * Prefix for the digest of an over-long key. Over-long keys used to be
+ * collapsed into ONE shared bucket, which bounded memory but merged unrelated
+ * clients: a `keyGenerator` legitimately returning long keys (a composite
+ * tenant+user key, a long token subject) made user B inherit user A's count and
+ * get a 429 on their very first request.
+ *
+ * Hashing bounds the stored key just as hard while keeping distinct clients
+ * distinct. The digest is cryptographic ({@link sha256Hex}) precisely because
+ * the earlier objection to hashing was collision-onto-a-victim: with SHA-256
+ * that requires a second preimage, not a birthday search. The prefix keeps the
+ * digest out of the namespace a `keyGenerator` could plausibly produce
+ * verbatim, so a hashed key cannot land on an unhashed one.
  */
-const OVERSIZED_KEY = "__oversized__";
+const HASHED_KEY_PREFIX = "__hashed__:";
 const EVICTION_SCAN_LIMIT = 16;
 
 /** In-memory fixed-window store with periodic cleanup and a max-keys cap. Single-process only. */
@@ -238,7 +254,10 @@ function clientIpFromTrustedProxies(req: CelsianRequest, trusted: Cidr[]): strin
   const entries = splitForwardedFor(xff);
   for (let i = entries.length - 1; i >= 0; i--) {
     const candidate = entries[i]!;
-    if (!isTrustedProxy(candidate, trusted)) return candidate;
+    // `canonicalizeIp` returns null for text that is not an address at all.
+    // That entry is client-supplied, so we fail closed rather than key on the
+    // raw text, which would be a rotatable, unbounded bucket key.
+    if (!isTrustedProxy(candidate, trusted)) return canonicalizeIp(candidate);
   }
   // Every entry was one of our proxies, there is no client address to key on.
   return null;
@@ -251,7 +270,18 @@ function clientIpFromHopCount(req: CelsianRequest, hops: number): string | null 
   // Trusted proxies append the address they saw on the RIGHT, so the real
   // client IP sits `hops` entries from the right. Keying on the LEFTMOST value
   // lets an attacker rotate a fake IP per request and fully bypass the limiter.
-  return entries[Math.max(0, entries.length - hops)] ?? null;
+  //
+  // FAIL CLOSED when the chain is SHORTER than the declared hop count. This
+  // used to clamp the index to 0, which is the worst possible fallback: with
+  // fewer real hops than configured, index 0 is a fully client-supplied entry,
+  // handing the attacker their own bucket key. That was both an unlimited-quota
+  // bypass (rotate the value, get a fresh bucket every request) and a targeted
+  // lockout primitive (set it to a victim's IP and burn the victim's bucket
+  // before they ever send a request). A chain this short means the request did
+  // NOT traverse the declared proxies, so there is nothing here to trust: drop
+  // to the shared unidentified bucket instead.
+  if (entries.length < hops) return null;
+  return canonicalizeIp(entries[entries.length - hops]!);
 }
 
 function createDefaultKeyGenerator(options: {
@@ -283,7 +313,11 @@ function createDefaultKeyGenerator(options: {
     // deployment explicitly declares a proxy overwrites it.
     if (trustXRealIp) {
       const realIp = req.headers.get("x-real-ip");
-      if (realIp) return realIp.trim();
+      // Canonicalized like the XFF path: one host is one bucket regardless of
+      // spelling, and unparseable text falls through to the shared bucket
+      // instead of becoming a rotatable key.
+      const canonical = realIp ? canonicalizeIp(realIp) : null;
+      if (canonical) return canonical;
     }
 
     // Fail closed: when we cannot identify the client, bucket all such requests
@@ -384,10 +418,13 @@ export function rateLimit(options: RateLimitOptions): PluginFunction {
   return function rateLimitPlugin(app) {
     const hook: HookHandler<void | Response> = async (request: CelsianRequest, reply: CelsianReply) => {
       const rawKey = keyGenerator(request);
-      // Keys derived from headers are attacker-controlled AND unbounded in
-      // length: a 20 KB X-Real-IP stored verbatim against a 100k-key cap is
-      // gigabytes of retained memory per window.
-      const key = rawKey.length > maxKeyLength ? OVERSIZED_KEY : rawKey;
+      // Keys can be attacker-influenced AND unbounded in length: a 20 KB value
+      // stored verbatim against a 100k-key cap is gigabytes of retained memory
+      // per window. Hash rather than truncate or collapse, so the stored key is
+      // bounded to a fixed size without merging unrelated clients into one
+      // bucket (truncation would merge every key sharing a prefix; a single
+      // shared oversized bucket merged all of them).
+      const key = rawKey.length > maxKeyLength ? HASHED_KEY_PREFIX + sha256Hex(rawKey) : rawKey;
 
       const { count, resetAt } = await store.increment(key, window);
 
