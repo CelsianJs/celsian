@@ -21,11 +21,19 @@ env:
   # Skip husky's prepare-time hook install in CI (no commits happen here).
   HUSKY: 0
 
-# Third-party actions are pinned to full commit SHAs, with the humanreadable
+# Third-party actions are pinned to full commit SHAs, with the human-readable
 # version in a trailing comment. A floating tag (`@v4`) is a mutable pointer:
 # whoever controls the action repo can retag it at any time, and that code then
-# runs inside jobs that hold secrets. Dependabot's github-actions ecosystem
-# (see .github/dependabot.yml) keeps these SHAs current.
+# runs inside jobs that hold secrets.
+#
+# DEPENDABOT DOES NOT SEE THIS FILE. Its github-actions ecosystem only scans
+# .github/workflows/ (plus a root action.yml) and cannot be pointed elsewhere,
+# so nothing bumps these pins automatically. The claim that Dependabot keeps
+# them current was carried over from the .github copy and was false here.
+# `pnpm check:action-pins` (in the lint job) fails when an action used in both
+# trees drifts, so a Dependabot bump to .github cannot land without this file
+# following. Actions used ONLY here have no upstream at all and need a periodic
+# manual look; the script lists them on every run.
 
 jobs:
   test:
@@ -49,11 +57,11 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: ${{ matrix.node-version }}
           cache: pnpm
@@ -112,11 +120,11 @@ jobs:
   lint:
     runs-on: depot-ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22
           cache: pnpm
@@ -125,6 +133,12 @@ jobs:
 
       - name: Verify release surface
         run: pnpm assert:release-private
+
+      - name: Verify action pins have not drifted
+        # Dependabot cannot see .depot/workflows/, so this is the only thing
+        # keeping its pinned action SHAs from silently falling behind the
+        # .github copy that Dependabot does update.
+        run: pnpm check:action-pins
 
       - name: Lint report (warnings included, informational)
         # The blocking step below filters to errors, which hid ~183 warnings
@@ -140,11 +154,11 @@ jobs:
   security-audit:
     runs-on: depot-ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22
           cache: pnpm
@@ -171,11 +185,11 @@ jobs:
   examples:
     runs-on: depot-ubuntu-24.04-4
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22
           cache: pnpm
@@ -191,11 +205,11 @@ jobs:
   test-bun:
     runs-on: depot-ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22
           cache: pnpm
@@ -229,11 +243,11 @@ jobs:
   test-deno:
     runs-on: depot-ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22
           cache: pnpm
@@ -261,11 +275,11 @@ jobs:
   test-workerd:
     runs-on: depot-ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22
           cache: pnpm
