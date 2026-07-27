@@ -25,7 +25,7 @@
     "@celsian/schema": "workspace:*"
   },
   "devDependencies": {
-    "@sinclair/typebox": "^0.34.49",
+    "@sinclair/typebox": "^0.34.52",
     "valibot": "^1.2.0",
     "zod": "^4.3.6"
   },
