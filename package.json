@@ -40,7 +40,7 @@
     }
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.2",
+    "@biomejs/biome": "^2.5.5",
     "@changesets/cli": "^2.31.0",
     "@sinclair/typebox": "^0.34.49",
     "@size-limit/preset-small-lib": "^12.1.0",
