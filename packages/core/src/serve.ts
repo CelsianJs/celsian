@@ -338,7 +338,7 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
         default?: { WebSocketServer?: new (options: Record<string, unknown>) => any };
       };
       const { createWSConnection } = await import("./websocket.js");
-      const { buildRequest } = await import("./request.js");
+      const { buildRequest, resolveEffectiveUrl } = await import("./request.js");
       const WSS = wsMod.WebSocketServer ?? (wsMod as any).default?.WebSocketServer;
       // `ws` defaults maxPayload to 100 MB, far too generous for a default.
       const wss = new WSS({ noServer: true, maxPayload: options.maxPayload ?? 1024 * 1024 });
@@ -400,8 +400,17 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
 
           app.wsRegistry.addConnection(pathname, conn);
 
-          // Build a CelsianRequest for the upgrade (reuses the gated Request)
-          const celsianReq = buildRequest(webReq, url, {});
+          // Build a CelsianRequest for the upgrade (reuses the gated Request).
+          //
+          // `url` above is composed from the address the server BOUND to, which
+          // is `0.0.0.0` in production, so handing it straight to the handler
+          // meant a WebSocket handler saw `http://0.0.0.0:3000/chat` instead of
+          // the host the client addressed. That breaks any handler that routes
+          // on host (multi-tenant apps especially). The upgrade GATE already
+          // resolves this itself, so this was never an auth bypass, only a
+          // wrong value delivered to application code.
+          const effectiveUrl = new URL(resolveEffectiveUrl(webReq.url, webReq.headers, app.getForwardedTrust()));
+          const celsianReq = buildRequest(webReq, effectiveUrl, {});
 
           handler.open?.(conn, celsianReq);
 
