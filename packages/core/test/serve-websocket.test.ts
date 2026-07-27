@@ -178,3 +178,38 @@ describe("serve() WebSocket upgrade, connection cap", () => {
     first.close();
   });
 });
+
+// The upgrade GATE resolves the client's real host itself, so this was never an
+// auth bypass. But the CelsianRequest handed to `handler.open` was still built
+// from the URL composed out of the address the server BOUND to, which is
+// `0.0.0.0` under NODE_ENV=production. A handler that routes on host, which is
+// how a multi-tenant app dispatches, therefore saw `http://0.0.0.0:PORT/chat`
+// for every tenant. Measured before the fix:
+//   {"urlSeenByHandler":"http://0.0.0.0:5701/chat"}
+describe("serve() WebSocket upgrade, host seen by the handler", () => {
+  it("reports the host the client addressed, not the bind address", async () => {
+    const app = createApp();
+    let seen = "";
+    app.ws("/chat", {
+      open: (_conn, req) => {
+        seen = req?.url ?? "";
+      },
+    });
+    // Bind the wildcard, which is what production does and what made the bug
+    // invisible on a loopback-bound dev server.
+    const { url, port } = await start(app, { host: "0.0.0.0" });
+
+    const socket = await connect(url("/chat"), {
+      origin: "http://tenant-a.example.com",
+      headers: { host: "tenant-a.example.com" },
+    } as never);
+    // `open` fires before the client's "open" resolves in some orderings, so
+    // give the handler a turn rather than asserting on a race.
+    await new Promise((r) => setTimeout(r, 50));
+    socket.close();
+
+    expect(seen).toBe("http://tenant-a.example.com/chat");
+    expect(seen).not.toContain("0.0.0.0");
+    expect(seen).not.toContain(String(port));
+  });
+});

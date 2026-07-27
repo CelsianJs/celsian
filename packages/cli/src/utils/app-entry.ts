@@ -87,7 +87,15 @@ process.exit(0);
       cwd,
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
-      timeout: 30_000,
+      // This budget covers an `npx tsx` COLD START, not the user's app doing
+      // work, so it has to absorb module resolution and a TypeScript transpile
+      // on a machine that may be busy. Unloaded it completes in well under a
+      // second; on a loaded CI runner (or a laptop mid-build) it was observed
+      // hitting the old 30s ceiling and failing a green build for no reason.
+      // Overshooting here costs nothing in the normal case: the process exits
+      // as soon as it has answered, and the timeout is only ever reached when
+      // something is genuinely wrong.
+      timeout: 120_000,
       // If the entry calls serve(), bind an ephemeral port so this never fails
       // with EADDRINUSE while the real dev server is running.
       env: { ...process.env, PORT: "0" },
