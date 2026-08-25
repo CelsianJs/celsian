@@ -1,6 +1,5 @@
 {
   "name": "celsian-monorepo",
-  "version": "0.5.5",
   "private": true,
   "type": "module",
   "scripts": {

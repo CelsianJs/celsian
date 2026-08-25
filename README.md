@@ -2,7 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/celsian)](https://www.npmjs.com/package/celsian)
 [![license](https://img.shields.io/npm/l/celsian)](https://github.com/CelsianJs/celsian/blob/main/LICENSE)
-[![CI](https://img.shields.io/github/actions/workflow/status/CelsianJs/celsian/test.yml?branch=main&label=tests)](https://github.com/CelsianJs/celsian/actions)
+[![CI](https://img.shields.io/github/check-runs/CelsianJs/celsian/main?label=CI)](https://github.com/CelsianJs/celsian/commits/main)
 
 The batteries-included TypeScript backend that goes serverless without leaving its batteries behind. Built on Web Standard APIs -- one app deploys to Node.js, Bun, Deno, Cloudflare Workers, AWS Lambda, Vercel.
 
