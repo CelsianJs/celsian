@@ -91,21 +91,27 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
 
-      # v2 renamed every input this step passes: `publish` -> `publish-script`,
-      # `title` -> `pr-title`, `commit` -> `commit-message`. An unknown input is
-      # not an error in Actions, so bumping the SHA without renaming them would
-      # have left the action on its defaults: no publish script at all, and a
-      # version PR titled "Version Packages". The release would look like it ran
-      # and nothing would reach npm. The `published` output is unchanged.
+      # PINNED TO THE v1 LINE ON PURPOSE. The action major is coupled to the
+      # Changesets CLI major: v2 of this action refuses to run against CLI v2
+      # ("designed to work with Changesets CLI v3"), and CLI v3 in turn requires
+      # pnpm >= 10 while this repo is on pnpm 9.15. Moving to the v2 action is
+      # therefore a three-part change (action + CLI + package manager), not a
+      # SHA bump. `scripts/check-changesets-action-compat.mjs` enforces the
+      # pairing so the next attempt fails in PR CI instead of here.
       #
-      # v1 was a BRANCH ref upstream that moved on every push; v2.1.1 is a real
-      # release tag, pinned here to its commit.
-      - uses: changesets/action@8488615a623b1b9c987934bb89eae8af6a946ac1 # v2.1.1
+      # `changesets/action@v1` is a BRANCH ref upstream, not a tag, so this pins
+      # the commit that upstream tagged v1.9.0.
+      #
+      # Input names below are the v1 spelling. v2 renamed all three
+      # (`publish` -> `publish-script`, `title` -> `pr-title`,
+      # `commit` -> `commit-message`), and an unknown input is not an error in
+      # Actions, so the names must move together with the major.
+      - uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
         id: changesets
         with:
-          publish-script: pnpm release
-          pr-title: "chore: version packages"
-          commit-message: "chore: version packages"
+          publish: pnpm release
+          title: "chore: version packages"
+          commit: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

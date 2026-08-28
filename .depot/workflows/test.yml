@@ -146,6 +146,13 @@ jobs:
         # from the only file a reader would look in.
         run: pnpm check:root-changelog
 
+      - name: Verify the Changesets action and CLI majors are a matching pair
+        # The release workflow only runs on pushes to main, so a mismatch here
+        # lands after the pull request that caused it is already green. It has
+        # broken the release once: action v2 hard-refuses CLI v2, and v2 also
+        # renamed every input the step passes, which Actions ignores silently.
+        run: pnpm check:changesets-compat
+
       - name: Lint report (warnings included, informational)
         # The blocking step below filters to errors, which hid ~183 warnings
         # from anyone reading CI. This step exists purely so they are visible.
