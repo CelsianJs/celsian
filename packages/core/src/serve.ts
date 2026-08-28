@@ -74,8 +74,10 @@ export async function serve(app: CelsianApp, options: ServeOptions = {}): Promis
 
   // Load config file if present (options override config)
   let configPort = 3000;
-  // Same default policy as loadConfig: HOST env, then 0.0.0.0 in production / localhost in dev
-  let configHost = process.env.HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "localhost");
+  // Same default policy as loadConfig's defaultHost(): HOST env, then 0.0.0.0 in
+  // production / the 127.0.0.1 loopback ADDRESS in dev. See defaultHost() for why
+  // it is not the name "localhost".
+  let configHost = process.env.HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
   try {
     const { loadConfig } = await import("./config.js");
     const config = await loadConfig();
@@ -134,6 +136,58 @@ function announce(app: CelsianApp, message: string, level: "log" | "warn" = "log
 }
 
 /**
+ * A `listen()` failure that has already been put into plain language.
+ *
+ * The original Node error is kept as `cause` for debugging; the message is
+ * what a developer reads. Marked as its own type so the fatal handler can
+ * print the guidance on its own, without the "unhandledRejection" framing and
+ * a Node-internal stack that make a busy port look like a framework crash.
+ */
+export class ServeListenError extends Error {
+  constructor(message: string, cause: unknown) {
+    super(message, { cause });
+    this.name = "ServeListenError";
+  }
+}
+
+/**
+ * Translate the handful of `listen()` failures a developer actually causes.
+ *
+ * A taken port is the single most common thing that happens on `npm run dev`,
+ * and Node reports it as "listen EADDRINUSE: address already in use ::1:3000"
+ * with a stack through `node:net`, which says nothing about what to do next.
+ * Anything unrecognised is passed through untouched rather than being
+ * paraphrased into something less accurate.
+ */
+function explainListenError(error: unknown, host: string, port: number): unknown {
+  const code = (error as NodeJS.ErrnoException | null)?.code;
+  const where = `${host.includes(":") ? `[${host}]` : host}:${port}`;
+
+  if (code === "EADDRINUSE") {
+    // Suggest a concrete free-looking port rather than a literal, so the hint
+    // never reads "port 3001 is in use, try PORT=3001".
+    const suggestion = port + 1;
+    return new ServeListenError(
+      `Port ${port} is already in use (tried to bind ${where}). Stop whatever is using it, or pick another port with PORT=${suggestion} (or serve(app, { port: ${suggestion} })).`,
+      error,
+    );
+  }
+  if (code === "EACCES") {
+    return new ServeListenError(
+      `Port ${port} needs elevated privileges (tried to bind ${where}). Ports below 1024 are restricted, so use PORT=3000 in development and put a proxy in front in production.`,
+      error,
+    );
+  }
+  if (code === "EADDRNOTAVAIL") {
+    return new ServeListenError(
+      `Host ${host} is not an address on this machine (tried to bind ${where}). Set HOST to an address this machine owns, or to 0.0.0.0 for every interface.`,
+      error,
+    );
+  }
+  return error;
+}
+
+/**
  * Install `unhandledRejection` / `uncaughtException` handlers.
  *
  * Node's default on an unhandled rejection is to crash immediately, dropping
@@ -153,13 +207,19 @@ function installFatalErrorHandlers(app: CelsianApp, options: ServeOptions, shutd
     handling = true;
 
     const err = error instanceof Error ? error : new Error(String(error));
-    app.log.fatal(`${kind}, shutting down`, {
+    // A startup failure we already explained is a one-line fix, not a crash.
+    // `serve(app)` is normally called without being awaited, so it arrives here
+    // as an unhandled rejection, and the usual framing plus a node:net stack
+    // makes "port 3000 is busy" look like the framework fell over.
+    const explained = err instanceof ServeListenError;
+    app.log.fatal(explained ? err.message : `${kind}, shutting down`, {
       type: kind,
       error: err.message,
       stack: err.stack,
     });
     // Always surface to stderr: a fatal must never be invisible, even with a noop logger.
-    console.error(`[celsian] ${kind}, shutting down:`, err);
+    if (explained) console.error(`[celsian] ${err.message}`);
+    else console.error(`[celsian] ${kind}, shutting down:`, err);
 
     void shutdown()
       .catch((shutdownErr) => {
@@ -453,13 +513,17 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
 
   // Resolve only after the server is actually listening (avoids ECONNREFUSED race),
   // and report the REAL bound address/port (port 0 → OS-assigned).
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(port, host, () => {
-      server.removeListener("error", reject);
-      resolve();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(port, host, () => {
+        server.removeListener("error", reject);
+        resolve();
+      });
     });
-  });
+  } catch (err) {
+    throw explainListenError(err, host, port);
+  }
 
   const addr = server.address();
   const boundAddress = addr !== null && typeof addr === "object" ? addr.address : host;

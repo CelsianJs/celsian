@@ -45,13 +45,21 @@ export function defineConfig(config: CelsianConfig): CelsianConfig {
  *
  * Honors `process.env.HOST` first. Otherwise binds `0.0.0.0` in production
  * (containers -- Docker/Fly/Railway -- must accept external connections) and
- * `localhost` in development (avoid exposing the dev server on the LAN).
+ * loopback in development (avoid exposing the dev server on the LAN).
+ *
+ * The dev value is the ADDRESS `127.0.0.1`, never the name `localhost`. Node
+ * stopped reordering resolver results in v17, so `listen("localhost")` binds
+ * whichever family DNS returns first, in practice `::1` alone. The server was
+ * then live on `http://localhost:3000` while `curl http://127.0.0.1:3000`
+ * was refused. Binding the IPv4 literal serves both spellings, because a
+ * client resolving `localhost` to `::1` first falls back to `127.0.0.1` when
+ * that connection is refused. Production is unchanged.
  */
 export function defaultHost(): string {
   const envHost = typeof process !== "undefined" ? process.env?.HOST : undefined;
   if (envHost) return envHost;
   const nodeEnv = typeof process !== "undefined" ? process.env?.NODE_ENV : undefined;
-  return nodeEnv === "production" ? "0.0.0.0" : "localhost";
+  return nodeEnv === "production" ? "0.0.0.0" : "127.0.0.1";
 }
 
 function buildDefaultConfig(): CelsianConfig {
