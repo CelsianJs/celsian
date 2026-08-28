@@ -185,3 +185,62 @@ describe("CronScheduler same-minute dedupe (CORE-10)", () => {
     }
   });
 });
+
+describe("shouldRun day-of-month / day-of-week (unix cron OR rule)", () => {
+  // `app.cron` and the quickstart both advertise a "5-field unix cron
+  // expression". Unix cron is a conjunction of all five fields with exactly one
+  // exception: when BOTH day fields are restricted, either one matching is
+  // enough. `shouldRun` ANDed them, so `0 0 13 * 5` -- "the 13th of every month,
+  // and every Friday" -- only fired when a Friday landed on the 13th. A job
+  // meant to run several times a month ran a few times a year.
+  //
+  // January 2026: the 1st is a Thursday, so the 2nd and 9th are Fridays and the
+  // 13th is a Tuesday.
+  const bothRestricted = parseCronExpression("0 0 13 * 5");
+
+  it("fires on the day of month even when the weekday does not match", () => {
+    expect(shouldRun(bothRestricted, new Date("2026-01-13T00:00:00"))).toBe(true);
+  });
+
+  it("fires on the weekday even when the day of month does not match", () => {
+    expect(shouldRun(bothRestricted, new Date("2026-01-09T00:00:00"))).toBe(true);
+  });
+
+  it("does not fire when neither day field matches", () => {
+    expect(shouldRun(bothRestricted, new Date("2026-01-08T00:00:00"))).toBe(false);
+  });
+
+  it("still ANDs the other three fields", () => {
+    // Right day, wrong hour.
+    expect(shouldRun(bothRestricted, new Date("2026-01-13T01:00:00"))).toBe(false);
+    expect(shouldRun(parseCronExpression("0 0 13 7 5"), new Date("2026-01-13T00:00:00"))).toBe(false);
+  });
+
+  it("keeps a single restricted day field exact", () => {
+    // Only one field is restricted, so the OR rule must not widen either one.
+    const dowOnly = parseCronExpression("0 0 * * 5");
+    expect(shouldRun(dowOnly, new Date("2026-01-09T00:00:00"))).toBe(true);
+    expect(shouldRun(dowOnly, new Date("2026-01-13T00:00:00"))).toBe(false);
+
+    const domOnly = parseCronExpression("0 0 13 * *");
+    expect(shouldRun(domOnly, new Date("2026-01-13T00:00:00"))).toBe(true);
+    expect(shouldRun(domOnly, new Date("2026-01-09T00:00:00"))).toBe(false);
+  });
+
+  it("treats a stepped day field as unrestricted, the way Vixie cron does", () => {
+    // Vixie sets its star flag from the field's FIRST character, so a stepped
+    // day-of-month keeps the plain AND. `*` over 1-31 with a step of 2 yields
+    // the odd days, so this is "odd-numbered Fridays".
+    const stepped = parseCronExpression("0 0 */2 * 5");
+    expect(shouldRun(stepped, new Date("2026-01-09T00:00:00"))).toBe(true); // odd, Friday
+    expect(shouldRun(stepped, new Date("2026-01-02T00:00:00"))).toBe(false); // even, Friday
+    expect(shouldRun(stepped, new Date("2026-01-07T00:00:00"))).toBe(false); // odd, Wednesday
+  });
+
+  it("rejects a Quartz-style ? in either day field", () => {
+    // Not a unix cron token, and never has been supported here. Recorded so the
+    // OR rule above is read against a parser that only ever sees `*`.
+    expect(() => parseCronExpression("0 0 13 * ?")).toThrow(/Invalid cron field/);
+    expect(() => parseCronExpression("0 0 ? * 5")).toThrow(/Invalid cron field/);
+  });
+});

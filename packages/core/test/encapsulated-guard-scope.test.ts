@@ -168,3 +168,85 @@ describe("405 Allow header does not enumerate routes behind an encapsulated guar
     expect(res.headers.get("allow")).toBe("GET, HEAD");
   });
 });
+
+describe("a custom notFound handler runs behind encapsulated guards", () => {
+  // The third unrouted, request-terminating path. Routed dispatch resolves
+  // `onRequest` from the route's encapsulation chain and the 405 branch resolves
+  // it from the path's routes, but a genuine 404 has neither, so it ran the root
+  // scope alone. A `setNotFoundHandler` therefore answered `/admin/nonexistent`
+  // without the `{ prefix: '/admin' }` guard ever seeing the request, while the
+  // byte-identical un-prefixed guard did run.
+
+  /** An admin plugin whose guard 401s, plus one real route to hang the prefix on. */
+  function adminPlugin(app: PluginContext): void {
+    app.addHook("onRequest", (req, reply) => {
+      if (req.headers.get("authorization") !== "Bearer secret") {
+        return reply.status(401).json({ error: "Unauthorized" });
+      }
+    });
+    app.get("/dashboard", (_req, reply) => reply.json({ secret: true }));
+  }
+
+  it("runs a prefixed guard before the notFound handler", async () => {
+    const app = createApp();
+    await app.register(adminPlugin, { prefix: "/admin" });
+    app.setNotFoundHandler((_req, reply) => reply.status(404).json({ appCode: "NO_SUCH_PAGE" }));
+    await app.ready();
+
+    const res = await app.inject({ method: "GET", url: "/admin/nonexistent" });
+
+    expect(res.status).toBe(401);
+    expect(await res.text()).not.toContain("NO_SUCH_PAGE");
+  });
+
+  it("reaches the notFound handler once the prefixed guard is satisfied", async () => {
+    const app = createApp();
+    await app.register(adminPlugin, { prefix: "/admin" });
+    app.setNotFoundHandler((_req, reply) => reply.status(404).json({ appCode: "NO_SUCH_PAGE" }));
+    await app.ready();
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/admin/nonexistent",
+      headers: { authorization: "Bearer secret" },
+    });
+
+    expect(res.status).toBe(404);
+    expect(await res.text()).toContain("NO_SUCH_PAGE");
+  });
+
+  it("does not apply a prefixed guard to a 404 outside that prefix", async () => {
+    const app = createApp();
+    await app.register(adminPlugin, { prefix: "/admin" });
+    app.setNotFoundHandler((_req, reply) => reply.status(404).json({ appCode: "NO_SUCH_PAGE" }));
+    await app.ready();
+
+    const res = await app.inject({ method: "GET", url: "/public/nonexistent" });
+
+    expect(res.status).toBe(404);
+    expect(await res.text()).toContain("NO_SUCH_PAGE");
+  });
+
+  it("still runs an un-prefixed app-wide guard before the notFound handler", async () => {
+    // This half already worked, and is the control that bounds the regression.
+    const app = createApp();
+    await app.register(adminPlugin);
+    app.setNotFoundHandler((_req, reply) => reply.status(404).json({ appCode: "NO_SUCH_PAGE" }));
+    await app.ready();
+
+    const res = await app.inject({ method: "GET", url: "/nonexistent" });
+
+    expect(res.status).toBe(401);
+  });
+
+  it("leaves an unguarded app's default 404 alone", async () => {
+    const app = createApp();
+    app.get("/public", (_req, reply) => reply.json({ ok: true }));
+    await app.ready();
+
+    const res = await app.inject({ method: "GET", url: "/nope" });
+
+    expect(res.status).toBe(404);
+    expect(await res.text()).toContain("NOT_FOUND");
+  });
+});
