@@ -173,3 +173,99 @@ describe("schema.response types", () => {
     expectTypeOf(app.get).toBeFunction();
   });
 });
+
+describe("response validation never drains a live stream", () => {
+  // The regression: the "handler built its own Response" branch read the body
+  // with `response.clone().json()` whenever the content-type said JSON. clone()
+  // TEES the body, so an NDJSON or progressive-JSON stream was pulled to
+  // completion before `handle()` returned. Time-to-first-byte became
+  // time-to-last-byte, the whole body was buffered without bound, and an
+  // endless stream hung until the request timeout fired a 504. Declaring
+  // `schema.response` on a streaming route silently disabled streaming.
+
+  /**
+   * A stream that records whether anything ever read from it. `highWaterMark: 0`
+   * suppresses the eager pull the default queuing strategy performs, so `pull`
+   * firing means a consumer genuinely asked for a chunk.
+   */
+  function probeStream(chunk: string): { stream: ReadableStream; wasRead: () => boolean } {
+    let read = false;
+    const stream = new ReadableStream(
+      {
+        pull(controller) {
+          read = true;
+          controller.enqueue(new TextEncoder().encode(chunk));
+          controller.close();
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    return { stream, wasRead: () => read };
+  }
+
+  it("leaves a hand-built application/json stream untouched", async () => {
+    const { stream, wasRead } = probeStream('{"id":"1"}');
+    const app = createApp();
+    app.get(
+      "/stream",
+      { schema: { response: Strict } },
+      () => new Response(stream, { status: 200, headers: { "content-type": "application/json" } }),
+    );
+
+    const res = await app.handle(new Request("http://localhost/stream"));
+
+    expect(res.status).toBe(200);
+    expect(wasRead()).toBe(false);
+    // The stream is still intact and still deliverable to the client.
+    expect(await res.text()).toBe('{"id":"1"}');
+  });
+
+  it("leaves an NDJSON stream sent with reply.stream() untouched", async () => {
+    const { stream, wasRead } = probeStream('{"id":"1"}\n{"id":"2"}\n');
+    const app = createApp();
+    app.get("/ndjson", { schema: { response: Strict } }, (_req, reply) => {
+      reply.header("content-type", "application/x-ndjson");
+      return reply.stream(stream);
+    });
+
+    const res = await app.handle(new Request("http://localhost/ndjson"));
+
+    expect(res.status).toBe(200);
+    expect(wasRead()).toBe(false);
+  });
+
+  it("still validates a buffered body built with reply.json()", async () => {
+    // The other half of the trade: skipping streams must not skip the bodies
+    // response validation exists to catch.
+    const app = createApp();
+    app.get("/leaky", { schema: { response: Strict } }, (_req, reply) => reply.json({ id: "1", leaked: "secret" }));
+
+    const res = await app.handle(new Request("http://localhost/leaky"));
+
+    expect(res.status).toBe(500);
+    expect(await res.text()).toContain("RESPONSE_VALIDATION_FAILED");
+  });
+
+  it("skips a hand-built buffered Response, which is indistinguishable from a stream", async () => {
+    // A deliberate narrowing, pinned so it stays visible. `new Response(string)`
+    // and `new Response(readable)` expose the same `body` type, so there is no
+    // way to read one without risking draining the other. Only a body Celsian
+    // serialized itself is provably safe to inspect, and every documented way
+    // to send JSON (`reply.json`, `reply.send`, returning an object) goes
+    // through that path.
+    const app = createApp();
+    app.get(
+      "/raw",
+      { schema: { response: Strict } },
+      () =>
+        new Response(JSON.stringify({ id: "1", leaked: "secret" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+
+    const res = await app.handle(new Request("http://localhost/raw"));
+
+    expect(res.status).toBe(200);
+  });
+});

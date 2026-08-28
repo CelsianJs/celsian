@@ -16,6 +16,23 @@ interface ParsedCron {
   daysOfMonth: Set<number>;
   months: Set<number>;
   daysOfWeek: Set<number>;
+  /** Whether the source day-of-month field narrowed the schedule. See {@link isRestrictedDayField}. */
+  daysOfMonthRestricted: boolean;
+  /** Whether the source day-of-week field narrowed the schedule. See {@link isRestrictedDayField}. */
+  daysOfWeekRestricted: boolean;
+}
+
+/**
+ * Whether a day field restricts the schedule, in the sense unix cron means it.
+ *
+ * Vixie cron flags a day field as unrestricted when its first character is `*`,
+ * so a stepped field still counts as unrestricted even though it narrows the
+ * days it matches. That looks arbitrary read cold, but it is the rule every
+ * crontab on every unix box is written against, and {@link shouldRun} switches
+ * between AND and OR on it.
+ */
+function isRestrictedDayField(field: string): boolean {
+  return !field.startsWith("*");
 }
 
 /** Parse a 5-field unix cron expression into sets of matching values per field. */
@@ -25,12 +42,19 @@ export function parseCronExpression(expr: string): ParsedCron {
     throw new CelsianError(`Invalid cron expression: "${expr}" (expected 5 fields)`);
   }
 
+  // The two day fields are read twice: once for their values, once for whether
+  // they restrict the schedule at all.
+  const daysOfMonthField = parts[2]!;
+  const daysOfWeekField = parts[4]!;
+
   return {
     minutes: parseField(parts[0]!, 0, 59),
     hours: parseField(parts[1]!, 0, 23),
-    daysOfMonth: parseField(parts[2]!, 1, 31),
+    daysOfMonth: parseField(daysOfMonthField, 1, 31),
     months: parseField(parts[3]!, 1, 12),
-    daysOfWeek: parseField(parts[4]!, 0, 6),
+    daysOfWeek: parseField(daysOfWeekField, 0, 6),
+    daysOfMonthRestricted: isRestrictedDayField(daysOfMonthField),
+    daysOfWeekRestricted: isRestrictedDayField(daysOfWeekField),
   };
 }
 
@@ -79,12 +103,24 @@ function parseField(field: string, min: number, max: number): Set<number> {
 
 /** Check whether a parsed cron expression matches a given date (minute-level). */
 export function shouldRun(parsed: ParsedCron, date: Date): boolean {
+  const dayOfMonthMatches = parsed.daysOfMonth.has(date.getDate());
+  const dayOfWeekMatches = parsed.daysOfWeek.has(date.getDay());
+
+  // The one place unix cron is not a plain conjunction: when BOTH day fields
+  // are restricted the job runs on either match, not on both. `0 0 13 * 5` is
+  // "the 13th of each month, and every Friday". ANDing the two instead turned
+  // a job meant to fire several times a month into one that fires a few times
+  // a year, whenever a Friday happened to land on the 13th.
+  const dayMatches =
+    parsed.daysOfMonthRestricted && parsed.daysOfWeekRestricted
+      ? dayOfMonthMatches || dayOfWeekMatches
+      : dayOfMonthMatches && dayOfWeekMatches;
+
   return (
     parsed.minutes.has(date.getMinutes()) &&
     parsed.hours.has(date.getHours()) &&
-    parsed.daysOfMonth.has(date.getDate()) &&
     parsed.months.has(date.getMonth() + 1) &&
-    parsed.daysOfWeek.has(date.getDay())
+    dayMatches
   );
 }
 

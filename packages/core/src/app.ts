@@ -7,7 +7,7 @@ import { parseCookies } from "./cookie.js";
 import { type CronJob, CronScheduler } from "./cron.js";
 import { handleError as handleErrorFn } from "./error-handler.js";
 import { assertPlugin, CelsianError, HttpError, ValidationError, wrapNonError } from "./errors.js";
-import { fastResponse } from "./fast-response.js";
+import { fastResponse, getFastPayload } from "./fast-response.js";
 import { runHooks, runHooksFireAndForget, runOnSendHooks } from "./hooks.js";
 import { createInject, type InjectOptions } from "./inject.js";
 import { createLogger, generateRequestId, type Logger } from "./logger.js";
@@ -42,6 +42,9 @@ import {
   type TypedSchemaHandler,
 } from "./types.js";
 import { type WSHandler, WSRegistry } from "./websocket.js";
+
+/** Shared decoder for response bodies that were serialized as bytes. */
+const RESPONSE_DECODER = new TextDecoder();
 
 /**
  * True when `prefix` scopes `pathname`: an exact match, or a path-segment
@@ -597,6 +600,10 @@ export class CelsianApp {
   /**
    * Register a cron job with a 5-field unix cron expression.
    *
+   * Unix semantics, including the day-field rule: when the day-of-month and
+   * day-of-week fields are both restricted, the job runs when EITHER matches.
+   * `0 0 13 * 5` is "midnight on the 13th of every month, and every Friday".
+   *
    * @example
    * ```ts
    * app.cron('cleanup', '0 3 * * *', async () => { await db.deleteExpired(); });
@@ -821,7 +828,14 @@ export class CelsianApp {
       // has to clear the same gate the path's routes do. Running only the root
       // scope listed `GET, HEAD, PUT, DELETE` for `/admin/users/1` behind an
       // encapsulated auth guard that answered 401 to every real request.
-      const missHooks = allowed.length > 0 ? this.routeScopeHooks(pathname, allowed) : this.rootScope.onRequest;
+      //
+      // A 404 has no route to resolve a scope from, so it takes the same union
+      // of every guard covering the path that an unrouted WebSocket upgrade
+      // does. Running only the root scope let a custom `setNotFoundHandler`
+      // answer `/admin/nonexistent` without the `{ prefix: '/admin' }` guard
+      // ever seeing the request, while the identical un-prefixed guard ran.
+      const missHooks =
+        allowed.length > 0 ? this.routeScopeHooks(pathname, allowed) : this.onRequestHooksForPath(pathname);
       const earlyResponse = await runHooks(missHooks, missContext.request, missContext.reply);
       if (earlyResponse) return earlyResponse;
       const missHeaders = this.mergeReplyHeaders(CelsianApp.JSON_CONTENT_TYPE, missContext.reply);
@@ -1253,10 +1267,20 @@ export class CelsianApp {
     } else {
       // The handler built its own Response (reply.json(...), reply.send(...)).
       if (!(response.headers.get("content-type") ?? "").includes("json")) return response;
+
+      // Only a body that was already serialized in memory may be read here.
+      // `response.clone().json()` looks harmless but it TEES the body stream and
+      // drains it to completion, so a live `reply.stream()` of NDJSON or
+      // progressive JSON was fully buffered before the client saw its first
+      // byte, and an endless stream hung until the request timeout fired a 504.
+      // A response carrying a fast payload was built from a string or a byte
+      // array, so parsing that payload reads no stream at all.
+      const fast = getFastPayload(response);
+      if (fast === undefined || fast.body === null) return response;
       try {
-        payload = await response.clone().json();
+        payload = JSON.parse(typeof fast.body === "string" ? fast.body : RESPONSE_DECODER.decode(fast.body));
       } catch {
-        // Unreadable or non-JSON body (streams, already-consumed), nothing to check.
+        // Body is not JSON after all, nothing to check.
         return response;
       }
     }
