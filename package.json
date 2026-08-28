@@ -24,6 +24,7 @@
     "assert:release-private": "node scripts/assert-release-private.mjs",
     "check:action-pins": "node scripts/check-action-pins.mjs",
     "check:root-changelog": "node scripts/check-root-changelog.mjs",
+    "check:changesets-compat": "node scripts/check-changesets-action-compat.mjs",
     "assert:public-metadata": "node scripts/assert-public-metadata.mjs",
     "docs": "typedoc",
     "size": "size-limit",
