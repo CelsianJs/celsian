@@ -460,33 +460,33 @@ describe("Response Cache", () => {
     store.destroy();
   });
 
-  it.each([
-    "max-age=0",
-    "public, s-maxage=0",
-  ])("never stores a response whose Cache-Control is %s", async (cacheControl) => {
-    const store = new MemoryKVStore({ cleanupIntervalMs: 0 });
-    const cache = createResponseCache({ store, ttlMs: 60_000 });
+  it.each(["max-age=0", "public, s-maxage=0"])(
+    "never stores a response whose Cache-Control is %s",
+    async (cacheControl) => {
+      const store = new MemoryKVStore({ cleanupIntervalMs: 0 });
+      const cache = createResponseCache({ store, ttlMs: 60_000 });
 
-    let callCount = 0;
-    const handler = () =>
-      new Response(JSON.stringify({ value: ++callCount }), {
-        headers: {
-          "content-type": "application/json",
-          "cache-control": cacheControl,
-        },
-      });
+      let callCount = 0;
+      const handler = () =>
+        new Response(JSON.stringify({ value: ++callCount }), {
+          headers: {
+            "content-type": "application/json",
+            "cache-control": cacheControl,
+          },
+        });
 
-    const first = await cache.cached(makeRequest("/zero-age"), handler);
-    const second = await cache.cached(makeRequest("/zero-age"), handler);
+      const first = await cache.cached(makeRequest("/zero-age"), handler);
+      const second = await cache.cached(makeRequest("/zero-age"), handler);
 
-    expect(first.headers.get("x-cache")).toBeNull();
-    expect(second.headers.get("x-cache")).toBeNull();
-    expect(await first.json()).toEqual({ value: 1 });
-    expect(await second.json()).toEqual({ value: 2 });
-    expect(callCount).toBe(2);
+      expect(first.headers.get("x-cache")).toBeNull();
+      expect(second.headers.get("x-cache")).toBeNull();
+      expect(await first.json()).toEqual({ value: 1 });
+      expect(await second.json()).toEqual({ value: 2 });
+      expect(callCount).toBe(2);
 
-    store.destroy();
-  });
+      store.destroy();
+    },
+  );
 
   it("bypasses an existing cache entry for request Cache-Control: max-age=0", async () => {
     const store = new MemoryKVStore({ cleanupIntervalMs: 0 });
@@ -551,31 +551,30 @@ describe("Response Cache", () => {
     store.destroy();
   });
 
-  it.each([
-    "authorization",
-    "cookie",
-    "proxy-authorization",
-  ])("bypasses shared cache reads and writes for %s requests", async (header) => {
-    const store = new MemoryKVStore({ cleanupIntervalMs: 0 });
-    const cache = createResponseCache({ store });
+  it.each(["authorization", "cookie", "proxy-authorization"])(
+    "bypasses shared cache reads and writes for %s requests",
+    async (header) => {
+      const store = new MemoryKVStore({ cleanupIntervalMs: 0 });
+      const cache = createResponseCache({ store });
 
-    let callCount = 0;
-    const handler = () => jsonResponse({ value: ++callCount });
+      let callCount = 0;
+      const handler = () => jsonResponse({ value: ++callCount });
 
-    const publicMiss = await cache.cached(makeRequest("/data"), handler);
-    expect(publicMiss.headers.get("x-cache")).toBe("MISS");
+      const publicMiss = await cache.cached(makeRequest("/data"), handler);
+      expect(publicMiss.headers.get("x-cache")).toBe("MISS");
 
-    const privateResponse = await cache.cached(makeRequest("/data", "GET", { [header]: "private" }), handler);
-    expect(privateResponse.headers.get("x-cache")).toBeNull();
-    expect(await privateResponse.json()).toEqual({ value: 2 });
+      const privateResponse = await cache.cached(makeRequest("/data", "GET", { [header]: "private" }), handler);
+      expect(privateResponse.headers.get("x-cache")).toBeNull();
+      expect(await privateResponse.json()).toEqual({ value: 2 });
 
-    const publicHit = await cache.cached(makeRequest("/data"), handler);
-    expect(publicHit.headers.get("x-cache")).toBe("HIT");
-    expect(await publicHit.json()).toEqual({ value: 1 });
+      const publicHit = await cache.cached(makeRequest("/data"), handler);
+      expect(publicHit.headers.get("x-cache")).toBe("HIT");
+      expect(await publicHit.json()).toEqual({ value: 1 });
 
-    expect(callCount).toBe(2);
-    store.destroy();
-  });
+      expect(callCount).toBe(2);
+      store.destroy();
+    },
+  );
 
   it("supports additional application-specific credential headers", async () => {
     const store = new MemoryKVStore({ cleanupIntervalMs: 0 });

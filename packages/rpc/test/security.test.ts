@@ -517,7 +517,7 @@ describe("RPCHandler logger option", () => {
       expect(res.status).toBe(500);
       expect(logged).toHaveLength(1);
       expect(logged[0]!.msg).toContain('procedure "boom" error');
-      expect((logged[0]!.data?.err as { message: string }).message).toBe("kaboom");
+      expect((logged[0]!.data!.err as { message: string }).message).toBe("kaboom");
       // The raw console must be left alone once a logger is configured.
       expect(consoleSpy).not.toHaveBeenCalled();
     } finally {
