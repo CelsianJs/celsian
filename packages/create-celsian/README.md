@@ -28,6 +28,19 @@ npx create-celsian <name> [--template <id>] [--force]
 | `--template`, `-t <id>` | `full` | Which template to scaffold |
 | `--force` | off | Scaffold into an existing non-empty directory |
 
+### Passing flags through `npm create`
+
+`npm create` claims every flag that follows the package name for itself, so a
+`--` separator is required. Without it npm eats the flag and passes only its
+value through, which the scaffolder refuses rather than guessing at:
+
+```bash
+npm create celsian@latest my-api -- --template basic   # correct
+npx create-celsian@latest my-api --template basic      # also correct
+
+npm create celsian@latest my-api --template basic      # error: npm ate --template
+```
+
 `<name>` must be a valid npm package name: lowercase, no spaces, not starting with `.` or `_`. The project is created in `./<name>` and the name is substituted into `package.json` and the README.
 
 ## Templates

@@ -5,23 +5,24 @@
 // All scaffolding logic lives in scaffold.ts so @celsian/cli can reuse it.
 
 import { createInterface } from "node:readline";
+import { ArgsError, parseArgs, USAGE_LINE } from "./args.js";
 import { detectPackageManager, nextStepsLines, ScaffoldError, scaffold, templateDescriptions } from "./scaffold.js";
 
 // ─── CLI Argument Parsing ───
 
-const args = process.argv.slice(2);
+let parsed: ReturnType<typeof parseArgs>;
+try {
+  parsed = parseArgs(process.argv.slice(2));
+} catch (err) {
+  if (!(err instanceof ArgsError)) throw err;
+  console.error(`\n${err.message}\n`);
+  process.exit(1);
+}
 
-// Handle --help
-if (args.includes("--help") || args.includes("-h")) {
+if (parsed.help) {
   printUsage();
   process.exit(0);
 }
-
-// Extract flags
-const force = args.includes("--force");
-const templateFlag = args.indexOf("--template");
-const templateArg = templateFlag !== -1 ? args[templateFlag + 1] : undefined;
-const nameArg = args.find((a) => !a.startsWith("--") && (templateFlag === -1 || args.indexOf(a) !== templateFlag + 1));
 
 // ─── Interactive Mode ───
 
@@ -61,7 +62,7 @@ async function interactiveMode(): Promise<{ name: string; template: string; pm: 
 
 // ─── Main ───
 
-function run(name: string, template: string, pm: string): void {
+function run(name: string, template: string, pm: string, force: boolean): void {
   try {
     const result = scaffold(name, template, { force });
     for (const line of nextStepsLines(result.projectName, template, pm)) {
@@ -77,11 +78,9 @@ function run(name: string, template: string, pm: string): void {
 }
 
 async function main(): Promise<void> {
-  // If both name and template are provided via CLI args, skip interactive mode
-  if (nameArg) {
-    const template = templateArg ?? "full";
-    const pm = detectPackageManager();
-    run(nameArg, template, pm);
+  // A project name on the command line means non-interactive.
+  if (parsed.name) {
+    run(parsed.name, parsed.template ?? "full", detectPackageManager(), parsed.force);
     return;
   }
 
@@ -89,7 +88,7 @@ async function main(): Promise<void> {
   // But only if stdin is a TTY (not piped)
   if (process.stdin.isTTY) {
     const { name, template, pm } = await interactiveMode();
-    run(name, template, pm);
+    run(name, template, pm, parsed.force);
   } else {
     printUsage();
     process.exit(1);
@@ -98,7 +97,7 @@ async function main(): Promise<void> {
 
 function printUsage(): void {
   console.log("");
-  console.log("  Usage: create-celsian <project-name> [--template full|basic|rest-api|rpc-api] [--force]");
+  console.log(`  Usage: ${USAGE_LINE}`);
   console.log("");
   console.log("  Templates:");
   for (const [key, desc] of Object.entries(templateDescriptions)) {
@@ -107,9 +106,13 @@ function printUsage(): void {
   }
   console.log("");
   console.log("  Options:");
+  console.log("    --template   Template to scaffold (also -t, or --template=<id>)");
   console.log("    --force      Scaffold into an existing non-empty directory");
   console.log("");
   console.log("  Run without arguments for interactive mode.");
+  console.log("");
+  console.log("  With `npm create`, flags need a `--` separator or npm eats them:");
+  console.log("    npm create celsian@latest my-api -- --template basic");
   console.log("");
 }
 

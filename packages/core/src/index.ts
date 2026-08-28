@@ -57,7 +57,7 @@ export { buildRequest } from "./request.js";
 export { isStatusKeyedResponseMap, resolveResponseSchema } from "./response-schema.js";
 export { Router } from "./router.js";
 export type { ServeOptions, ServeResult } from "./serve.js";
-export { nodeToWebRequest, serve, writeWebResponse } from "./serve.js";
+export { nodeToWebRequest, ServeListenError, serve, writeWebResponse } from "./serve.js";
 export type { SSEChannel, SSEEvent, SSEHub, SSEStreamOptions } from "./sse.js";
 export { createSSEHub, createSSEStream } from "./sse.js";
 export type { TaskContext, TaskDefinition, TaskFailureInfo, TaskWorkerOptions } from "./task.js";

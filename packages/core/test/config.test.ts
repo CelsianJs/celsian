@@ -35,11 +35,13 @@ describe("loadConfig host defaults (CORE-01)", () => {
     vi.unstubAllEnvs();
   });
 
-  it("defaults host to localhost outside production", async () => {
+  // The IPv4 loopback ADDRESS, not the name "localhost": Node resolves the name
+  // verbatim since v17, which binds ::1 alone and refuses 127.0.0.1.
+  it("defaults host to the 127.0.0.1 loopback outside production", async () => {
     vi.stubEnv("NODE_ENV", "development");
     vi.stubEnv("HOST", "");
     const config = await loadConfig("/nonexistent-config-root");
-    expect(config.server?.host).toBe("localhost");
+    expect(config.server?.host).toBe("127.0.0.1");
   });
 
   it("defaults host to 0.0.0.0 in production (container reachability)", async () => {
@@ -61,7 +63,7 @@ describe("loadConfig host defaults (CORE-01)", () => {
     vi.stubEnv("NODE_ENV", "production");
     expect(defaultHost()).toBe("0.0.0.0");
     vi.stubEnv("NODE_ENV", "test");
-    expect(defaultHost()).toBe("localhost");
+    expect(defaultHost()).toBe("127.0.0.1");
     vi.stubEnv("HOST", "192.168.1.10");
     expect(defaultHost()).toBe("192.168.1.10");
   });

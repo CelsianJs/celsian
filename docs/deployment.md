@@ -345,7 +345,7 @@ CelsianJS reads these environment variables automatically:
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
 | `PORT` | `3000` | Server port |
-| `HOST` | `0.0.0.0` in production, `localhost` otherwise | Bind address |
+| `HOST` | `0.0.0.0` in production, `127.0.0.1` otherwise | Bind address. The dev default is the IPv4 loopback address rather than the name `localhost`, so both `http://127.0.0.1:3000` and `http://localhost:3000` reach the server. |
 | `NODE_ENV` | - | When `production`, stack traces are stripped from error responses |
 | `CELSIAN_ENV` | - | Alternative to `NODE_ENV` for CelsianJS-specific behavior |
 
