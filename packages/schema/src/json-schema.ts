@@ -125,6 +125,15 @@ function literalSchema(values: readonly unknown[]): JsonSchemaObject {
 
 // ─── Zod ───
 
+// Both Zod majors are supported on purpose: the package's peer range is
+// `zod: >=3.0.0` and the branches below exist to honour it. The repository is
+// wired to actually exercise both, and it is easy to undo by accident: the
+// packages dev-depend on Zod 4 while the workspace ROOT stays on Zod 3, which
+// is what `internal/` and the examples resolve. Bumping the root to 4, which
+// Dependabot proposes, would leave every Zod 3 branch here untested while the
+// peer range still promises them. Keep the root on 3 until the peer range drops
+// it.
+
 /** Zod 3 exposes `_def.typeName`; Zod 4 exposes `_zod.def.type`. */
 function zodDef(node: Record<PropertyKey, unknown>): { version: 3 | 4; def: Record<PropertyKey, unknown> } | undefined {
   const zod4 = asRecord(node._zod);

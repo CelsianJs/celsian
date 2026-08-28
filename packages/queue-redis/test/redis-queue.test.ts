@@ -181,7 +181,7 @@ describeRedis("RedisQueue (real Redis)", () => {
       const requeued = await queue.pop();
 
       expect(requeued?.input).toEqual(input);
-      expect(Array.isArray((requeued?.input as { emptyArray: unknown }).emptyArray)).toBe(true);
+      expect(Array.isArray((requeued!.input as { emptyArray: unknown }).emptyArray)).toBe(true);
     });
   });
 

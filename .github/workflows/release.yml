@@ -20,9 +20,8 @@ env:
 # NPM_TOKEN and NODE_AUTH_TOKEN and carries `contents: write`, `id-token: write`
 # and `pull-requests: write`. A floating tag (`@v4`) is a mutable pointer: the
 # action's owner, or anyone who compromises that repo, can retag it and have
-# their code run here with the publish token in scope. `changesets/action@v1` is
-# not even a tag, it is a BRANCH, so it moved on every upstream push.
-# Dependabot's github-actions ecosystem keeps these SHAs current.
+# their code run here with the publish token in scope. Dependabot's
+# github-actions ecosystem keeps these SHAs current.
 
 jobs:
   # Gate: run the full test suite before any release happens
@@ -43,7 +42,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -81,7 +80,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -92,14 +91,21 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
 
-      # NOTE: `changesets/action@v1` is a BRANCH ref upstream, not a tag.
-      # Pinned to the branch head as of 2026-07-26.
-      - uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1
+      # v2 renamed every input this step passes: `publish` -> `publish-script`,
+      # `title` -> `pr-title`, `commit` -> `commit-message`. An unknown input is
+      # not an error in Actions, so bumping the SHA without renaming them would
+      # have left the action on its defaults: no publish script at all, and a
+      # version PR titled "Version Packages". The release would look like it ran
+      # and nothing would reach npm. The `published` output is unchanged.
+      #
+      # v1 was a BRANCH ref upstream that moved on every push; v2.1.1 is a real
+      # release tag, pinned here to its commit.
+      - uses: changesets/action@8488615a623b1b9c987934bb89eae8af6a946ac1 # v2.1.1
         id: changesets
         with:
-          publish: pnpm release
-          title: "chore: version packages"
-          commit: "chore: version packages"
+          publish-script: pnpm release
+          pr-title: "chore: version packages"
+          commit-message: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

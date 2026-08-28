@@ -64,7 +64,7 @@ describe("BUG-3: Multiple Set-Cookie headers preserved in writeWebResponse", () 
     expect(cookieCall).toBeDefined();
     // Should be an array with both cookies
     expect(Array.isArray(cookieCall?.[1])).toBe(true);
-    expect((cookieCall?.[1] as string[]).length).toBe(2);
+    expect((cookieCall![1] as string[]).length).toBe(2);
   });
 });
 
