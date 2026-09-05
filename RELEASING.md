@@ -28,6 +28,12 @@ pnpm verify:publish
 pnpm audit:release
 ```
 
+CI pins npm 11.16.0 for packed-consumer verification and publishing. Older npm
+versions can crash internally with `Cannot read properties of null (reading
+'edgesOut')` when resolving the smoke fixtures' local tarball overrides. If this
+occurs locally, use npm 11.16.0 with Node 22.9+ (or Node 20.17+); do not skip the
+packed-consumer gate. This tooling pin does not change package runtime support.
+
 ## Post-Publish Verification
 
 The release workflow runs:
