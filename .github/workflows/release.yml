@@ -132,11 +132,13 @@ jobs:
           NPM_CONFIG_PROVENANCE: true
 
       - name: Verify npm registry packages
-        if: steps.changesets.outputs.published == 'true'
+        # A rerun after registry propagation must verify too, even though the
+        # immutable versions are already published and must not be republished.
+        if: steps.changesets.outputs.hasChangesets == 'false'
         run: pnpm verify:registry
 
       - name: Upload registry smoke artifact
-        if: ${{ always() && steps.changesets.outputs.published == 'true' }}
+        if: ${{ always() && steps.changesets.outputs.hasChangesets == 'false' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: celsian-registry-smoke
