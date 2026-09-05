@@ -349,10 +349,16 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
       const response = await app.handle(webRequest);
       await writeWebResponse(res, response);
     } catch (error) {
-      console.error("[celsian] Unhandled error:", error);
-      res.statusCode = 500;
-      res.end("Internal Server Error");
+      if (!res.destroyed) {
+        console.error("[celsian] Unhandled error:", error);
+        if (res.headersSent) res.destroy();
+        else {
+          res.statusCode = 500;
+          res.end("Internal Server Error");
+        }
+      }
     } finally {
+      requestSignalCleanup.get(req)?.();
       inFlight--;
     }
   });
@@ -668,6 +674,29 @@ function warnWSUnsupported(app: CelsianApp, runtime: string): void {
 
 // ─── Conversion Helpers ───
 
+const requestSignalCleanup = new WeakMap<IncomingMessage, () => void>();
+
+/** IncomingMessage.close also fires after a normal body; watch socket closure instead. */
+function nodeRequestSignal(req: IncomingMessage): AbortSignal {
+  const controller = new AbortController();
+  const socket = req.socket;
+  const cleanup = () => {
+    req.off("aborted", abort);
+    socket.off("close", abort);
+    requestSignalCleanup.delete(req);
+  };
+  const abort = () => {
+    controller.abort();
+    cleanup();
+  };
+  requestSignalCleanup.get(req)?.();
+  requestSignalCleanup.set(req, cleanup);
+  req.once("aborted", abort);
+  socket.once("close", abort);
+  if (req.aborted || socket.destroyed) abort();
+  return controller.signal;
+}
+
 /** Convert a Node.js IncomingMessage to a Web Standard Request. */
 export function nodeToWebRequest(req: IncomingMessage, url: URL): Request {
   const headers = new Headers();
@@ -687,6 +716,7 @@ export function nodeToWebRequest(req: IncomingMessage, url: URL): Request {
     headers,
     body: hasBody ? (req as unknown as ReadableStream) : undefined,
     duplex: hasBody ? "half" : undefined,
+    signal: nodeRequestSignal(req),
   });
 }
 
@@ -726,11 +756,24 @@ function nodeToWebRequestFast(req: IncomingMessage, rawPath: string, baseUrl: st
     headers,
     body: hasBody ? (req as unknown as ReadableStream) : undefined,
     duplex: hasBody ? "half" : undefined,
+    signal: nodeRequestSignal(req),
   });
 }
 
 /** Write a Web Standard Response back to a Node.js ServerResponse, preserving Set-Cookie headers. */
 export async function writeWebResponse(res: ServerResponse, response: Response): Promise<void> {
+  try {
+    await writeNodeResponse(res, response);
+  } finally {
+    requestSignalCleanup.get(res.req)?.();
+  }
+}
+
+async function writeNodeResponse(res: ServerResponse, response: Response): Promise<void> {
+  if (res.destroyed) {
+    void response.body?.cancel().catch(() => {});
+    return;
+  }
   // Fast path: responses built by reply.json()/send()/html() or the auto-serializer
   // carry their already-serialized body + plain headers. Write them in a single
   // writeHead()+end(), no ReadableStream reader, no async drain, no second socket
@@ -764,15 +807,49 @@ export async function writeWebResponse(res: ServerResponse, response: Response):
 
   if (response.body) {
     const reader = response.body.getReader();
+    let disconnected = false;
+    let failure: Error | undefined;
+    let drain: (() => void) | undefined;
+    const onClose = () => {
+      disconnected = true;
+      // destroy(error) can close a ServerResponse without an 'error' event.
+      // Preserve that cause while ordinary client disconnects remain quiet.
+      failure ??= res.errored ?? undefined;
+      // Cancel resolves a pending read even for an idle stream (e.g. SSE).
+      // Do not await user-supplied cancellation work, which may never settle.
+      void reader.cancel(failure).catch(() => {});
+      drain?.();
+    };
+    const onError = (error: Error) => {
+      failure = error;
+      onClose();
+    };
+    res.once("close", onClose);
+    res.once("error", onError);
     try {
-      while (true) {
+      while (!disconnected && !res.destroyed) {
         const { done, value } = await reader.read();
-        if (done) break;
-        res.write(value);
+        if (done || disconnected || res.destroyed) break;
+        if (!res.write(value)) {
+          await new Promise<void>((resolve) => {
+            drain = resolve;
+            res.once("drain", resolve);
+            if (disconnected || res.destroyed) resolve();
+          });
+          if (drain) res.off("drain", drain);
+          drain = undefined;
+        }
       }
+      if (failure) throw failure;
+    } catch (error) {
+      void reader.cancel(error).catch(() => {});
+      throw error;
     } finally {
+      res.off("close", onClose);
+      res.off("error", onError);
+      if (drain) res.off("drain", drain);
       reader.releaseLock();
     }
   }
-  res.end();
+  if (!res.destroyed) res.end();
 }

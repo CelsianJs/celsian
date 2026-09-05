@@ -1,10 +1,68 @@
 // @celsian/core -- Request timeout tests
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
 import { json } from "./helpers/json.js";
 
 describe("Request Timeout", () => {
+  it.each([false, true])(
+    "preserves upstream cancellation after a streaming handler returns (fallback: %s)",
+    async (fallback) => {
+      const app = createApp();
+      const controller = new AbortController();
+      const request = new Request("http://localhost/stream", { signal: controller.signal });
+      let observed: AbortSignal | undefined;
+      app.get("/stream", (req) => {
+        observed = req.signal;
+        return new Response(new ReadableStream());
+      });
+      if (fallback) vi.stubGlobal("AbortSignal", { any: undefined });
+      try {
+        const response = await app.handle(request);
+        const reason = new Error("transport closed");
+        controller.abort(reason);
+        expect(observed?.aborted).toBe(true);
+        expect(observed?.reason).toBe(reason);
+        await response.body?.cancel();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+
+  it("preserves an already-aborted transport signal", async () => {
+    const app = createApp();
+    const controller = new AbortController();
+    controller.abort("disconnected");
+    app.get("/aborted", (req) => Response.json({ aborted: req.signal.aborted, reason: req.signal.reason }));
+    const response = await app.handle(new Request("http://localhost/aborted", { signal: controller.signal }));
+    expect(await response.json()).toEqual({ aborted: true, reason: "disconnected" });
+  });
+
+  it("aborts the handler on timeout without aborting its upstream signal", async () => {
+    const app = createApp({ requestTimeout: 10 });
+    const source = new AbortController();
+    let observed: AbortSignal | undefined;
+    let finish: (() => void) | undefined;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    app.get("/timeout-signal", async (req) => {
+      observed = req.signal;
+      await pending;
+      return new Response("late");
+    });
+    try {
+      const response = await app.handle(new Request("http://localhost/timeout-signal", { signal: source.signal }));
+      expect(response.status).toBe(504);
+      expect(observed?.aborted).toBe(true);
+      expect(observed?.reason.statusCode).toBe(504);
+      expect(source.signal.aborted).toBe(false);
+    } finally {
+      finish?.();
+    }
+  });
+
   it("should return 504 when handler exceeds timeout", async () => {
     const app = createApp({ requestTimeout: 100 });
     app.get("/slow", async (_req, reply) => {
