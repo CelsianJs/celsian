@@ -1026,7 +1026,24 @@ export class CelsianApp {
     // observe cancellation, and aborted when the timeout fires (in addition to
     // rejecting with 504) so in-flight work can stop promptly.
     const controller = new AbortController();
-    (request as Record<string, unknown>).signal = controller.signal;
+    const incomingSignal = request.signal;
+    // The timeout must not replace transport cancellation, including after a
+    // handler returns a streaming response whose producer retains this signal.
+    if (typeof AbortSignal.any === "function") {
+      (request as Record<string, unknown>).signal = AbortSignal.any([incomingSignal, controller.signal]);
+    } else {
+      // Node 20.0 and older edge runtimes predate AbortSignal.any(). Each source
+      // is a request-local signal, so normal completion is garbage-collectable.
+      const abort = () => controller.abort(incomingSignal.reason);
+      if (incomingSignal.aborted) abort();
+      else {
+        incomingSignal.addEventListener("abort", abort, { once: true });
+        controller.signal.addEventListener("abort", () => incomingSignal.removeEventListener("abort", abort), {
+          once: true,
+        });
+      }
+      (request as Record<string, unknown>).signal = controller.signal;
+    }
     let timer: ReturnType<typeof setTimeout>;
     return Promise.race([
       this.runLifecycle(request, reply, route, scope).finally(() => clearTimeout(timer)),

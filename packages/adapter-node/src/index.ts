@@ -3,7 +3,10 @@
 import { readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, join, resolve } from "node:path";
-import type { CelsianApp } from "@celsian/core";
+import { type CelsianApp, nodeToWebRequest, writeWebResponse } from "@celsian/core";
+
+// Keep stream ownership and HTTP conversion identical to the built-in Node server.
+export { nodeToWebRequest, writeWebResponse } from "@celsian/core";
 
 // ─── Removed: build adapter ───
 //
@@ -86,69 +89,17 @@ export function serve(app: CelsianApp, options: NodeAdapterOptions = {}): void {
       const response = await app.handle(webRequest);
       await writeWebResponse(res, response);
     } catch (error) {
-      console.error("[celsian] Unhandled error:", error);
-      res.statusCode = 500;
-      res.end("Internal Server Error");
+      if (!res.destroyed) {
+        console.error("[celsian] Unhandled error:", error);
+        if (res.headersSent) res.destroy();
+        else await writeWebResponse(res, new Response("Internal Server Error", { status: 500 }));
+      }
     }
   });
 
   server.listen(port, host, () => {
     console.log(`[celsian] Server running at http://${host}:${port}`);
   });
-}
-
-// ─── Conversion Helpers ───
-
-export function nodeToWebRequest(req: IncomingMessage, url: URL): Request {
-  const headers = new Headers();
-  for (const [key, value] of Object.entries(req.headers)) {
-    if (typeof value === "string") {
-      headers.set(key, value);
-    } else if (Array.isArray(value)) {
-      for (const v of value) headers.append(key, v);
-    }
-  }
-
-  const method = req.method ?? "GET";
-  const hasBody = method !== "GET" && method !== "HEAD";
-
-  return new Request(url.toString(), {
-    method,
-    headers,
-    body: hasBody ? (req as unknown as ReadableStream) : undefined,
-    duplex: hasBody ? "half" : undefined,
-  });
-}
-
-export async function writeWebResponse(res: ServerResponse, response: Response): Promise<void> {
-  res.statusCode = response.status;
-
-  for (const [key, value] of response.headers.entries()) {
-    if (key.toLowerCase() === "set-cookie") continue; // handled below
-    res.setHeader(key, value);
-  }
-
-  // Headers.entries() collapses repeated Set-Cookie into one comma-joined value,
-  // which corrupts cookies containing commas (e.g. Expires dates). Write the
-  // array form so every cookie gets its own header line.
-  const cookies = (response.headers as { getSetCookie?: () => string[] }).getSetCookie?.() ?? [];
-  if (cookies.length > 0) {
-    res.setHeader("set-cookie", cookies);
-  }
-
-  if (response.body) {
-    const reader = response.body.getReader();
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        res.write(value);
-      }
-    } finally {
-      reader.releaseLock();
-    }
-  }
-  res.end();
 }
 
 export default serve;
