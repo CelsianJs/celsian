@@ -14,6 +14,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > notices. `pnpm check:root-changelog` now fails CI when this file's newest entry is
 > behind `packages/core/package.json`, so the third time cannot happen quietly.
 
+## [0.6.2] - 2026-09-05
+
+### Fixed
+
+- Streaming JSON responses are no longer buffered by response-schema validation. Validation still applies to JSON serialized by Celsian, but not manually constructed `Response` bodies.
+- Prefix-scoped request guards now run before custom 404 handlers. Protected missing routes may now return the guard's rejection instead of 404.
+- Cron day-of-month and day-of-week fields follow Unix OR semantics when both are restricted; affected schedules can run more often than before.
+- Development servers bind `127.0.0.1` by default. Explicit IPv6 callers must set `HOST=::1`; production binding is unchanged. Listen failures now explain port conflicts and invalid bind addresses.
+- `create-celsian` honors documented short/equal template flags and rejects unknown flags or extra positional arguments rather than silently generating the wrong template. Use npm's `--` separator before template flags.
+- SSE safely frames CR/CRLF data and promptly releases cancelled or pre-aborted channels. Node streaming respects backpressure and disconnect cancellation, including when request timeouts are configured. The Node adapter reuses the core transport bridge.
+- Response caches preserve repeated-query ordering and invalidate long hashed keys across instances without a process-local index.
+
+### Upgrade notes
+
+Clear or rebuild existing persistent response-cache entries during rollout. Old entries may collapse repeated-query ordering or lack the full identity metadata needed to invalidate long hashed keys; the original identity cannot be reconstructed. If clearing is not feasible, isolate the new cache namespace until old entries have expired. Hashed-key invalidation now reads stored metadata and adds KV reads; ordinary short-key hits do not add metadata lookups.
+
+All 20 public packages release together at 0.6.2. No external runtime dependencies were added. The scaffolder now requests at least this patch within the 0.6 release line.
+
 ## [0.6.1] - 2026-07-27
 
 ### Fixed
