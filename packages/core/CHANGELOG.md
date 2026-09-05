@@ -1,5 +1,100 @@
 # @celsian/core
 
+## 0.6.2
+
+### Patch Changes
+
+- 4246e07: Preserve stream ownership from request to transport. SSE data now handles CR,
+  CRLF and LF safely, and cancelled or pre-aborted subscriptions release hub
+  membership and timers. Node response writers respect backpressure, cancel idle
+  producers on disconnect, and retain transport cancellation alongside request
+  timeouts. The Node adapter shares the core HTTP conversion implementation.
+
+  Response cache keys preserve the order of repeated query parameters while still
+  normalizing distinct parameter names. Hashed entries retain their full logical
+  key so invalidation works for long paths, including across cache instances.
+
+  **Upgrade note:** clear or rebuild existing persistent response-cache entries
+  when deploying this release. Previous entries may have collapsed repeated-query
+  ordering or lack the identity metadata needed to invalidate long hashed keys;
+  their original identity cannot be reconstructed. Invalidation of hashed entries
+  now reads stored metadata, which adds KV reads; ordinary short-key cache hits do
+  not add a metadata lookup.
+
+- bc87e6e: Three first-run fixes, two of which change behaviour. Read those two before upgrading.
+
+  **BEHAVIOUR CHANGE: the dev server now binds `127.0.0.1` instead of the name
+  `localhost`.** Node stopped reordering resolver results in v17, so
+  `listen("localhost")` binds whichever family DNS returns first, in practice
+  `::1` alone. The server printed `http://[::1]:3000` and answered
+  `http://localhost:3000`, while `curl http://127.0.0.1:3000` was refused, which
+  is the address most tooling, documentation and muscle memory reaches for. The
+  `basic` template sets no `HOST`, so the simplest template was the one that
+  broke. Binding the IPv4 literal serves both spellings: a client that resolves
+  `localhost` to `::1` first falls back to `127.0.0.1` when that connection is
+  refused. Anything binding the dev default and then connecting to `::1`
+  explicitly must now set `HOST=::1`. Production is untouched: `0.0.0.0` under
+  `NODE_ENV=production`, and the loopback-in-production warning still fires.
+
+  **BEHAVIOUR CHANGE: `create-celsian` now refuses an argv it used to accept
+  silently.** `npm create celsian@latest my-api --template basic` never delivers
+  the flag. npm claims every flag after the package name unless a `--` separates
+  them, so it ate `--template` and passed the value through as a bare positional.
+  That positional was discarded and the default `full` template was scaffolded
+  instead, with no warning: a user who asked for a minimal server got JWT, CSRF
+  and a Dockerfile. A second positional is now an error that names the likely
+  cause and prints both invocations that survive npm's parsing, and nothing is
+  written to disk. Inferring the template from the leftover would only move the
+  guess one level up, where a wrong guess is invisible again. `--template=<id>`,
+  `-t <id>` and `-t=<id>` are now honoured (the README already documented `-t`,
+  and both spellings previously fell through to `full`), and an unknown flag is
+  an error rather than being ignored.
+
+  **A port that is already in use now explains itself.** `PORT=3000 npm run dev`
+  against a taken port surfaced as `unhandledRejection, shutting down` plus a
+  `node:net` stack, which reads like the framework crashed. `serve()` now rejects
+  with a `ServeListenError` carrying one plain line ("Port 3000 is already in
+  use ... pick another port with PORT=3001"), the original Node error is kept as
+  `cause`, and the fatal handler prints that line on its own without the crash
+  framing. `EACCES` on a privileged port and `EADDRNOTAVAIL` on a host this
+  machine does not own get the same treatment. The exit code is still non-zero
+  and unrecognised listen failures are passed through untouched.
+
+- d1e677e: Three fixes, two of which change behaviour. Read those two before upgrading.
+
+  **A response schema no longer defeats a streaming JSON response.** Validating a
+  handler-built `Response` called `response.clone().json()`, which tees the body
+  and drains it to completion. Any route returning `reply.stream()` with a JSON
+  content type alongside a 2xx `schema.response` was fully buffered before the
+  client saw a byte, and an endless stream hung until the request timeout fired a 504. Measured on a stream whose first chunk arrives at 600ms, `handle()`
+  returned at 603ms with a schema and 18ms without; it now returns at 0ms with
+  one. Validation now reads only a body Celsian serialized itself, so no stream is
+  ever touched.
+
+  Deliberate narrowing: a handler that hand-builds
+  `new Response(JSON.stringify(x), { 'content-type': 'application/json' })`,
+  bypassing both `reply.json()` and the auto-serializer, is no longer
+  response-validated. A buffered `Response` and a streaming one expose an
+  identical `body`, so there is no way to read the first without risking draining
+  the second. Every documented way to send JSON is unaffected.
+
+  **BEHAVIOUR CHANGE: a prefix-scoped guard now runs before a custom 404
+  handler.** A genuine 404 resolved `onRequest` from the root scope only, so a
+  plugin registered with `{ prefix: '/admin' }` never saw a request to
+  `/admin/nonexistent` while the identical un-prefixed guard did. The 404 path now
+  takes the same union of covering guards that an unrouted WebSocket upgrade
+  does. An app with a prefix-scoped guard will now get that guard's response
+  (commonly 401) where it previously got its custom or default 404.
+
+  **BEHAVIOUR CHANGE: cron day fields follow unix semantics, so some jobs fire
+  more often.** `shouldRun` ANDed all five fields; Vixie cron runs the job when
+  either day-of-month or day-of-week matches whenever both are restricted.
+  `0 0 13 * 5` means "the 13th of every month, and every Friday" and previously
+  fired only when the 13th was a Friday. This only affects expressions where
+  neither day field begins with `*`. Everything else is unchanged.
+
+  - @celsian/schema@0.6.2
+
 ## 0.6.1
 
 ### Patch Changes
