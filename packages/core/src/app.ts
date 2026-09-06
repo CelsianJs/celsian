@@ -341,6 +341,7 @@ export class CelsianApp {
       // populated by validateRequest before the handler is called
       handler: resolvedHandler as unknown as RouteHandler,
       schema: opts.schema,
+      openapi: opts.openapi,
       onRequest: opts.onRequest,
       preHandler: opts.preHandler,
     });

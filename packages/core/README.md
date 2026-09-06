@@ -128,6 +128,39 @@ await app.register(openapi({ title: 'My API', version: '1.0.0' }));
 
 Rate limiting, JWT auth, compression and caching live in separate packages (`@celsian/rate-limit`, `@celsian/jwt`, `@celsian/compress`, `@celsian/cache`).
 
+### Documenting authentication and CSRF
+
+Declare available HTTP or API-key schemes in `openapi({ securitySchemes })`, then
+add requirements only to the routes that enforce them. Swagger UI displays an
+**Authorize** control for these schemes. Route `openapi` metadata is documentation
+only: it never installs authentication hooks, disables CSRF, or changes validation.
+
+```ts
+await app.register(openapi({
+  securitySchemes: {
+    bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+  },
+}));
+
+app.put('/users/:id', {
+  onRequest: requireAuth, // Your JWT guard; keep runtime enforcement explicit.
+  openapi: {
+    security: [{ bearerAuth: [] }],
+    parameters: [{
+      name: 'x-csrf-token', in: 'header', required: true,
+      description: 'Must match the _csrf cookie issued by a previous GET.',
+      schema: { type: 'string' },
+    }],
+  },
+}, updateUser);
+```
+
+`openapi.description` adds operation documentation; `openapi.parameters` appends
+to schema-derived query/path parameters. Omit `openapi.security` for public
+operations, or use `[]` to explicitly document no authentication. Auth requirements
+are never inferred from hooks. A CSRF cookie is sent automatically by same-origin
+browsers, but callers must still supply the matching header.
+
 ## Background tasks and cron
 
 ```ts

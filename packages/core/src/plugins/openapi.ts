@@ -9,6 +9,8 @@ export interface OpenAPIOptions {
   version?: string;
   description?: string;
   servers?: Array<{ url: string; description?: string }>;
+  /** Available auth schemes. Declare requirements on each route's openapi.security. */
+  securitySchemes?: Record<string, OpenAPISecurityScheme>;
   /** Path to serve the JSON spec (default: '/docs/openapi.json') */
   jsonPath?: string;
   /** Path to serve the Swagger UI (default: '/docs') */
@@ -27,6 +29,11 @@ export interface OpenAPIOptions {
    */
   swaggerUi?: SwaggerUIAssets;
 }
+
+/** HTTP and API-key authentication schemes supported by Swagger UI. */
+export type OpenAPISecurityScheme =
+  | { type: "http"; scheme: string; bearerFormat?: string; description?: string }
+  | { type: "apiKey"; name: string; in: "header" | "query" | "cookie"; description?: string };
 
 /** Pinned Swagger UI assets: exact version plus subresource-integrity hashes. */
 export interface SwaggerUIAssets {
@@ -47,6 +54,7 @@ interface OpenAPISpec {
   info: { title: string; version: string; description?: string };
   servers?: Array<{ url: string; description?: string }>;
   paths: Record<string, Record<string, unknown>>;
+  components?: { securitySchemes: Record<string, OpenAPISecurityScheme> };
 }
 
 // ─── Schema Helpers ───
@@ -234,6 +242,8 @@ function generateSpec(routes: InternalRoute[], options: OpenAPIOptions): OpenAPI
       tags: [deriveTag(route.url)],
       summary: `${route.method} ${route.url}`,
     };
+    if (route.openapi?.description !== undefined) operation.description = route.openapi.description;
+    if (route.openapi?.security !== undefined) operation.security = route.openapi.security;
 
     // Parameters (path + query)
     const parameters: Array<Record<string, unknown>> = [];
@@ -255,6 +265,10 @@ function generateSpec(routes: InternalRoute[], options: OpenAPIOptions): OpenAPI
 
     if (route.schema?.querystring) {
       parameters.push(...schemaToQueryParams(route.schema.querystring));
+    }
+
+    if (route.openapi?.parameters) {
+      parameters.push(...route.openapi.parameters);
     }
 
     if (parameters.length > 0) {
@@ -295,6 +309,9 @@ function generateSpec(routes: InternalRoute[], options: OpenAPIOptions): OpenAPI
 
   if (options.servers && options.servers.length > 0) {
     spec.servers = options.servers;
+  }
+  if (options.securitySchemes && Object.keys(options.securitySchemes).length > 0) {
+    spec.components = { securitySchemes: options.securitySchemes };
   }
 
   return spec;
