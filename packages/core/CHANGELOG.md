@@ -1,5 +1,27 @@
 # @celsian/core
 
+## 0.6.3
+
+### Patch Changes
+
+- Make the full scaffold's protected operations usable from Swagger UI. Declare
+  HTTP or API-key schemes with `openapi({ securitySchemes })` and per-route
+  `openapi.security`, `openapi.parameters`, and `openapi.description` metadata.
+  The full template documents Bearer JWT requirements on PUT/DELETE and the
+  matching `x-csrf-token` header on POST/PUT/DELETE, with a complete development
+  token and Swagger authorization walkthrough.
+
+  Documentation is declarative only: it does not install authentication hooks,
+  bypass JWT/CSRF enforcement, or alter runtime schema validation. Public routes
+  remain public. Parameters merge by `(in, name)`; later explicit fields override
+  earlier/inferred fields, unspecified fields persist, explicit schemas replace
+  whole schemas, and path parameters always remain required.
+
+  All public packages ship together at 0.6.3, and generated projects require at
+  least this patch so the new metadata types resolve against the matching core.
+
+  - @celsian/schema@0.6.3
+
 ## 0.6.2
 
 ### Patch Changes

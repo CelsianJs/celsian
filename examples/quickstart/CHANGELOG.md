@@ -1,5 +1,15 @@
 # celsian-quickstart
 
+## 1.0.12
+
+### Patch Changes
+
+- Updated dependencies
+  - @celsian/core@0.6.3
+  - @celsian/jwt@0.6.3
+  - @celsian/rate-limit@0.6.3
+  - @celsian/schema@0.6.3
+
 ## 1.0.11
 
 ### Patch Changes

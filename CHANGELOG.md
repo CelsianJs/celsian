@@ -14,6 +14,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > notices. `pnpm check:root-changelog` now fails CI when this file's newest entry is
 > behind `packages/core/package.json`, so the third time cannot happen quietly.
 
+## [0.6.3] - 2026-09-06
+
+### Fixed
+
+- The full scaffold now exposes Swagger's **Authorize** control, marks PUT/DELETE
+  user operations as requiring Bearer JWTs, and documents the required
+  `x-csrf-token` header on POST/PUT/DELETE. Its README walks through development
+  token retrieval, authorization, and a protected Swagger mutation.
+- Core OpenAPI supports explicit security schemes and per-route security,
+  description, and parameter metadata. Parameters merge by `(in, name)`: later
+  explicit fields override inferred/earlier fields, omitted fields persist,
+  explicit schemas replace whole schemas, and path parameters stay required.
+  Duplicate explicit entries appear only once in the generated document.
+
+### Upgrade notes
+
+OpenAPI metadata is documentation only. It does not install authentication hooks,
+disable JWT or CSRF checks, or change request validation. Keep runtime guards and
+security plugins in place. Public routes remain public.
+
+All 20 public packages release together at 0.6.3. The scaffolder requests at least
+this patch so generated metadata types cannot resolve against a pre-fix core.
+No external runtime dependencies were added.
+
 ## [0.6.2] - 2026-09-05
 
 ### Fixed

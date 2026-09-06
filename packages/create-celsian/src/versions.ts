@@ -10,7 +10,7 @@
  *  0.6.0), so shipping `create-celsian@0.6.0` while this still reads `^0.5.0`
  *  generates projects that install the PREVIOUS release. It is re-exported from
  *  `scaffold.ts` so the pin tests read this value instead of a literal. */
-export const CELSIAN_VERSION = "^0.6.2";
+export const CELSIAN_VERSION = "^0.6.3";
 
 /** Third-party dependency pins shared across templates. */
 export const DEPS = {
