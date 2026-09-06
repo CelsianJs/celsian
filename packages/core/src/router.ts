@@ -86,6 +86,7 @@ export class Router {
     kind: "serverless" | "hot" | "task" = "serverless",
     schema?: InternalRoute["schema"],
     hooks?: Partial<RouteHooks>,
+    openapi?: InternalRoute["openapi"],
   ): void {
     const segments = splitPath(url);
     let node = this.root;
@@ -133,6 +134,7 @@ export class Router {
       handler,
       kind,
       schema,
+      openapi,
       hooks: {
         onRequest: hooks?.onRequest ?? [],
         preHandler: hooks?.preHandler ?? [],

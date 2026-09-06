@@ -179,6 +179,25 @@ export type ResponseSchemaMap = Record<number, unknown> & { default?: unknown };
  */
 export type RouteResponseSchema = ResponseSchemaMap | object;
 
+/** Declarative documentation only; authentication still requires runtime hooks. */
+export interface RouteOpenAPIOptions {
+  description?: string;
+  /** Named schemes declared in openapi({ securitySchemes }). [] means no auth. */
+  security?: Array<Record<string, string[]>>;
+  /**
+   * Additional request parameters, e.g. a double-submit CSRF header. Matching
+   * (in, name) entries override earlier/inferred fields; schemas replace whole
+   * schemas. Unspecified fields are retained, and path parameters stay required.
+   */
+  parameters?: Array<{
+    name: string;
+    in: "header" | "query" | "path" | "cookie";
+    required?: boolean;
+    description?: string;
+    schema: Record<string, unknown>;
+  }>;
+}
+
 /**
  * Resolve the handler's `parsedQuery` type from a `querystring` schema.
  *
@@ -192,6 +211,7 @@ export type InferQuery<TQuery> = unknown extends TQuery ? Record<string, string 
 
 /** Schema options for route registration with type inference */
 export interface RouteSchemaOptions<TBody = unknown, TQuery = unknown, TParams = Record<string, string>> {
+  openapi?: RouteOpenAPIOptions;
   schema?: {
     body?: TBody;
     querystring?: TQuery;
@@ -229,6 +249,7 @@ export type TypedSchemaHandler<
 > = (request: TypedCelsianRequest<TParams, TBody, TQuery>, reply: CelsianReply) => RouteResult;
 
 export interface RouteOptions {
+  openapi?: RouteOpenAPIOptions;
   method: RouteMethod | RouteMethod[];
   url: string;
   handler: RouteHandler;
@@ -264,6 +285,7 @@ export interface TypedRouteOptions<
   TUrl extends string = string,
   TParams = ExtractRouteParams<TUrl>,
 > {
+  openapi?: RouteOpenAPIOptions;
   method: RouteMethod | RouteMethod[];
   url: TUrl;
   handler: TypedSchemaHandler<TParams, InferOutput<TBody>, InferQuery<TQuery>>;
@@ -290,6 +312,7 @@ export interface RouteMatch {
 }
 
 export interface InternalRoute {
+  openapi?: RouteOpenAPIOptions;
   method: RouteMethod;
   url: string;
   handler: RouteHandler;

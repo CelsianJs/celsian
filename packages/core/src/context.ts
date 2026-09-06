@@ -270,12 +270,20 @@ export class EncapsulationContext {
         scope,
       });
 
-      ctx.router.addRoute(method, fullUrl, handler, opts?.kind ?? "serverless", opts?.schema, {
-        onRequest: scope.onRequest,
-        preHandler: scope.preHandler,
-        preSerialization: scope.preSerialization,
-        onSend: scope.onSend,
-      });
+      ctx.router.addRoute(
+        method,
+        fullUrl,
+        handler,
+        opts?.kind ?? "serverless",
+        opts?.schema,
+        {
+          onRequest: scope.onRequest,
+          preHandler: scope.preHandler,
+          preSerialization: scope.preSerialization,
+          onSend: scope.onSend,
+        },
+        opts?.openapi,
+      );
     };
 
     // Options-object signature support: app.post(url, { schema, handler }).

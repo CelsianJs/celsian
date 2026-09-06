@@ -38,7 +38,7 @@ export type { DatabaseOptions, DatabasePool, TransactionCapablePool, Transaction
 export { database, transactionLifecycle, withTransaction } from "./plugins/database.js";
 export type { ETagOptions } from "./plugins/etag.js";
 export { withETag } from "./plugins/etag.js";
-export type { OpenAPIOptions } from "./plugins/openapi.js";
+export type { OpenAPIOptions, OpenAPISecurityScheme } from "./plugins/openapi.js";
 export { openapi } from "./plugins/openapi.js";
 export type { SecurityOptions } from "./plugins/security.js";
 export { security } from "./plugins/security.js";
@@ -81,6 +81,7 @@ export type {
   RouteManifestEntry,
   RouteMatch,
   RouteMethod,
+  RouteOpenAPIOptions,
   RouteOptions,
   RouteResponseSchema,
   RouteSchemaOptions,

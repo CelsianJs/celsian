@@ -1,3 +1,4 @@
+import { Type } from "@sinclair/typebox";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { escapeHtml, openapi } from "../src/plugins/openapi.js";
@@ -12,6 +13,8 @@ type OpenAPIMediaType = { schema: { properties: Record<string, { type?: string }
 type OpenAPIParameter = { name: string; in: string; required?: boolean; schema: { type?: string } };
 
 type OpenAPIOperation = {
+  description?: string;
+  security?: Array<Record<string, string[]>>;
   parameters: OpenAPIParameter[];
   requestBody: { required?: boolean; content: Record<string, OpenAPIMediaType> };
   responses: Record<string, { content: Record<string, OpenAPIMediaType> }>;
@@ -22,9 +25,148 @@ type OpenAPISpec = {
   info: { title: string; version: string; description?: string };
   servers: { url: string; description?: string }[];
   paths: Record<string, Record<string, OpenAPIOperation>>;
+  components?: { securitySchemes: Record<string, unknown> };
 };
 
 describe("OpenAPI Plugin", () => {
+  it("merges explicit parameters by location/name without changing route validation", async () => {
+    const app = createApp();
+    const parameterSchema = Type.Object({ id: Type.String({ pattern: "^[0-9]+$" }) });
+    const querySchema = Type.Object({ filter: Type.String(), untouched: Type.Optional(Type.String()) });
+    const metadata = {
+      parameters: [
+        {
+          name: "id",
+          in: "path" as const,
+          required: false,
+          description: "User identifier",
+          schema: { type: "string" },
+        },
+        {
+          name: "filter",
+          in: "query" as const,
+          description: "Documented filter",
+          schema: { type: "string", enum: ["docs"] },
+        },
+        {
+          name: "filter",
+          in: "header" as const,
+          required: true,
+          description: "Original header",
+          schema: { type: "integer" },
+        },
+        { name: "filter", in: "header" as const, description: "Final header", schema: { type: "string" } },
+      ],
+    };
+    app.get(
+      "/users/:id",
+      {
+        schema: { params: parameterSchema, querystring: querySchema },
+        openapi: metadata,
+      },
+      () => ({ ok: true }),
+    );
+    app.get(
+      "/auto/:id",
+      {
+        openapi: { parameters: [{ name: "id", in: "path", schema: { type: "integer" } }] },
+      },
+      () => ({ ok: true }),
+    );
+    await app.register(openapi());
+    const spec = await json<OpenAPISpec>(await app.inject({ url: "/docs/openapi.json" }));
+    expect(spec.paths["/users/{id}"].get.parameters).toEqual([
+      { name: "id", in: "path", required: true, description: "User identifier", schema: { type: "string" } },
+      {
+        name: "filter",
+        in: "query",
+        required: true,
+        description: "Documented filter",
+        schema: { type: "string", enum: ["docs"] },
+      },
+      { name: "untouched", in: "query", required: false, schema: { type: "string" } },
+      { name: "filter", in: "header", required: true, description: "Final header", schema: { type: "string" } },
+    ]);
+    expect(spec.paths["/auto/{id}"].get.parameters).toEqual([
+      { name: "id", in: "path", required: true, schema: { type: "integer" } },
+    ]);
+    // Normalization must not mutate the caller's metadata or validation schema.
+    expect(metadata.parameters[0].required).toBe(false);
+    expect(parameterSchema.properties.id.pattern).toBe("^[0-9]+$");
+    expect((await app.inject({ url: "/users/123?filter=runtime-value" })).status).toBe(200);
+    expect((await app.inject({ url: "/users/not-numeric?filter=docs" })).status).toBe(400);
+    expect((await app.inject({ url: "/users/123" })).status).toBe(400);
+  });
+
+  it("preserves declarative security and extra parameters across registration styles", async () => {
+    const app = createApp();
+    const metadata = {
+      security: [{ bearerAuth: [] }],
+      description: "Requires a signed-in user and matching CSRF cookie/header.",
+      parameters: [{ name: "x-csrf-token", in: "header" as const, required: true, schema: { type: "string" } }],
+    };
+    app.put(
+      "/users/:id",
+      {
+        openapi: metadata,
+        schema: { body: Type.Object({ name: Type.String() }) },
+      },
+      () => ({ ok: true }),
+    );
+    await app.register(
+      (plugin) => {
+        plugin.route({
+          method: ["DELETE", "PATCH"],
+          url: "/users/:id",
+          openapi: metadata,
+          handler: () => ({ ok: true }),
+        });
+        plugin.post("/users", { openapi: metadata, handler: () => ({ ok: true }) });
+      },
+      { prefix: "/v1" },
+    );
+    const schemes = {
+      bearerAuth: { type: "http" as const, scheme: "bearer", bearerFormat: "JWT" },
+      apiKey: { type: "apiKey" as const, name: "x-api-key", in: "header" as const },
+    };
+    await app.register(openapi({ securitySchemes: schemes }));
+    const spec = await json<OpenAPISpec>(await app.inject({ url: "/docs/openapi.json" }));
+    expect(spec.components?.securitySchemes).toEqual(schemes);
+    for (const [path, method] of [
+      ["/users/{id}", "put"],
+      ["/v1/users/{id}", "delete"],
+      ["/v1/users/{id}", "patch"],
+      ["/v1/users", "post"],
+    ]) {
+      expect(spec.paths[path][method]).toMatchObject({
+        security: metadata.security,
+        description: metadata.description,
+        parameters: expect.arrayContaining(metadata.parameters),
+      });
+    }
+    expect(spec.paths["/users/{id}"].put.parameters).toHaveLength(2);
+    expect(spec.paths["/users/{id}"].put.requestBody.content["application/json"].schema.properties.name.type).toBe(
+      "string",
+    );
+    // Metadata neither creates an auth hook nor changes runtime validation.
+    expect((await app.inject({ method: "PUT", url: "/users/1", payload: { name: "Ada" } })).status).toBe(200);
+    expect((await app.inject({ method: "PUT", url: "/users/1", payload: { name: 123 } })).status).toBe(400);
+  });
+
+  it("does not infer security from hooks or mark public operations protected", async () => {
+    const app = createApp();
+    app.get("/public", () => ({ ok: true }));
+    app.get("/explicit-public", { openapi: { security: [] } }, () => ({ ok: true }));
+    app.get("/guarded", { onRequest: (_req, reply) => reply.unauthorized() }, () => ({ ok: true }));
+    await app.register(openapi({ securitySchemes: {} }));
+    const spec = await json<OpenAPISpec>(await app.inject({ url: "/docs/openapi.json" }));
+    expect(spec.components).toBeUndefined();
+    expect(spec.paths["/public"].get.security).toBeUndefined();
+    expect(spec.paths["/guarded"].get.security).toBeUndefined();
+    expect(spec.paths["/explicit-public"].get.security).toEqual([]);
+    expect((await app.inject({ url: "/guarded" })).status).toBe(401);
+  });
+
   it("should generate spec with registered routes", async () => {
     const app = createApp();
     app.get("/users", (_req, reply) => reply.json([]));
