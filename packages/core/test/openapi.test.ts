@@ -29,6 +29,75 @@ type OpenAPISpec = {
 };
 
 describe("OpenAPI Plugin", () => {
+  it("merges explicit parameters by location/name without changing route validation", async () => {
+    const app = createApp();
+    const parameterSchema = Type.Object({ id: Type.String({ pattern: "^[0-9]+$" }) });
+    const querySchema = Type.Object({ filter: Type.String(), untouched: Type.Optional(Type.String()) });
+    const metadata = {
+      parameters: [
+        {
+          name: "id",
+          in: "path" as const,
+          required: false,
+          description: "User identifier",
+          schema: { type: "string" },
+        },
+        {
+          name: "filter",
+          in: "query" as const,
+          description: "Documented filter",
+          schema: { type: "string", enum: ["docs"] },
+        },
+        {
+          name: "filter",
+          in: "header" as const,
+          required: true,
+          description: "Original header",
+          schema: { type: "integer" },
+        },
+        { name: "filter", in: "header" as const, description: "Final header", schema: { type: "string" } },
+      ],
+    };
+    app.get(
+      "/users/:id",
+      {
+        schema: { params: parameterSchema, querystring: querySchema },
+        openapi: metadata,
+      },
+      () => ({ ok: true }),
+    );
+    app.get(
+      "/auto/:id",
+      {
+        openapi: { parameters: [{ name: "id", in: "path", schema: { type: "integer" } }] },
+      },
+      () => ({ ok: true }),
+    );
+    await app.register(openapi());
+    const spec = await json<OpenAPISpec>(await app.inject({ url: "/docs/openapi.json" }));
+    expect(spec.paths["/users/{id}"].get.parameters).toEqual([
+      { name: "id", in: "path", required: true, description: "User identifier", schema: { type: "string" } },
+      {
+        name: "filter",
+        in: "query",
+        required: true,
+        description: "Documented filter",
+        schema: { type: "string", enum: ["docs"] },
+      },
+      { name: "untouched", in: "query", required: false, schema: { type: "string" } },
+      { name: "filter", in: "header", required: true, description: "Final header", schema: { type: "string" } },
+    ]);
+    expect(spec.paths["/auto/{id}"].get.parameters).toEqual([
+      { name: "id", in: "path", required: true, schema: { type: "integer" } },
+    ]);
+    // Normalization must not mutate the caller's metadata or validation schema.
+    expect(metadata.parameters[0].required).toBe(false);
+    expect(parameterSchema.properties.id.pattern).toBe("^[0-9]+$");
+    expect((await app.inject({ url: "/users/123?filter=runtime-value" })).status).toBe(200);
+    expect((await app.inject({ url: "/users/not-numeric?filter=docs" })).status).toBe(400);
+    expect((await app.inject({ url: "/users/123" })).status).toBe(400);
+  });
+
   it("preserves declarative security and extra parameters across registration styles", async () => {
     const app = createApp();
     const metadata = {

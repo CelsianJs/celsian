@@ -155,8 +155,12 @@ app.put('/users/:id', {
 }, updateUser);
 ```
 
-`openapi.description` adds operation documentation; `openapi.parameters` appends
-to schema-derived query/path parameters. Omit `openapi.security` for public
+`openapi.description` adds operation documentation; `openapi.parameters` merges
+with schema-derived query/path parameters by `(in, name)`. Later explicit entries
+override earlier/inferred fields while preserving unspecified fields. An explicit
+`schema` replaces the entire earlier schema; path parameters always remain
+`required: true`. Duplicate explicit entries follow the same last-entry-wins rule
+and appear only once in the document. Omit `openapi.security` for public
 operations, or use `[]` to explicitly document no authentication. Auth requirements
 are never inferred from hooks. A CSRF cookie is sent automatically by same-origin
 browsers, but callers must still supply the matching header.

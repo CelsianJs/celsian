@@ -184,7 +184,11 @@ export interface RouteOpenAPIOptions {
   description?: string;
   /** Named schemes declared in openapi({ securitySchemes }). [] means no auth. */
   security?: Array<Record<string, string[]>>;
-  /** Additional request parameters, e.g. a double-submit CSRF header. */
+  /**
+   * Additional request parameters, e.g. a double-submit CSRF header. Matching
+   * (in, name) entries override earlier/inferred fields; schemas replace whole
+   * schemas. Unspecified fields are retained, and path parameters stay required.
+   */
   parameters?: Array<{
     name: string;
     in: "header" | "query" | "path" | "cookie";

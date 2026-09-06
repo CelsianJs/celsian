@@ -230,6 +230,25 @@ function buildResponses(response: unknown): Record<string, unknown> {
 
 // ─── Spec Generator ───
 
+/**
+ * OpenAPI requires unique (in, name) pairs. Later explicit metadata overrides
+ * inferred fields (and earlier explicit entries), retaining unspecified fields.
+ * Schemas are replaced as a whole, not combined into incompatible constraints.
+ */
+function mergeParameters(parameters: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  const merged = new Map<string, Record<string, unknown>>();
+  for (const parameter of parameters) {
+    const key = JSON.stringify([parameter.in, parameter.name]);
+    merged.set(key, {
+      ...merged.get(key),
+      ...parameter,
+      // Required by OpenAPI even when documentation explicitly says false.
+      ...(parameter.in === "path" ? { required: true } : {}),
+    });
+  }
+  return [...merged.values()];
+}
+
 function generateSpec(routes: InternalRoute[], options: OpenAPIOptions): OpenAPISpec {
   const paths: Record<string, Record<string, unknown>> = {};
 
@@ -272,7 +291,7 @@ function generateSpec(routes: InternalRoute[], options: OpenAPIOptions): OpenAPI
     }
 
     if (parameters.length > 0) {
-      operation.parameters = parameters;
+      operation.parameters = mergeParameters(parameters);
     }
 
     // Request body
