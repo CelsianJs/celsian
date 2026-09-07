@@ -46,6 +46,17 @@ This installs the published packages into a clean consumer, imports public
 packages, checks CLI bins, scaffolds generated apps, and builds/health-checks the
 templates that should boot.
 
+Fresh npm publishes can return transient `ETARGET`/`404` responses while
+registry metadata propagates. The verifier retries only those registry lookup
+failures, uses a fresh per-run npm cache with online metadata flags, and uploads
+a success or failure artifact with bounded attempt logs.
+
+If publishing already succeeded and only the registry smoke needs to be rerun,
+use the manual `Verify registry packages` workflow. Provide the exact published
+semver version in the `version` input, without a leading `v`. That workflow has
+no npm token and does not publish; it only runs the registry consumer smoke for
+the immutable version already on npm.
+
 ## Rules
 
 - Vura Platform/private code is never part of this release.
