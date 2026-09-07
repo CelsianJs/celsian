@@ -9,6 +9,7 @@ export default defineConfig({
       // docs/ is a published path (the site's Docs link points at it).
       "internal/test-real-world/**/*.test.ts",
       "internal/realism-audit/**/*.test.ts",
+      "scripts/**/*.test.mjs",
     ],
     globals: true,
     env: {
