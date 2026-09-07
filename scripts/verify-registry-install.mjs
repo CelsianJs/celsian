@@ -9,8 +9,8 @@ import { spawnSync } from 'node:child_process';
 const root = process.cwd();
 const packagesDir = join(root, 'packages');
 const artifactPath = process.env.CELSIAN_REGISTRY_SMOKE_ARTIFACT || 'artifacts/registry-smoke.json';
-const installAttempts = Math.max(1, Number.parseInt(process.env.CELSIAN_REGISTRY_INSTALL_ATTEMPTS || '20', 10));
-const installRetryDelayMs = Math.max(0, Number.parseInt(process.env.CELSIAN_REGISTRY_INSTALL_RETRY_DELAY_MS || '15000', 10));
+const installAttempts = parsePositiveIntegerEnv('CELSIAN_REGISTRY_INSTALL_ATTEMPTS', 20);
+const installRetryDelayMs = parseNonNegativeIntegerEnv('CELSIAN_REGISTRY_INSTALL_RETRY_DELAY_MS', 15_000);
 const completedChecks = [];
 const installAttemptLog = [];
 
@@ -26,6 +26,26 @@ function run(cmd, args, opts = {}) {
     throw new Error(`${cmd} ${args.join(' ')} failed with ${res.status}\n${details}`);
   }
   return res;
+}
+
+export function parsePositiveIntegerEnv(name, defaultValue, env = process.env) {
+  const value = env[name];
+  if (value === undefined || value === '') return defaultValue;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || !Number.isFinite(parsed) || parsed < 1 || String(parsed) !== value) {
+    throw new Error(`${name} must be a positive integer, got ${JSON.stringify(value)}`);
+  }
+  return parsed;
+}
+
+export function parseNonNegativeIntegerEnv(name, defaultValue, env = process.env) {
+  const value = env[name];
+  if (value === undefined || value === '') return defaultValue;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || !Number.isFinite(parsed) || parsed < 0 || String(parsed) !== value) {
+    throw new Error(`${name} must be a finite nonnegative integer, got ${JSON.stringify(value)}`);
+  }
+  return parsed;
 }
 
 export function validateRegistryVersion(value) {

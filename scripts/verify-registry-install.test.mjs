@@ -8,6 +8,8 @@ import {
   buildRegistryNpmInstallInvocation,
   isDirectExecution,
   isRetryableRegistryInstallError,
+  parseNonNegativeIntegerEnv,
+  parsePositiveIntegerEnv,
   retryNpmInstall,
   runRegistryNpmInstallOnce,
   summarizeRetryError,
@@ -25,6 +27,39 @@ function fakeSleep(record) {
     record.push(ms);
   };
 }
+
+describe('registry retry environment parsing', () => {
+  it('accepts integer overrides and defaults empty values', () => {
+    expect(parsePositiveIntegerEnv('ATTEMPTS', 20, {})).toBe(20);
+    expect(parsePositiveIntegerEnv('ATTEMPTS', 20, { ATTEMPTS: '' })).toBe(20);
+    expect(parsePositiveIntegerEnv('ATTEMPTS', 20, { ATTEMPTS: '3' })).toBe(3);
+
+    expect(parseNonNegativeIntegerEnv('DELAY', 15_000, {})).toBe(15_000);
+    expect(parseNonNegativeIntegerEnv('DELAY', 15_000, { DELAY: '' })).toBe(15_000);
+    expect(parseNonNegativeIntegerEnv('DELAY', 15_000, { DELAY: '0' })).toBe(0);
+    expect(parseNonNegativeIntegerEnv('DELAY', 15_000, { DELAY: '15000' })).toBe(15_000);
+  });
+
+  it('rejects non-finite, negative, and partial retry delay values instead of coercing them to a zero-delay loop', () => {
+    for (const value of ['NaN', 'Infinity', '-1', '1.5', '15s', ' 15']) {
+      expect(() =>
+        parseNonNegativeIntegerEnv('CELSIAN_REGISTRY_INSTALL_RETRY_DELAY_MS', 15_000, {
+          CELSIAN_REGISTRY_INSTALL_RETRY_DELAY_MS: value,
+        }),
+      ).toThrow('finite nonnegative integer');
+    }
+  });
+
+  it('rejects invalid attempt counts', () => {
+    for (const value of ['0', '-1', '1.5', 'NaN', '3s']) {
+      expect(() =>
+        parsePositiveIntegerEnv('CELSIAN_REGISTRY_INSTALL_ATTEMPTS', 20, {
+          CELSIAN_REGISTRY_INSTALL_ATTEMPTS: value,
+        }),
+      ).toThrow('positive integer');
+    }
+  });
+});
 
 describe('isRetryableRegistryInstallError', () => {
   it('matches npm propagation failures only', () => {
