@@ -14,6 +14,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > notices. `pnpm check:root-changelog` now fails CI when this file's newest entry is
 > behind `packages/core/package.json`, so the third time cannot happen quietly.
 
+## [0.6.4] - 2026-09-26
+
+### Fixed
+
+- Node `serve()` shutdown now closes long-lived SSE and WebSocket connections
+  instead of returning while they keep the process alive. WebSocket clients
+  receive close code 1001; connections that outlive the configured grace period
+  are terminated. Ordinary in-flight HTTP responses can still finish gracefully.
+- Idle sockets and WebSocket upgrades waiting on asynchronous authorization
+  cannot establish or retain a connection after shutdown starts.
+
+This patch does not add producer-side SSE queue limits or change Bun, Deno,
+or Cloudflare runtime behavior. The existing 20-package fixed release group
+stays synchronized; no runtime dependencies are added.
+
 ## [0.6.3] - 2026-09-06
 
 ### Fixed
