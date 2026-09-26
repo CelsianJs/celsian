@@ -1,6 +1,7 @@
 // @celsian/core, Built-in server (Node.js / Bun / Deno runtime detection)
 
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { Socket } from "node:net";
 import type { CelsianApp } from "./app.js";
 import { getFastPayload } from "./fast-response.js";
 import { readConfinedFile } from "./reply.js";
@@ -284,6 +285,13 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
   let inFlight = 0;
   let shuttingDown = false;
   const shutdownTimeout = options.shutdownTimeout ?? 10_000;
+  const sockets = new Set<Socket>();
+  const webSockets = new Set<{
+    close: (code?: number, reason?: string) => void;
+    terminate?: () => void;
+    readyState?: number;
+  }>();
+  const pendingUpgradeSockets = new Set<Socket>();
 
   // Pre-compute base URL string for Node.js request conversion (avoid per-request concatenation)
   const baseUrl = `http://${host}:${port}`;
@@ -363,6 +371,11 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
     }
   });
 
+  server.on("connection", (socket: Socket) => {
+    sockets.add(socket);
+    socket.once("close", () => sockets.delete(socket));
+  });
+
   // Graceful shutdown
   const handleShutdown = async () => {
     if (shuttingDown) return;
@@ -372,11 +385,35 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
 
     // Stop accepting new connections
     server.close();
+    server.closeIdleConnections?.();
 
-    // Wait for in-flight requests to drain
+    for (const ws of webSockets) {
+      try {
+        ws.close(1001, "Server shutting down");
+      } catch {
+        webSockets.delete(ws);
+      }
+    }
+
+    // Wait for in-flight requests and upgraded WebSockets to drain. Long-lived
+    // responses such as SSE may intentionally never finish on their own; after
+    // the grace period, destroy the remaining sockets so shutdown can complete.
     const deadline = Date.now() + shutdownTimeout;
-    while (inFlight > 0 && Date.now() < deadline) {
+    while ((inFlight > 0 || webSockets.size > 0 || pendingUpgradeSockets.size > 0) && Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 100));
+    }
+
+    if (inFlight > 0 || webSockets.size > 0 || pendingUpgradeSockets.size > 0 || sockets.size > 0) {
+      for (const ws of webSockets) {
+        try {
+          ws.terminate?.();
+        } catch {
+          // Socket may already be closing.
+        }
+      }
+      for (const socket of sockets) {
+        socket.destroy();
+      }
     }
 
     await teardownApp(app, options);
@@ -411,90 +448,106 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
       const limiter = new WSConnectionLimiter(options.maxConnectionsPerIP ?? 64);
 
       server.on("upgrade", async (req: IncomingMessage, socket: any, head: Buffer) => {
+        if (shuttingDown) {
+          socket.destroy();
+          return;
+        }
+        pendingUpgradeSockets.add(socket);
         const url = new URL(req.url ?? "/", `http://${host}:${port}`);
         const pathname = url.pathname;
-        const handler = app.wsRegistry.getHandler(pathname);
+        try {
+          const handler = app.wsRegistry.getHandler(pathname);
 
-        if (!handler) {
-          socket.destroy();
-          return;
+          if (!handler) {
+            socket.destroy();
+            return;
+          }
+
+          // Gate the handshake: Origin allow-list, onUpgrade callback, then the
+          // app's root onRequest hooks (auth guards, rate limiters). WebSocket
+          // handshakes are exempt from CORS, so without this a cross-site page can
+          // open an authenticated socket with the victim's cookies.
+          const webReq = nodeToWebRequest(req, url);
+          const decision = await authorizeWSUpgrade(app, webReq, pathname, {
+            allowedOrigins: options.allowedOrigins,
+            allowMissingOrigin: options.allowMissingOrigin,
+            onUpgrade: options.onUpgrade,
+            runRequestHooks: options.skipUpgradeHooks !== true,
+          });
+
+          if (shuttingDown || socket.destroyed) {
+            socket.destroy();
+            return;
+          }
+
+          if (!decision.allowed) {
+            app.log.warn("WebSocket upgrade rejected", {
+              path: pathname,
+              status: decision.status,
+              reason: decision.reason,
+            });
+            socket.write(`HTTP/1.1 ${decision.status} ${decision.status === 403 ? "Forbidden" : "Rejected"}\r\n\r\n`);
+            socket.destroy();
+            return;
+          }
+
+          const clientIp: string = req.socket?.remoteAddress ?? "unknown";
+          if (!limiter.acquire(clientIp)) {
+            app.log.warn("WebSocket upgrade rejected: per-IP connection cap reached", { path: pathname, ip: clientIp });
+            socket.write("HTTP/1.1 429 Too Many Requests\r\n\r\n");
+            socket.destroy();
+            return;
+          }
+          let released = false;
+          const releaseSlot = () => {
+            if (released) return;
+            released = true;
+            limiter.release(clientIp);
+          };
+          socket.once("close", releaseSlot);
+
+          wss.handleUpgrade(req, socket, head, (ws: any) => {
+            webSockets.add(ws);
+            ws.once("close", () => webSockets.delete(ws));
+            const conn = createWSConnection({
+              send: (data: string | ArrayBuffer) => ws.send(data),
+              close: (code?: number, reason?: string) => ws.close(code, reason),
+            });
+
+            app.wsRegistry.addConnection(pathname, conn);
+
+            // Build a CelsianRequest for the upgrade (reuses the gated Request).
+            //
+            // `url` above is composed from the address the server BOUND to, which
+            // is `0.0.0.0` in production, so handing it straight to the handler
+            // meant a WebSocket handler saw `http://0.0.0.0:3000/chat` instead of
+            // the host the client addressed. That breaks any handler that routes
+            // on host (multi-tenant apps especially). The upgrade GATE already
+            // resolves this itself, so this was never an auth bypass, only a
+            // wrong value delivered to application code.
+            const effectiveUrl = new URL(resolveEffectiveUrl(webReq.url, webReq.headers, app.getForwardedTrust()));
+            const celsianReq = buildRequest(webReq, effectiveUrl, {});
+
+            handler.open?.(conn, celsianReq);
+
+            ws.on("error", (err: Error) => {
+              app.log.error("WebSocket error", { path: pathname, connId: conn.id, error: err.message });
+            });
+
+            ws.on("message", (data: Buffer | ArrayBuffer | Buffer[]) => {
+              const msg = Buffer.isBuffer(data) ? data.toString() : data;
+              handler.message?.(conn, msg as string | ArrayBuffer);
+            });
+
+            ws.on("close", (code: number, reason: Buffer) => {
+              handler.close?.(conn, code, reason.toString());
+              app.wsRegistry.removeConnection(pathname, conn);
+              releaseSlot();
+            });
+          });
+        } finally {
+          pendingUpgradeSockets.delete(socket);
         }
-
-        // Gate the handshake: Origin allow-list, onUpgrade callback, then the
-        // app's root onRequest hooks (auth guards, rate limiters). WebSocket
-        // handshakes are exempt from CORS, so without this a cross-site page can
-        // open an authenticated socket with the victim's cookies.
-        const webReq = nodeToWebRequest(req, url);
-        const decision = await authorizeWSUpgrade(app, webReq, pathname, {
-          allowedOrigins: options.allowedOrigins,
-          allowMissingOrigin: options.allowMissingOrigin,
-          onUpgrade: options.onUpgrade,
-          runRequestHooks: options.skipUpgradeHooks !== true,
-        });
-
-        if (!decision.allowed) {
-          app.log.warn("WebSocket upgrade rejected", {
-            path: pathname,
-            status: decision.status,
-            reason: decision.reason,
-          });
-          socket.write(`HTTP/1.1 ${decision.status} ${decision.status === 403 ? "Forbidden" : "Rejected"}\r\n\r\n`);
-          socket.destroy();
-          return;
-        }
-
-        const clientIp: string = req.socket?.remoteAddress ?? "unknown";
-        if (!limiter.acquire(clientIp)) {
-          app.log.warn("WebSocket upgrade rejected: per-IP connection cap reached", { path: pathname, ip: clientIp });
-          socket.write("HTTP/1.1 429 Too Many Requests\r\n\r\n");
-          socket.destroy();
-          return;
-        }
-        let released = false;
-        const releaseSlot = () => {
-          if (released) return;
-          released = true;
-          limiter.release(clientIp);
-        };
-        socket.once("close", releaseSlot);
-
-        wss.handleUpgrade(req, socket, head, (ws: any) => {
-          const conn = createWSConnection({
-            send: (data: string | ArrayBuffer) => ws.send(data),
-            close: (code?: number, reason?: string) => ws.close(code, reason),
-          });
-
-          app.wsRegistry.addConnection(pathname, conn);
-
-          // Build a CelsianRequest for the upgrade (reuses the gated Request).
-          //
-          // `url` above is composed from the address the server BOUND to, which
-          // is `0.0.0.0` in production, so handing it straight to the handler
-          // meant a WebSocket handler saw `http://0.0.0.0:3000/chat` instead of
-          // the host the client addressed. That breaks any handler that routes
-          // on host (multi-tenant apps especially). The upgrade GATE already
-          // resolves this itself, so this was never an auth bypass, only a
-          // wrong value delivered to application code.
-          const effectiveUrl = new URL(resolveEffectiveUrl(webReq.url, webReq.headers, app.getForwardedTrust()));
-          const celsianReq = buildRequest(webReq, effectiveUrl, {});
-
-          handler.open?.(conn, celsianReq);
-
-          ws.on("error", (err: Error) => {
-            app.log.error("WebSocket error", { path: pathname, connId: conn.id, error: err.message });
-          });
-
-          ws.on("message", (data: Buffer | ArrayBuffer | Buffer[]) => {
-            const msg = Buffer.isBuffer(data) ? data.toString() : data;
-            handler.message?.(conn, msg as string | ArrayBuffer);
-          });
-
-          ws.on("close", (code: number, reason: Buffer) => {
-            handler.close?.(conn, code, reason.toString());
-            app.wsRegistry.removeConnection(pathname, conn);
-            releaseSlot();
-          });
-        });
       });
 
       app.log.info("WebSocket upgrade handler enabled");
