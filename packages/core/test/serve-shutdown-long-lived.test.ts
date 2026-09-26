@@ -194,6 +194,70 @@ describe("serve() graceful shutdown, long-lived connections", () => {
     await expect(response.json()).resolves.toEqual({ ok: true });
   });
 
+  it("does not truncate a large HTTP response that flushes before the graceful deadline", async () => {
+    const app = createApp({ logger: false });
+    const payload = Buffer.alloc(8 * 1024 * 1024, "x");
+    app.get("/big", () => {
+      return new Response(payload, {
+        headers: {
+          "content-length": String(payload.byteLength),
+          "content-type": "application/octet-stream",
+        },
+      });
+    });
+    const { port, close } = await start(app, 1500);
+    const socket = net.connect(port, "127.0.0.1");
+    const chunks: Buffer[] = [];
+    let bodyBytes = 0;
+    let headersDone = false;
+    let headersLength = 0;
+    let pauseStarted = false;
+    let resolvePaused!: () => void;
+    const paused = new Promise<void>((resolve) => {
+      resolvePaused = resolve;
+    });
+    const closed = socketClosed(socket);
+
+    socket.on("data", (chunk) => {
+      chunks.push(Buffer.from(chunk));
+      const received = Buffer.concat(chunks);
+      if (!headersDone) {
+        const headerEnd = received.indexOf("\r\n\r\n");
+        if (headerEnd === -1) return;
+        headersDone = true;
+        headersLength = headerEnd + 4;
+      }
+      bodyBytes = received.byteLength - headersLength;
+      if (!pauseStarted && bodyBytes > 0) {
+        pauseStarted = true;
+        socket.pause();
+        resolvePaused();
+      }
+    });
+    await timeout(once(socket, "connect"), 1000, "raw HTTP connect");
+    socket.write(`GET /big HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\n\r\n`);
+
+    try {
+      await timeout(paused, 1000, "raw HTTP response pause");
+      const closePromise = timeout(close(), 3000, "server close");
+      servers.pop();
+      await delay(250);
+      socket.resume();
+      await closePromise;
+      await timeout(closed, 1000, "raw HTTP socket close");
+
+      const received = Buffer.concat(chunks);
+      const headerEnd = received.indexOf("\r\n\r\n");
+      expect(headerEnd).toBeGreaterThan(0);
+      const headers = received.subarray(0, headerEnd).toString("latin1");
+      const body = received.subarray(headerEnd + 4);
+      expect(headers).toContain("HTTP/1.1 200");
+      expect(body.byteLength).toBe(payload.byteLength);
+    } finally {
+      socket.destroy();
+    }
+  });
+
   it("does not let an accepted raw socket with no request pin shutdown", async () => {
     const app = createApp({ logger: false });
     app.get("/", () => ({ ok: true }));

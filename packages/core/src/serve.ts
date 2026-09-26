@@ -383,8 +383,16 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
 
     app.log.info("shutting down gracefully");
 
-    // Stop accepting new connections
-    server.close();
+    // Stop accepting new connections. The callback fires only after Node has
+    // closed every tracked HTTP connection, including responses still flushing
+    // to slow clients after the Celsian handler has returned.
+    let serverClosed = false;
+    const serverClosedPromise = new Promise<void>((resolve) => {
+      server.close(() => {
+        serverClosed = true;
+        resolve();
+      });
+    });
     server.closeIdleConnections?.();
 
     for (const ws of webSockets) {
@@ -395,15 +403,19 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
       }
     }
 
-    // Wait for in-flight requests and upgraded WebSockets to drain. Long-lived
-    // responses such as SSE may intentionally never finish on their own; after
-    // the grace period, destroy the remaining sockets so shutdown can complete.
+    // Wait until the actual graceful deadline for HTTP sockets, in-flight
+    // handlers, and upgraded WebSockets to drain. A handler can finish before
+    // Node has flushed its response to the client, so `inFlight === 0` alone is
+    // not proof that it is safe to destroy the socket.
     const deadline = Date.now() + shutdownTimeout;
-    while ((inFlight > 0 || webSockets.size > 0 || pendingUpgradeSockets.size > 0) && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 100));
+    while (
+      (inFlight > 0 || webSockets.size > 0 || pendingUpgradeSockets.size > 0 || sockets.size > 0 || !serverClosed) &&
+      Date.now() < deadline
+    ) {
+      await new Promise((r) => setTimeout(r, 10));
     }
 
-    if (inFlight > 0 || webSockets.size > 0 || pendingUpgradeSockets.size > 0 || sockets.size > 0) {
+    if (inFlight > 0 || webSockets.size > 0 || pendingUpgradeSockets.size > 0 || sockets.size > 0 || !serverClosed) {
       for (const ws of webSockets) {
         try {
           ws.terminate?.();
@@ -414,6 +426,7 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
       for (const socket of sockets) {
         socket.destroy();
       }
+      await Promise.race([serverClosedPromise, new Promise((resolve) => setTimeout(resolve, 50))]);
     }
 
     await teardownApp(app, options);
