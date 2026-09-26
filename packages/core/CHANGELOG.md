@@ -1,5 +1,12 @@
 # @celsian/core
 
+## 0.6.4
+
+### Patch Changes
+
+- 48fb11d: Close long-lived SSE and WebSocket connections during Node `serve()` shutdown so open streams do not keep processes alive after the grace period.
+  - @celsian/schema@0.6.4
+
 ## 0.6.3
 
 ### Patch Changes

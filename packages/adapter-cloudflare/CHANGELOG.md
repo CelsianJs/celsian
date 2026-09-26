@@ -1,5 +1,12 @@
 # @celsian/adapter-cloudflare
 
+## 0.6.4
+
+### Patch Changes
+
+- Updated dependencies [48fb11d]
+  - @celsian/core@0.6.4
+
 ## 0.6.3
 
 ### Patch Changes
