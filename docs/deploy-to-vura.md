@@ -15,7 +15,9 @@ serve(app); // reads PORT and HOST from the environment
 
 Vura sets `PORT=3001` and `HOST=127.0.0.1`. Its supervisor is the only thing listening publicly, and it forwards only signed requests from the Vura edge. If you hard-code a port, the deploy fails with "The app did not listen on $PORT (3001). Pass no port to serve(), or read process.env.PORT." Because the bind is loopback and `NODE_ENV=production`, `serve()` logs a warning that a production server is bound to loopback and unreachable from outside the container. On Vura this is expected: the supervisor, not the outside world, is what connects to that loopback address.
 
-A zero-config deploy like this one runs on Vura's default service size. Free and starter plans cap service size at 256 MB (`nano`); a size over your plan's cap fails the deploy with 422 `SERVICE_SIZE_NOT_ALLOWED`. If that happens, declare the service explicitly in `vura.json` with `"size": "nano"`, or move to a plan with a higher cap.
+A zero-config deploy like this one runs on Vura's default service size, clamped down to the largest size your plan allows: free and starter plans cap service size at 256 MB (`nano`), so a zero-config deploy there runs as `nano` automatically, with nothing to configure. This only applies to a size Vura picked for you; a size you set explicitly in `vura.json` that is still over your plan's cap fails the deploy with 422 `SERVICE_SIZE_NOT_ALLOWED`.
+
+A services deploy also needs an active paid plan on your Vura team; without one it fails with "Hot server placement requires an active paid plan."
 
 ## 2. Add a `start` script
 
