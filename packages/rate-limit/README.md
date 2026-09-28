@@ -45,10 +45,25 @@ proxies**. Everything to the left of that is client-supplied and ignored, so
 rotating a forged prefix cannot mint a fresh bucket. IPv4 and IPv6 CIDR blocks
 are both supported, as are bare addresses.
 
-If no untrusted entry exists (or the header is absent), all such requests share
-one bucket rather than each getting their own. The same applies when the entry
-is not an address at all: unparseable text is client-chosen, so it is never used
-as a key.
+If no untrusted entry exists (or the header is absent), the key is the request's
+`request.ip`: the address that opened the connection, which the client cannot
+choose (or the header named by the app's `clientIp` option). Only when that is
+unknown too, as with `inject()` or an adapter that has no peer address, do such
+requests share one bucket. The same applies when the entry is not an address at
+all: unparseable text is client-chosen, so it is never used as a key.
+
+To key on `request.ip` directly, without declaring proxies to the limiter, pass
+it as the key. Behind a proxy, set `clientIp` on the app so it is the client's
+address and not the proxy's:
+
+```typescript
+const app = createApp({ clientIp: { header: 'fly-client-ip' } });
+await app.register(rateLimit({
+  max: 100,
+  window: 60_000,
+  keyGenerator: (req) => req.ip ?? 'anonymous',
+}));
+```
 
 ### One host is one bucket
 
@@ -70,8 +85,9 @@ one-character mutation. IPv6 is compared fully expanded and lowercased, so
 right **without verifying that a proxy appended it**.
 
 If a request arrives with **fewer than N entries** it cannot have traversed your
-N proxies, so the limiter fails closed and puts it in the shared unidentified
-bucket. It does not fall back to the leftmost entry: that entry is exactly what
+N proxies, so the limiter fails closed and keys it on `request.ip` (the shared
+unidentified bucket when that is unknown). It does not fall back to the leftmost
+entry: that entry is exactly what
 the client supplies, so falling back to it handed the caller its own bucket key
 (rotate it for unlimited quota, or set it to a victim's address to burn the
 victim's bucket before they ever send a request).

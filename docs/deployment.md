@@ -338,6 +338,30 @@ git push origin main
 
 Railway auto-detects Node.js via Nixpacks. The generated `railway.json` configures the start command, health check, and restart policy.
 
+## Client IP (`request.ip`)
+
+`request.ip` is the address of whatever opened the connection, as the runtime reports it. Request headers such as `X-Forwarded-For` are not read unless you name one, because a client can send any value in them.
+
+| Runtime | `request.ip` comes from |
+| ------- | ----------------------- |
+| Node.js (`serve()`, `@celsian/adapter-node`) | The socket's `remoteAddress` |
+| Bun (`serve()`, `@celsian/adapter-bun`, `app.fetch`) | `server.requestIP(request)` |
+| Deno (`serve()`, `@celsian/adapter-deno`, `app.fetch`) | The handler info's `remoteAddr.hostname` |
+| Cloudflare Workers (`@celsian/adapter-cloudflare`) | `CF-Connecting-IP`, which Cloudflare's edge sets and overwrites |
+| AWS Lambda, API Gateway v1/v2 | The event's `requestContext` source IP |
+| AWS Lambda behind an ALB | Not available: set `clientIp: { header: 'x-forwarded-for' }` |
+| Vercel Edge, `app.inject()` without `remoteAddress` | Not available (`undefined`) |
+
+Behind a proxy, the connection comes from the proxy, so name the header that proxy writes:
+
+```typescript
+createApp({ clientIp: { header: 'fly-client-ip' } });            // Fly.io
+createApp({ clientIp: { header: 'x-real-ip' } });                // Vercel (Node.js runtime)
+createApp({ clientIp: { header: 'x-forwarded-for', hops: 2 } }); // two proxies you run
+```
+
+For a list header, `hops` counts entries from the right, the end each proxy appends to. When the header is missing, the chain is shorter than `hops`, or the entry is not an IP address, `request.ip` falls back to the connection's address. Only set `clientIp` when every request reaches the app through that proxy: a client that can connect directly can put anything in the header. `trustProxy` does not affect `request.ip`.
+
 ## Environment Variables
 
 CelsianJS reads these environment variables automatically:

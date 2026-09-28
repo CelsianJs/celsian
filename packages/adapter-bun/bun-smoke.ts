@@ -47,4 +47,26 @@ if (echoed?.got?.n !== 1) throw new Error(`body did not round-trip: ${JSON.strin
 const opts = createBunServeOptions(app);
 if (typeof opts.fetch !== "function") throw new Error("createBunServeOptions did not return a fetch handler");
 
+// request.ip comes from Bun's own server.requestIP(), which only a real
+// Bun.serve() can answer, through both the adapter and a bare `app.fetch`.
+const ipApp = createApp();
+ipApp.get("/ip", (req) => ({ ip: req.ip ?? null }));
+await ipApp.ready();
+const Bun = (globalThis as unknown as { Bun: { serve(o: object): { port: number; stop(force?: boolean): void } } })
+  .Bun;
+for (const [label, serveFetch] of [
+  ["createBunHandler", createBunHandler(ipApp)],
+  ["app.fetch", ipApp.fetch],
+] as const) {
+  const live = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: serveFetch });
+  try {
+    const got = await (await fetch(`http://127.0.0.1:${live.port}/ip`)).json();
+    if (typeof got?.ip !== "string" || !got.ip.endsWith("127.0.0.1")) {
+      throw new Error(`${label}: expected request.ip to be the loopback peer, got ${JSON.stringify(got)}`);
+    }
+  } finally {
+    live.stop(true);
+  }
+}
+
 console.log("[adapter-bun] Bun runtime smoke OK");

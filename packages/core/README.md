@@ -51,7 +51,7 @@ const res = await app.inject({ url: '/ping' });
 console.log(res.status, await res.json());  // 200 { pong: true }
 ```
 
-`inject()` accepts `{ method, url, payload, headers, cookies }`.
+`inject()` accepts `{ method, url, payload, headers, cookies, remoteAddress }`. `remoteAddress` is what the handler sees as `req.ip`; without it `req.ip` is `undefined`, since no socket exists.
 
 Because it returns a standard `Response`, the status property is **`res.status`**, not Fastify's `res.statusCode`. `res.statusCode` is `undefined`, so `expect(res.statusCode).toBe(200)` fails rather than silently passing. Body access is async: `await res.json()` / `await res.text()`.
 
@@ -116,6 +116,8 @@ await app.register(productRoutes());
 | `dbAnalytics` / `slowQueryLogger` / `dbTimingHeader` / `trackedPool` | Query instrumentation |
 
 `excludePaths` on `csrf()` matches exactly **or** as a path-segment prefix: `'/_rpc'` covers `/_rpc/anything` but not `/_rpcx`.
+
+`trustedOrigins` on `csrf()` admits a separate front-end origin, such as a dashboard at `https://app.example.com` calling `https://api.example.com`. Browsers label those requests `Sec-Fetch-Site: same-site` or `cross-site`, and they are accepted only when their `Origin` is listed. They still need a valid token.
 
 ```ts
 import { cors, csrf, security, openapi } from '@celsian/core';

@@ -5,6 +5,7 @@ import type { Socket } from "node:net";
 import type { CelsianApp } from "./app.js";
 import { getFastPayload } from "./fast-response.js";
 import { readConfinedFile } from "./reply.js";
+import { setRemoteAddress } from "./request.js";
 import { authorizeWSUpgrade, type WSAllowedOrigins, WSConnectionLimiter } from "./websocket.js";
 
 /** Options for `serve()` -- port, host, static files, graceful shutdown. */
@@ -454,7 +455,7 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
         default?: { WebSocketServer?: new (options: Record<string, unknown>) => any };
       };
       const { createWSConnection } = await import("./websocket.js");
-      const { buildRequest, resolveEffectiveUrl } = await import("./request.js");
+      const { buildRequest, resolveClientIp, resolveEffectiveUrl } = await import("./request.js");
       const WSS = wsMod.WebSocketServer ?? (wsMod as any).default?.WebSocketServer;
       // `ws` defaults maxPayload to 100 MB, far too generous for a default.
       const wss = new WSS({ noServer: true, maxPayload: options.maxPayload ?? 1024 * 1024 });
@@ -540,6 +541,7 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
             // wrong value delivered to application code.
             const effectiveUrl = new URL(resolveEffectiveUrl(webReq.url, webReq.headers, app.getForwardedTrust()));
             const celsianReq = buildRequest(webReq, effectiveUrl, {});
+            celsianReq.ip = resolveClientIp(webReq, app.getForwardedTrust().clientIp);
 
             handler.open?.(conn, celsianReq);
 
@@ -777,13 +779,14 @@ export function nodeToWebRequest(req: IncomingMessage, url: URL): Request {
   const method = req.method ?? "GET";
   const hasBody = method !== "GET" && method !== "HEAD";
 
-  return new Request(url.toString(), {
+  const request = new Request(url.toString(), {
     method,
     headers,
     body: hasBody ? (req as unknown as ReadableStream) : undefined,
     duplex: hasBody ? "half" : undefined,
     signal: nodeRequestSignal(req),
   });
+  return setRemoteAddress(request, req.socket?.remoteAddress);
 }
 
 /**
@@ -817,13 +820,14 @@ function nodeToWebRequestFast(req: IncomingMessage, rawPath: string, baseUrl: st
 
   // Use full URL (required by Request constructor) but keep it minimal
   // by concatenating baseUrl + rawPath instead of calling new URL()
-  return new Request(baseUrl + rawPath, {
+  const request = new Request(baseUrl + rawPath, {
     method,
     headers,
     body: hasBody ? (req as unknown as ReadableStream) : undefined,
     duplex: hasBody ? "half" : undefined,
     signal: nodeRequestSignal(req),
   });
+  return setRemoteAddress(request, req.socket?.remoteAddress);
 }
 
 /** Write a Web Standard Response back to a Node.js ServerResponse, preserving Set-Cookie headers. */
@@ -851,7 +855,12 @@ async function writeNodeResponse(res: ServerResponse, response: Response): Promi
     if (body !== null) {
       headers["content-length"] = String(typeof body === "string" ? Buffer.byteLength(body) : body.byteLength);
     }
-    if (fast.cookies.length > 0) headers["set-cookie"] = fast.cookies;
+    if (fast.cookies.length > 0) {
+      // A Set-Cookie put in the plain headers by `reply.header()` is a cookie
+      // too; it goes out alongside the `reply.cookie()` ones, not instead.
+      const fromHeader = headers["set-cookie"];
+      headers["set-cookie"] = typeof fromHeader === "string" ? [fromHeader, ...fast.cookies] : fast.cookies;
+    }
     res.writeHead(fast.status, headers);
     if (body === null) res.end();
     else res.end(body);
