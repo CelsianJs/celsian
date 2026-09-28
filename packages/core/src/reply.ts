@@ -51,6 +51,17 @@ declare module "./types.js" {
   }
 }
 
+/** Key under which a reply exposes the Set-Cookie values queued by `cookie()` and `clearCookie()`. */
+const REPLY_COOKIES = Symbol.for("celsian.replyCookies");
+
+/**
+ * The Set-Cookie values queued on `reply` by `cookie()` / `clearCookie()`, in
+ * order. Empty for a reply this module did not create.
+ */
+export function replyCookies(reply: CelsianReply): readonly string[] {
+  return ((reply as unknown as Record<symbol, string[] | undefined>)[REPLY_COOKIES] ?? []) as readonly string[];
+}
+
 /** Current working directory, or "/" on runtimes without a process CWD. */
 function currentDir(): string {
   return typeof process !== "undefined" && typeof process.cwd === "function" ? process.cwd() : "/";
@@ -347,6 +358,8 @@ export function createReply(requestUrl?: string | URL, requestHeaders?: Headers)
   let sent = false;
 
   const reply: CelsianReply = {
+    [REPLY_COOKIES]: setCookies,
+
     get statusCode() {
       return statusCode;
     },

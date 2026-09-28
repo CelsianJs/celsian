@@ -2,7 +2,7 @@
 
 import { runHooks } from "./hooks.js";
 import { createReply } from "./reply.js";
-import { buildRequest, type ForwardedTrustOptions, resolveEffectiveUrl } from "./request.js";
+import { buildRequest, type ForwardedTrustOptions, resolveClientIp, resolveEffectiveUrl } from "./request.js";
 import type { CelsianRequest, HookHandler } from "./types.js";
 
 /** WebSocket event handler with optional open, message, and close callbacks. */
@@ -274,17 +274,21 @@ export async function authorizeWSUpgrade(
   const hooks = getUpgradeHooks(app, pathname);
   if (hooks.length === 0) return UPGRADE_OK;
 
+  const trust = upgradeTrust(app);
   let url: URL;
   try {
     // The handshake Request carries the adapter's bind-address URL, same as an
     // HTTP request does. Hooks that gate on the host (CSRF, tenant routing) must
     // see what the client addressed, not `http://0.0.0.0:port`.
-    url = new URL(resolveEffectiveUrl(request.url, request.headers, upgradeTrust(app)));
+    url = new URL(resolveEffectiveUrl(request.url, request.headers, trust));
   } catch {
     return { allowed: false, status: 400, reason: "Malformed upgrade request URL" };
   }
 
   const celsianRequest = buildRequest(request, url, {});
+  // Rate limiters and allow-lists key on this, so a handshake reports the same
+  // client address an HTTP request from that client would.
+  celsianRequest.ip = resolveClientIp(request, trust.clientIp);
   const reply = createReply(url, request.headers);
   try {
     const early = await runHooks(hooks, celsianRequest, reply);
