@@ -351,6 +351,7 @@ Railway auto-detects Node.js via Nixpacks. The generated `railway.json` configur
 | AWS Lambda, API Gateway v1/v2 | The event's `requestContext` source IP |
 | AWS Lambda behind an ALB | Not available: set `clientIp: { header: 'x-forwarded-for' }` |
 | Vercel Edge, `app.inject()` without `remoteAddress` | Not available (`undefined`) |
+| Vura | Always set: `clientIp: { header: 'x-vura-client-ip' }` |
 
 Behind a proxy, the connection comes from the proxy, so name the header that proxy writes:
 
@@ -358,6 +359,7 @@ Behind a proxy, the connection comes from the proxy, so name the header that pro
 createApp({ clientIp: { header: 'fly-client-ip' } });            // Fly.io
 createApp({ clientIp: { header: 'x-real-ip' } });                // Vercel (Node.js runtime)
 createApp({ clientIp: { header: 'x-forwarded-for', hops: 2 } }); // two proxies you run
+createApp({ clientIp: { header: 'x-vura-client-ip' } });         // Vura
 ```
 
 For a list header, `hops` counts entries from the right, the end each proxy appends to. When the header is missing, the chain is shorter than `hops`, or the entry is not an IP address, `request.ip` falls back to the connection's address. Only set `clientIp` when every request reaches the app through that proxy: a client that can connect directly can put anything in the header. `trustProxy` does not affect `request.ip`.
