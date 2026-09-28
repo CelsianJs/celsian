@@ -14,6 +14,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > notices. `pnpm check:root-changelog` now fails CI when this file's newest entry is
 > behind `packages/core/package.json`, so the third time cannot happen quietly.
 
+## [0.6.5] - 2026-09-28
+
+### Fixed
+
+- `csrf({ trustedOrigins })` now admits the origins it lists. A browser labels a
+  request from a separate front-end origin `Sec-Fetch-Site: same-site` or
+  `cross-site`, and the plugin refused those labels before it read
+  `trustedOrigins`, so the option could never admit a real browser request. Such
+  a request is now accepted only when its `Origin` is listed, and it still needs a
+  valid token. A missing, opaque or unlisted `Origin` is still refused.
+- `onSend` and `onResponse` see the status that is actually sent. `reply.statusCode`
+  used to stay 200 when a handler returned its own `Response`, threw, missed a
+  route (404/405) or was answered early by a hook. `onResponse` now also runs for
+  thrown errors, timeouts, misses and early returns, once per request.
+- Cookies set with `reply.cookie()` reach the client when a handler returns a
+  plain object, a string or nothing. On Node, a `set-cookie` set with
+  `reply.header()` is no longer dropped when the response also carries
+  `reply.cookie()` cookies.
+- Headers set with `reply.header()` are kept when a handler returns its own
+  `Response`. When both set the same header the `Response` keeps its value, `Vary`
+  values are combined and `Set-Cookie` values are appended.
+
+### Added
+
+- `request.ip`: the address of the peer that opened the connection, on Node,
+  Vercel, Bun, Deno, Cloudflare (`CF-Connecting-IP`) and Lambda. No request header
+  is trusted unless the app names one with the new `clientIp` option, for example
+  `createApp({ clientIp: { header: 'fly-client-ip' } })` or
+  `{ header: 'x-forwarded-for', hops: 2 }`. `app.inject()` accepts `remoteAddress`.
+- `@celsian/rate-limit` keys a request with no usable forwarding header on
+  `request.ip` instead of one shared bucket.
+
+### Upgrade notes
+
+- `onResponse` hooks now run for errors, misses and early returns, so metrics and
+  access logs built on them count requests they previously missed.
+- Headers and cookies set on the reply before a handler throws now reach the error
+  response.
+- `@celsian/adapter-bun` and `@celsian/adapter-deno` now require `@celsian/core`
+  0.6.5 or later. Upgrade them together.
+
 ## [0.6.4] - 2026-09-26
 
 ### Fixed

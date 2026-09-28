@@ -1,5 +1,12 @@
 # @celsian/adapter-fly
 
+## 0.6.5
+
+### Patch Changes
+
+- Updated dependencies [879fd05]
+  - @celsian/core@0.6.5
+
 ## 0.6.4
 
 ### Patch Changes
