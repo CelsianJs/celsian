@@ -3,6 +3,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Socket } from "node:net";
 import type { CelsianApp } from "./app.js";
+import { HttpError } from "./errors.js";
 import { getFastPayload } from "./fast-response.js";
 import { readConfinedFile } from "./reply.js";
 import { setRemoteAddress } from "./request.js";
@@ -294,8 +295,8 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
   }>();
   const pendingUpgradeSockets = new Set<Socket>();
 
-  // Pre-compute base URL string for Node.js request conversion (avoid per-request concatenation)
-  const baseUrl = `http://${host}:${port}`;
+  // Cache the listener authority; update the actual address after binding port 0.
+  let baseUrl = `http://${host.includes(":") ? `[${host}]` : host}:${port}`;
   const hasStaticDir = !!options.staticDir;
 
   const server = http.createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -307,63 +308,71 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
 
     inFlight++;
 
-    // Static files, only parse URL when staticDir is configured
-    if (hasStaticDir) {
-      const url = new URL(req.url ?? "/", baseUrl);
-      const { resolve } = await import("node:path");
-      const staticRoot = resolve(options.staticDir!);
-      // Decode URI and normalize to prevent path traversal (e.g., /../../../etc/passwd).
-      // Malformed percent-encoding (e.g. "/%ZZ") throws URIError, respond 400
-      // rather than letting it crash the async server callback.
-      let decodedPath: string;
-      try {
-        decodedPath = decodeURIComponent(url.pathname);
-      } catch {
-        res.statusCode = 400;
-        res.end("Bad Request");
-        inFlight--;
-        return;
-      }
-      // `join` first, then confine: a URL path is always absolute ("/app.js"),
-      // and handing that straight to `resolve(root, path)` would let it replace
-      // the root outright, so every request would look like an escape.
-      const filePath = resolve(join(staticRoot, decodedPath));
-      // Containment is delegated to the SAME helper reply.sendFile() uses, so
-      // this second file-serving path cannot drift from it again. It was
-      // lexical-only here (a `startsWith` on the resolved path) while sendFile
-      // had already been hardened with realpath() + O_NOFOLLOW, which meant a
-      // symlink planted inside staticDir served whatever it pointed at:
-      // `GET /avatar.png` returning the contents of `.env` with a 200.
-      //
-      // A rejection falls through to the app handler rather than answering 403,
-      // matching what the lexical check already did for traversal attempts, so
-      // the static layer still never reports on files outside its own root.
-      const file = await readConfinedFile(filePath, { root: staticRoot });
-      if (file.ok) {
-        // Extension comes from the requested path, not the realpath()-resolved
-        // one, so the content-type does not change under the client's feet.
-        const ext = extname(filePath);
-        res.setHeader("content-type", MIME_TYPES[ext] ?? "application/octet-stream");
-        res.setHeader("cache-control", "public, max-age=31536000, immutable");
-        res.end(file.data);
-        inFlight--;
-        return;
-      }
-    }
-
-    // Build Web Request with raw path (let app.handle() do fast URL parsing)
-    const webRequest = nodeToWebRequestFast(req, req.url ?? "/", baseUrl);
-
     try {
+      const requestUrl = nodeRequestUrl(req.url ?? "/", baseUrl);
+      // Static files, only parse URL when staticDir is configured
+      if (hasStaticDir) {
+        const url = typeof requestUrl === "string" ? new URL(requestUrl) : requestUrl;
+        const { resolve } = await import("node:path");
+        const staticRoot = resolve(options.staticDir!);
+        // Decode URI and normalize to prevent path traversal (e.g., /../../../etc/passwd).
+        // Malformed percent-encoding (e.g. "/%ZZ") throws URIError, respond 400
+        // rather than letting it crash the async server callback.
+        let decodedPath: string;
+        try {
+          decodedPath = decodeURIComponent(url.pathname);
+        } catch {
+          throw new HttpError(400, "Bad Request");
+        }
+        // `join` first, then confine: a URL path is always absolute ("/app.js"),
+        // and handing that straight to `resolve(root, path)` would let it replace
+        // the root outright, so every request would look like an escape.
+        const filePath = resolve(join(staticRoot, decodedPath));
+        // Containment is delegated to the SAME helper reply.sendFile() uses, so
+        // this second file-serving path cannot drift from it again. It was
+        // lexical-only here (a `startsWith` on the resolved path) while sendFile
+        // had already been hardened with realpath() + O_NOFOLLOW, which meant a
+        // symlink planted inside staticDir served whatever it pointed at:
+        // `GET /avatar.png` returning the contents of `.env` with a 200.
+        //
+        // A rejection falls through to the app handler rather than answering 403,
+        // matching what the lexical check already did for traversal attempts, so
+        // the static layer still never reports on files outside its own root.
+        const file = await readConfinedFile(filePath, { root: staticRoot });
+        if (file.ok) {
+          // Extension comes from the requested path, not the realpath()-resolved
+          // one, so the content-type does not change under the client's feet.
+          const ext = extname(filePath);
+          res.setHeader("content-type", MIME_TYPES[ext] ?? "application/octet-stream");
+          res.setHeader("cache-control", "public, max-age=31536000, immutable");
+          res.end(file.data);
+          return;
+        }
+      }
+
+      // Build Web Request with raw path (let app.handle() do fast URL parsing)
+      let webRequest: Request;
+      try {
+        webRequest = nodeToWebRequestFast(req, requestUrl);
+      } catch {
+        throw new HttpError(400, "Bad Request");
+      }
+
       const response = await app.handle(webRequest);
       await writeWebResponse(res, response);
     } catch (error) {
       if (!res.destroyed) {
-        console.error("[celsian] Unhandled error:", error);
+        const badRequest = error instanceof HttpError && error.statusCode === 400;
+        if (!badRequest) console.error("[celsian] Unhandled error:", error);
         if (res.headersSent) res.destroy();
         else {
-          res.statusCode = 500;
-          res.end("Internal Server Error");
+          try {
+            res.statusCode = badRequest ? 400 : 500;
+            res.setHeader("connection", "close");
+            res.end(badRequest ? "Bad Request" : "Internal Server Error");
+          } catch {
+            res.destroy();
+          }
         }
       }
     } finally {
@@ -467,9 +476,11 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
           return;
         }
         pendingUpgradeSockets.add(socket);
-        const url = new URL(req.url ?? "/", `http://${host}:${port}`);
-        const pathname = url.pathname;
+        let upgraded = false;
         try {
+          const requestUrl = nodeRequestUrl(req.url ?? "/", baseUrl);
+          const url = typeof requestUrl === "string" ? new URL(requestUrl) : requestUrl;
+          const pathname = url.pathname;
           const handler = app.wsRegistry.getHandler(pathname);
 
           if (!handler) {
@@ -481,7 +492,13 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
           // app's root onRequest hooks (auth guards, rate limiters). WebSocket
           // handshakes are exempt from CORS, so without this a cross-site page can
           // open an authenticated socket with the victim's cookies.
-          const webReq = nodeToWebRequest(req, url);
+          let webReq: Request;
+          try {
+            webReq = nodeToWebRequest(req, url);
+            if (typeof requestUrl !== "string") webReq.headers.set("host", url.host);
+          } catch {
+            throw new HttpError(400, "Bad Request");
+          }
           const decision = await authorizeWSUpgrade(app, webReq, pathname, {
             allowedOrigins: options.allowedOrigins,
             allowMissingOrigin: options.allowMissingOrigin,
@@ -521,6 +538,7 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
           socket.once("close", releaseSlot);
 
           wss.handleUpgrade(req, socket, head, (ws: any) => {
+            upgraded = true;
             webSockets.add(ws);
             ws.once("close", () => webSockets.delete(ws));
             const conn = createWSConnection({
@@ -529,6 +547,11 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
             });
 
             app.wsRegistry.addConnection(pathname, conn);
+            ws.on("close", (code: number, reason: Buffer) => {
+              app.wsRegistry.removeConnection(pathname, conn);
+              releaseSlot();
+              handler.close?.(conn, code, reason.toString());
+            });
 
             // Build a CelsianRequest for the upgrade (reuses the gated Request).
             //
@@ -543,8 +566,6 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
             const celsianReq = buildRequest(webReq, effectiveUrl, {});
             celsianReq.ip = resolveClientIp(webReq, app.getForwardedTrust().clientIp);
 
-            handler.open?.(conn, celsianReq);
-
             ws.on("error", (err: Error) => {
               app.log.error("WebSocket error", { path: pathname, connId: conn.id, error: err.message });
             });
@@ -554,13 +575,26 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
               handler.message?.(conn, msg as string | ArrayBuffer);
             });
 
-            ws.on("close", (code: number, reason: Buffer) => {
-              handler.close?.(conn, code, reason.toString());
-              app.wsRegistry.removeConnection(pathname, conn);
-              releaseSlot();
-            });
+            handler.open?.(conn, celsianReq);
           });
+        } catch (error) {
+          if (!socket.destroyed) {
+            if (upgraded) {
+              socket.destroy();
+              return;
+            }
+            try {
+              const status =
+                error instanceof HttpError && error.statusCode === 400
+                  ? "400 Bad Request"
+                  : "500 Internal Server Error";
+              socket.end(`HTTP/1.1 ${status}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
+            } catch {
+              socket.destroy();
+            }
+          }
         } finally {
+          requestSignalCleanup.get(req)?.();
           pendingUpgradeSockets.delete(socket);
         }
       });
@@ -604,6 +638,7 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
   const boundPort = addr !== null && typeof addr === "object" ? addr.port : port;
   const boundFamily = addr !== null && typeof addr === "object" ? addr.family : "";
   const displayHost = boundAddress.includes(":") ? `[${boundAddress}]` : boundAddress;
+  baseUrl = `http://${displayHost}:${boundPort}`;
   // When binding a hostname (e.g. "localhost"), show which family it resolved to.
   const familyNote =
     host !== boundAddress && boundFamily ? ` ("${host}" resolved to ${boundFamily} ${boundAddress})` : "";
@@ -744,6 +779,23 @@ function warnWSUnsupported(app: CelsianApp, runtime: string): void {
 
 const requestSignalCleanup = new WeakMap<IncomingMessage, () => void>();
 
+/** Preserve the origin-form hot path; validate and parse only absolute-form. */
+function nodeRequestUrl(target: string, baseUrl: string): string | URL {
+  // Leading // is still an origin-form path, never a network-path authority.
+  if (target.charCodeAt(0) === 47 /* '/' */) return baseUrl + target;
+  const authority = /^https?:\/\/([^/?#]+)/i.exec(target)?.[1];
+  if (!authority || authority.includes("@") || target.includes("#") || target.includes("\\")) {
+    throw new HttpError(400, "Bad Request");
+  }
+  try {
+    const url = new URL(target);
+    if (!url.hostname || url.username || url.password) throw new HttpError(400, "Bad Request");
+    return url;
+  } catch {
+    throw new HttpError(400, "Bad Request");
+  }
+}
+
 /** IncomingMessage.close also fires after a normal body; watch socket closure instead. */
 function nodeRequestSignal(req: IncomingMessage): AbortSignal {
   const controller = new AbortController();
@@ -790,11 +842,10 @@ export function nodeToWebRequest(req: IncomingMessage, url: URL): Request {
 }
 
 /**
- * Fast variant of nodeToWebRequest that constructs the Request with a
- * path-only URL (e.g., "/json?q=1"), enabling app.handle() to skip
- * full URL parsing. Falls back to full URL when the runtime requires it.
+ * Fast variant of nodeToWebRequest using a prebuilt URL string for origin-form.
+ * Absolute-form uses its parsed authority instead of the received Host header.
  */
-function nodeToWebRequestFast(req: IncomingMessage, rawPath: string, baseUrl: string): Request {
+function nodeToWebRequestFast(req: IncomingMessage, url: string | URL): Request {
   const raw = req.headers;
   // Common case: every header value is a string (Node coalesces duplicates,
   // leaving only set-cookie and a handful as arrays). Pass the plain record
@@ -815,12 +866,18 @@ function nodeToWebRequestFast(req: IncomingMessage, rawPath: string, baseUrl: st
     }
   }
 
+  // Absolute-form carries its own authority; the received Host must not
+  // replace it when the app resolves the effective URL. Origin-form is unchanged.
+  if (typeof url !== "string") {
+    headers = new Headers(headers);
+    headers.set("host", url.host);
+  }
+
   const method = req.method ?? "GET";
   const hasBody = method !== "GET" && method !== "HEAD";
 
-  // Use full URL (required by Request constructor) but keep it minimal
-  // by concatenating baseUrl + rawPath instead of calling new URL()
-  const request = new Request(baseUrl + rawPath, {
+  // Origin-form's full URL was built by concatenation, without a URL allocation.
+  const request = new Request(url, {
     method,
     headers,
     body: hasBody ? (req as unknown as ReadableStream) : undefined,
