@@ -1,5 +1,12 @@
 # @celsian/core
 
+## 0.6.6
+
+### Patch Changes
+
+- e79f5ff: Improve Node server request handling, URL conversion, and connection cleanup.
+  - @celsian/schema@0.6.6
+
 ## 0.6.5
 
 ### Patch Changes

@@ -1,5 +1,12 @@
 # celsian-docker-example
 
+## 1.0.15
+
+### Patch Changes
+
+- Updated dependencies [e79f5ff]
+  - @celsian/core@0.6.6
+
 ## 1.0.14
 
 ### Patch Changes

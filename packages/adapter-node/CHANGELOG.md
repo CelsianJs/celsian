@@ -1,5 +1,13 @@
 # @celsian/adapter-node
 
+## 0.6.6
+
+### Patch Changes
+
+- e79f5ff: Handle unsupported request targets and conversion failures safely in the Node adapter, preserve absolute-form authority, and report the bound port correctly.
+- Updated dependencies [e79f5ff]
+  - @celsian/core@0.6.6
+
 ## 0.6.5
 
 ### Patch Changes
