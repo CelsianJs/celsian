@@ -15,7 +15,7 @@
     "@sinclair/typebox": "^0.34.52"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260727.1",
+    "@cloudflare/workers-types": "^5.20260901.1",
     "wrangler": "^4.114.0"
   }
 }
