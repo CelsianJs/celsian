@@ -1,8 +1,22 @@
 // @celsian/core -- Raw TCP request failures stay inside an isolated Node server
 
 import { spawn } from "node:child_process";
+import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+/** Probe the OS independently of Celsian; unknown failures must fail the test. */
+async function unavailableIPv6(server = createServer()): Promise<string | undefined> {
+  return new Promise((resolve, reject) => {
+    server.once("error", (error: NodeJS.ErrnoException) => {
+      server.close();
+      if (error.code === "EAFNOSUPPORT" || error.code === "EADDRNOTAVAIL" || error.code === "EPROTONOSUPPORT") {
+        resolve(error.code);
+      } else reject(error);
+    });
+    server.listen(0, "::1", () => server.close((error) => (error ? reject(error) : resolve(undefined))));
+  });
+}
 
 interface Result {
   first: string;
@@ -99,7 +113,10 @@ describe("serve() Node request boundary", () => {
     const result = await run("GET /ok HTTP/1.1");
     expect(payload(result.bound).url).toBe(`http://127.0.0.1:${result.port}/ok`);
   });
-  it("handles an IPv6 listener with a bracketed authority", async () => {
+  it("handles an IPv6 listener with a bracketed authority", async (context) => {
+    const unavailable = await unavailableIPv6();
+    if (unavailable)
+      context.skip(`Independent Node bind to ::1 reports ${unavailable}; IPv6 is unavailable on this OS`);
     const result = await run("GET /ok HTTP/1.1", "http", "::1");
     expect(payload(result.bound).url).toBe(`http://[::1]:${result.port}/ok`);
   });
@@ -138,5 +155,36 @@ describe("serve() Node request boundary", () => {
     expect(result.first).toContain("HTTP/1.1 101");
     expect(result.first.match(/HTTP\/1\.1/g)).toHaveLength(1);
     expect(result.connections).toBe(0);
+  });
+});
+
+describe("IPv6 listener capability probe", () => {
+  it.each(["EAFNOSUPPORT", "EADDRNOTAVAIL", "EPROTONOSUPPORT"])(
+    "identifies only the known OS limitation %s",
+    async (code) => {
+      const server = createServer();
+      const listen = vi.spyOn(server, "listen").mockImplementation(() => {
+        queueMicrotask(() => server.emit("error", Object.assign(new Error("simulated bind failure"), { code })));
+        return server;
+      });
+      try {
+        await expect(unavailableIPv6(server)).resolves.toBe(code);
+      } finally {
+        listen.mockRestore();
+      }
+    },
+  );
+  it("does not hide unknown bind failures", async () => {
+    const server = createServer();
+    const error = Object.assign(new Error("unexpected bind failure"), { code: "EACCES" });
+    const listen = vi.spyOn(server, "listen").mockImplementation(() => {
+      queueMicrotask(() => server.emit("error", error));
+      return server;
+    });
+    try {
+      await expect(unavailableIPv6(server)).rejects.toBe(error);
+    } finally {
+      listen.mockRestore();
+    }
   });
 });
