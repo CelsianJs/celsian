@@ -14,6 +14,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > notices. `pnpm check:root-changelog` now fails CI when this file's newest entry is
 > behind `packages/core/package.json`, so the third time cannot happen quietly.
 
+## [0.6.6] - 2026-10-08
+
+### Fixed
+
+- Improved Node request conversion and connection-error handling in the core
+  server and standalone Node adapter.
+- Corrected listener URL reporting for ephemeral ports and IPv6 addresses.
+- Kept connection cleanup consistent across ordinary responses and upgrades.
+
+This patch uses the existing twenty-package fixed release group. It adds no
+external runtime dependencies or changes to the public Node adapter API.
+
 ## [0.6.5] - 2026-09-28
 
 ### Fixed
