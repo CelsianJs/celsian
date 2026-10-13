@@ -14,6 +14,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > notices. `pnpm check:root-changelog` now fails CI when this file's newest entry is
 > behind `packages/core/package.json`, so the third time cannot happen quietly.
 
+## [0.6.7] - 2026-10-13
+
+### Fixed
+
+- `create-celsian`: scaffolded projects install on npm 10, the version bundled
+  with Node 20 and 22. `npm install` in a fresh project crashed with "Cannot read
+  properties of null (reading 'edgesOut')" on vitest's optional peer cycle. Every
+  template now ships an `.npmrc` with `legacy-peer-deps=true`, and the `full`
+  template's Dockerfile copies it before `npm ci`. CI now installs every
+  template with the npm bundled with Node 20 and 22.
+
+### Dependencies
+
+- `@celsian/jwt` requires `jose` `^6.2.10` (was `^6.2.4`).
+
+This patch uses the existing twenty-package fixed release group. It adds no
+external runtime dependencies and changes no public API.
+
 ## [0.6.6] - 2026-10-08
 
 ### Fixed
