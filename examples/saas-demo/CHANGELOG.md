@@ -1,5 +1,47 @@
 # @celsian/example-saas-demo
 
+## 0.0.15
+
+### Patch Changes
+
+- Updated dependencies [e79f5ff]
+  - @celsian/core@0.6.6
+  - @celsian/jwt@0.6.6
+
+## 0.0.14
+
+### Patch Changes
+
+- Updated dependencies [879fd05]
+  - @celsian/core@0.6.5
+  - @celsian/jwt@0.6.5
+
+## 0.0.13
+
+### Patch Changes
+
+- Updated dependencies [48fb11d]
+  - @celsian/core@0.6.4
+  - @celsian/jwt@0.6.4
+
+## 0.0.12
+
+### Patch Changes
+
+- Updated dependencies
+  - @celsian/core@0.6.3
+  - @celsian/jwt@0.6.3
+
+## 0.0.11
+
+### Patch Changes
+
+- Updated dependencies [4246e07]
+- Updated dependencies [bc87e6e]
+- Updated dependencies [d1e677e]
+  - @celsian/core@0.6.2
+  - @celsian/jwt@0.6.2
+
 ## 0.0.10
 
 ### Patch Changes

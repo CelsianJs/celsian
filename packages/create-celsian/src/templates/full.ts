@@ -341,7 +341,7 @@ export default function healthRoutes(): PluginFunction {
 // Full REST: GET (list), POST (create), GET/:id, PUT/:id, DELETE/:id
 
 import { Type } from '@sinclair/typebox';
-import type { CelsianReply, CelsianRequest, PluginFunction } from '@celsian/core';
+import type { CelsianReply, CelsianRequest, PluginFunction, RouteOpenAPIOptions } from '@celsian/core';
 import type { User } from '../types.js';
 import { db } from '../plugins/database.js';
 import { requireAuth } from '../plugins/auth.js';
@@ -356,6 +356,15 @@ const UpdateUserSchema = Type.Object({
   email: Type.Optional(Type.String({ minLength: 1 })),
 });
 
+// Documentation only: the security plugin and requireAuth still enforce access.
+const csrfParameters: RouteOpenAPIOptions['parameters'] = [{
+  name: 'x-csrf-token',
+  in: 'header',
+  required: true,
+  description: 'Copy the _csrf cookie value after GET /users (or GET /auth/token). The browser sends the cookie automatically; this header must match it.',
+  schema: { type: 'string' },
+}];
+
 export default function userRoutes(): PluginFunction {
   return function users(app) {
     // GET /users: list all users
@@ -367,6 +376,7 @@ export default function userRoutes(): PluginFunction {
     // POST /users: create a new user (typed body from schema)
     app.post('/users', {
       schema: { body: CreateUserSchema },
+      openapi: { parameters: csrfParameters },
     }, (req, reply) => {
       const { name, email } = req.parsedBody as { name: string; email: string };
       const user: User = {
@@ -390,6 +400,7 @@ export default function userRoutes(): PluginFunction {
     app.put('/users/:id', {
       schema: { body: UpdateUserSchema },
       onRequest: requireAuth,
+      openapi: { security: [{ bearerAuth: [] }], parameters: csrfParameters },
     }, (req, reply) => {
       const user = db.users.get(req.params.id);
       if (!user) return reply.status(404).json({ error: 'User not found' });
@@ -405,6 +416,7 @@ export default function userRoutes(): PluginFunction {
       method: 'DELETE',
       url: '/users/:id',
       onRequest: requireAuth,
+      openapi: { security: [{ bearerAuth: [] }], parameters: csrfParameters },
       handler(req: CelsianRequest, reply: CelsianReply) {
         const existed = db.users.delete(req.params.id);
         if (!existed) return reply.status(404).json({ error: 'User not found' });
@@ -609,6 +621,14 @@ await app.register(openapi({
   title: '{{name}} API',
   version: '0.1.0',
   description: 'Auto-generated API documentation',
+  securitySchemes: {
+    bearerAuth: {
+      type: 'http',
+      scheme: 'bearer',
+      bearerFormat: 'JWT',
+      description: 'In development, execute GET /auth/token and paste the returned token here (without the Bearer prefix). In production, use your real login flow.',
+    },
+  },
 }));
 
 // ─── Routes ───
@@ -1028,6 +1048,22 @@ OpenAPI 3.1 docs are auto-generated from your route schemas.
 
 - **Swagger UI**: http://localhost:3000/docs
 - **JSON spec**: http://localhost:3000/docs/openapi.json
+
+### Try protected mutations in Swagger UI
+
+1. Execute \`GET /auth/token\` in development and copy the response's \`token\`.
+2. Click **Authorize**, paste the token without the \`Bearer\` prefix, then close the dialog.
+3. Copy the \`_csrf\` cookie value from your browser's developer tools (Application/Storage → Cookies).
+   A same-origin GET such as \`/auth/token\` or \`/users\` sets this cookie automatically.
+4. Expand \`PUT /users/{id}\`, click **Try it out**, enter the user ID, paste the cookie
+   value into **x-csrf-token**, edit the JSON body, and click **Execute**.
+   \`DELETE /users/{id}\` uses the same Bearer token and CSRF header; \`POST /users\`
+   requires the CSRF header but not Bearer auth.
+
+The browser sends the same-origin cookie automatically. The header is intentionally
+explicit: documentation does not bypass JWT or CSRF checks. Missing/invalid auth
+returns 401 when CSRF is valid; missing/mismatched CSRF returns 403. The token-minting
+route is development-only; production requires your real login flow.
 
 Add schemas to your routes for richer documentation:
 

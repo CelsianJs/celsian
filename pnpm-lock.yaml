@@ -309,7 +309,7 @@ importers:
   packages/adapter-bun:
     dependencies:
       '@celsian/core':
-        specifier: workspace:>=0.5.0 <1.0.0
+        specifier: workspace:>=0.6.5 <1.0.0
         version: link:../core
 
   packages/adapter-cloudflare:
@@ -321,7 +321,7 @@ importers:
   packages/adapter-deno:
     dependencies:
       '@celsian/core':
-        specifier: workspace:>=0.5.0 <1.0.0
+        specifier: workspace:>=0.6.5 <1.0.0
         version: link:../core
 
   packages/adapter-fly:

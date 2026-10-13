@@ -1,6 +1,7 @@
 // @celsian/core -- Test injection utility (no server needed)
 
 import type { CelsianApp } from "./app.js";
+import { setRemoteAddress } from "./request.js";
 import type { RouteMethod } from "./types.js";
 
 export interface InjectOptions {
@@ -18,6 +19,11 @@ export interface InjectOptions {
    * can hand-craft a malformed header when that is the point.
    */
   cookies?: Record<string, string>;
+  /**
+   * The peer address the request appears to come from, reported as
+   * `request.ip`. Unset, `request.ip` is `undefined`, as no socket exists.
+   */
+  remoteAddress?: string;
 }
 
 export function createInject(app: CelsianApp) {
@@ -65,6 +71,6 @@ export function createInject(app: CelsianApp) {
       body,
     });
 
-    return app.handle(request);
+    return app.handle(setRemoteAddress(request, options.remoteAddress));
   };
 }

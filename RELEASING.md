@@ -13,6 +13,12 @@ dirty worktree.
 6. When packages are published, the workflow runs `pnpm verify:registry` and uploads
    `artifacts/registry-smoke.json`.
 
+If repository settings prevent the Changesets bot from opening a pull request,
+the action can still generate and push `changeset-release/main`. A maintainer
+can open that existing branch as a normal version PR, synchronize the root
+changelog, and complete its usual review and CI checks. No additional bot
+permissions or disabled release gates are needed for this fallback.
+
 ## Local Pre-Release Gate
 
 Use the repo-pinned package manager:
@@ -28,6 +34,12 @@ pnpm verify:publish
 pnpm audit:release
 ```
 
+CI pins npm 11.16.0 for packed-consumer verification and publishing. Older npm
+versions can crash internally with `Cannot read properties of null (reading
+'edgesOut')` when resolving the smoke fixtures' local tarball overrides. If this
+occurs locally, use npm 11.16.0 with Node 22.9+ (or Node 20.17+); do not skip the
+packed-consumer gate. This tooling pin does not change package runtime support.
+
 ## Post-Publish Verification
 
 The release workflow runs:
@@ -39,6 +51,17 @@ pnpm verify:registry
 This installs the published packages into a clean consumer, imports public
 packages, checks CLI bins, scaffolds generated apps, and builds/health-checks the
 templates that should boot.
+
+Fresh npm publishes can return transient `ETARGET`/`404` responses while
+registry metadata propagates. The verifier retries only those registry lookup
+failures, uses a fresh per-run npm cache with online metadata flags, and uploads
+a success or failure artifact with bounded attempt logs.
+
+If publishing already succeeded and only the registry smoke needs to be rerun,
+use the manual `Verify registry packages` workflow. Provide the exact published
+semver version in the `version` input, without a leading `v`. That workflow has
+no npm token and does not publish; it only runs the registry consumer smoke for
+the immutable version already on npm.
 
 ## Rules
 

@@ -1,5 +1,57 @@
 # celsian-showcase
 
+## 1.0.15
+
+### Patch Changes
+
+- Updated dependencies [e79f5ff]
+  - @celsian/core@0.6.6
+  - @celsian/schema@0.6.6
+  - @celsian/rpc@0.6.6
+  - @celsian/cache@0.6.6
+
+## 1.0.14
+
+### Patch Changes
+
+- Updated dependencies [879fd05]
+  - @celsian/core@0.6.5
+  - @celsian/schema@0.6.5
+  - @celsian/rpc@0.6.5
+  - @celsian/cache@0.6.5
+
+## 1.0.13
+
+### Patch Changes
+
+- Updated dependencies [48fb11d]
+  - @celsian/core@0.6.4
+  - @celsian/schema@0.6.4
+  - @celsian/rpc@0.6.4
+  - @celsian/cache@0.6.4
+
+## 1.0.12
+
+### Patch Changes
+
+- Updated dependencies
+  - @celsian/core@0.6.3
+  - @celsian/schema@0.6.3
+  - @celsian/rpc@0.6.3
+  - @celsian/cache@0.6.3
+
+## 1.0.11
+
+### Patch Changes
+
+- Updated dependencies [4246e07]
+- Updated dependencies [bc87e6e]
+- Updated dependencies [d1e677e]
+  - @celsian/core@0.6.2
+  - @celsian/cache@0.6.2
+  - @celsian/schema@0.6.2
+  - @celsian/rpc@0.6.2
+
 ## 1.0.10
 
 ### Patch Changes

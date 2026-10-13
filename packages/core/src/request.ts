@@ -1,6 +1,6 @@
 // @celsian/core -- Request builder
 
-import type { CelsianRequest } from "./types.js";
+import type { CelsianRequest, ClientIpOptions } from "./types.js";
 
 // Shared empty query object for requests with no query string
 const EMPTY_QUERY: Record<string, string | string[]> = Object.freeze(Object.create(null));
@@ -60,6 +60,82 @@ const SAFE_SCHEME = /^[a-zA-Z][a-zA-Z0-9+.-]*$/;
 export interface ForwardedTrustOptions {
   trustProxy?: boolean;
   trustedHosts?: string[];
+  clientIp?: ClientIpOptions;
+}
+
+/**
+ * Where an adapter records the connection's peer address on a Web Request.
+ * `Symbol.for` so an adapter and an app bundled with separate copies of this
+ * module still agree on it.
+ */
+const REMOTE_ADDRESS = Symbol.for("celsian.remoteAddress");
+
+/**
+ * Record the address of the peer that opened the connection on `request`, so
+ * the app reports it as `request.ip`. Adapters call this with what their runtime
+ * reports: Node's `socket.remoteAddress`, Bun's `server.requestIP()`, Deno's
+ * `info.remoteAddr`. A missing or empty address is ignored. Returns `request`.
+ */
+export function setRemoteAddress(request: Request, address: string | null | undefined): Request {
+  if (typeof address === "string" && address !== "") {
+    (request as unknown as Record<symbol, string>)[REMOTE_ADDRESS] = address;
+  }
+  return request;
+}
+
+/**
+ * The peer address a runtime passes a fetch handler as its second argument:
+ * Bun's `server.requestIP(request)` or Deno's `info.remoteAddr.hostname`.
+ * Anything else, Cloudflare's bindings object for one, yields `undefined`.
+ */
+export function remoteAddressFromServeContext(request: Request, context: unknown): string | undefined {
+  if (context === null || typeof context !== "object") return undefined;
+  const requestIP = (context as { requestIP?: unknown }).requestIP;
+  if (typeof requestIP === "function") {
+    try {
+      const info = requestIP.call(context, request) as { address?: unknown } | null | undefined;
+      return typeof info?.address === "string" ? info.address : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  const remoteAddr = (context as { remoteAddr?: unknown }).remoteAddr;
+  if (remoteAddr !== null && typeof remoteAddr === "object") {
+    const hostname = (remoteAddr as { hostname?: unknown }).hostname;
+    return typeof hostname === "string" ? hostname : undefined;
+  }
+  return undefined;
+}
+
+/** Longest textual IP address: an IPv6 address with an embedded IPv4 tail. */
+const MAX_IP_LENGTH = 45;
+const IP_CHARS = /^[0-9A-Fa-f:.]+$/;
+
+/**
+ * True for text that can be an IPv4 or IPv6 address. Deliberately loose (it
+ * does not validate octets): it exists to keep arbitrary header text, which the
+ * client may have written, out of `request.ip`.
+ */
+function looksLikeIp(value: string): boolean {
+  return value.length <= MAX_IP_LENGTH && IP_CHARS.test(value) && (value.includes(".") || value.includes(":"));
+}
+
+/**
+ * The client address Celsian reports as `request.ip` for `request`.
+ *
+ * Without `clientIp` this is the peer address an adapter recorded with
+ * {@link setRemoteAddress}, and no header is read. With it, the named header's
+ * entry `hops` from the right is used when present and address-shaped, and the
+ * peer address otherwise. `undefined` when neither is available.
+ */
+export function resolveClientIp(request: Request, clientIp?: ClientIpOptions): string | undefined {
+  const peer = (request as unknown as Record<symbol, string | undefined>)[REMOTE_ADDRESS];
+  if (clientIp === undefined) return peer;
+  const raw = request.headers.get(clientIp.header);
+  if (raw === null) return peer;
+  const entries = raw.split(",");
+  const entry = entries[entries.length - (clientIp.hops ?? 1)]?.trim();
+  return entry !== undefined && looksLikeIp(entry) ? entry : peer;
 }
 
 /**
