@@ -1,4 +1,5 @@
 import { CELSIAN_VERSION, DEPS, DEV_DEPS } from "../versions.js";
+import { NPMRC } from "./npmrc.js";
 
 export const restApiTemplate = {
   "package.json": JSON.stringify(
@@ -146,6 +147,7 @@ describe('users', () => {
   ".env": `PORT=3000
 CORS_ORIGIN=http://localhost:3000
 `,
+  ".npmrc": NPMRC,
   ".gitignore": `node_modules/
 dist/
 *.tsbuildinfo

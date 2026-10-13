@@ -117,6 +117,14 @@ jobs:
         # tsconfig.typecheck.json.
         run: pnpm typecheck
 
+      - name: Scaffolded templates install with the npm users have
+        # Must run BEFORE the npm@11 install below: it uses the npm bundled with
+        # this Node (10.8 on Node 20, 10.9 on Node 22), which is what someone
+        # running `npm create celsian@latest` gets. verify:publish only ever used
+        # npm 11, so it never saw npm 10 crash on every template's dependency
+        # graph. Needs `pnpm build` (create-celsian dist) and the npm registry.
+        run: node scripts/smoke-scaffold-npm-install.mjs
+
       # Exercise the same packed consumer gate before merge, rather than first
       # discovering installer/template failures in the release workflow.
       - name: Verify packed packages and generated consumers

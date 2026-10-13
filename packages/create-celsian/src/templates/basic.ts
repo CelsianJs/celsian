@@ -1,4 +1,5 @@
 import { CELSIAN_VERSION, DEV_DEPS } from "../versions.js";
+import { NPMRC } from "./npmrc.js";
 
 export const basicTemplate = {
   "package.json": JSON.stringify(
@@ -110,6 +111,7 @@ describe('routes', () => {
   ".env": `PORT=3000
 CORS_ORIGIN=http://localhost:3000
 `,
+  ".npmrc": NPMRC,
   ".gitignore": `node_modules/
 dist/
 *.tsbuildinfo
