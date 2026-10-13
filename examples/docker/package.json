@@ -1,6 +1,6 @@
 {
   "name": "celsian-docker-example",
-  "version": "1.0.12",
+  "version": "1.0.15",
   "private": true,
   "type": "module",
   "scripts": {
@@ -15,7 +15,7 @@
     "@celsian/core": "workspace:*"
   },
   "devDependencies": {
-    "esbuild": "^0.28.1",
-    "tsx": "^4.23.0"
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.15"
   }
 }

@@ -59,7 +59,14 @@ export function validateRegistryVersion(value) {
 
 export function isRetryableRegistryInstallError(err) {
   const message = err instanceof Error ? err.message : String(err);
-  return /(?:npm error code\s+ETARGET|npm ERR! code ETARGET|\bETARGET\b|npm error code\s+E404|npm ERR! code E404|\bE404\b|No matching version found|npm error 404|npm ERR! 404|404 Not Found)/i.test(message);
+  if (/(?:npm error code\s+ETARGET|npm ERR! code ETARGET|\bETARGET\b|npm error code\s+E404|npm ERR! code E404|\bE404\b|No matching version found|npm error 404|npm ERR! 404|404 Not Found)/i.test(message)) {
+    return true;
+  }
+  // While a fresh publish propagates, npm can resolve a package whose metadata
+  // does not list the new version yet and then report the peer check as
+  // ERESOLVE with "Found: <name>@undefined". A genuine peer conflict names the
+  // version it found, so it stays non-retryable and fails on the first attempt.
+  return /\bERESOLVE\b/.test(message) && /Found: (?:@[^\s/@]+\/)?[^\s@]+@undefined\b/.test(message);
 }
 
 export async function retryNpmInstall(task, options = {}) {

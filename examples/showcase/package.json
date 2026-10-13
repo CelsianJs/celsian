@@ -1,6 +1,6 @@
 {
   "name": "celsian-showcase",
-  "version": "1.0.12",
+  "version": "1.0.15",
   "type": "module",
   "private": true,
   "scripts": {
@@ -15,7 +15,7 @@
     "@celsian/schema": "workspace:*"
   },
   "devDependencies": {
-    "tsx": "^4.23.0",
+    "tsx": "^4.23.15",
     "vitest": "^3.0.0",
     "zod": "^3.23.0"
   }

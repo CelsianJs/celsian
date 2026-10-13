@@ -14,6 +14,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > notices. `pnpm check:root-changelog` now fails CI when this file's newest entry is
 > behind `packages/core/package.json`, so the third time cannot happen quietly.
 
+## [0.6.6] - 2026-10-08
+
+### Fixed
+
+- Improved Node request conversion and connection-error handling in the core
+  server and standalone Node adapter.
+- Corrected listener URL reporting for ephemeral ports and IPv6 addresses.
+- Kept connection cleanup consistent across ordinary responses and upgrades.
+
+This patch uses the existing twenty-package fixed release group. It adds no
+external runtime dependencies or changes to the public Node adapter API.
+
+## [0.6.5] - 2026-09-28
+
+### Fixed
+
+- `csrf({ trustedOrigins })` now admits the origins it lists. A browser labels a
+  request from a separate front-end origin `Sec-Fetch-Site: same-site` or
+  `cross-site`, and the plugin refused those labels before it read
+  `trustedOrigins`, so the option could never admit a real browser request. Such
+  a request is now accepted only when its `Origin` is listed, and it still needs a
+  valid token. A missing, opaque or unlisted `Origin` is still refused.
+- `onSend` and `onResponse` see the status that is actually sent. `reply.statusCode`
+  used to stay 200 when a handler returned its own `Response`, threw, missed a
+  route (404/405) or was answered early by a hook. `onResponse` now also runs for
+  thrown errors, timeouts, misses and early returns, once per request.
+- Cookies set with `reply.cookie()` reach the client when a handler returns a
+  plain object, a string or nothing. On Node, a `set-cookie` set with
+  `reply.header()` is no longer dropped when the response also carries
+  `reply.cookie()` cookies.
+- Headers set with `reply.header()` are kept when a handler returns its own
+  `Response`. When both set the same header the `Response` keeps its value, `Vary`
+  values are combined and `Set-Cookie` values are appended.
+
+### Added
+
+- `request.ip`: the address of the peer that opened the connection, on Node,
+  Vercel, Bun, Deno, Cloudflare (`CF-Connecting-IP`) and Lambda. No request header
+  is trusted unless the app names one with the new `clientIp` option, for example
+  `createApp({ clientIp: { header: 'fly-client-ip' } })` or
+  `{ header: 'x-forwarded-for', hops: 2 }`. `app.inject()` accepts `remoteAddress`.
+- `@celsian/rate-limit` keys a request with no usable forwarding header on
+  `request.ip` instead of one shared bucket.
+
+### Upgrade notes
+
+- `onResponse` hooks now run for errors, misses and early returns, so metrics and
+  access logs built on them count requests they previously missed.
+- Headers and cookies set on the reply before a handler throws now reach the error
+  response.
+- `@celsian/adapter-bun` and `@celsian/adapter-deno` now require `@celsian/core`
+  0.6.5 or later. Upgrade them together.
+
+## [0.6.4] - 2026-09-26
+
+### Fixed
+
+- Node `serve()` shutdown now closes long-lived SSE and WebSocket connections
+  instead of returning while they keep the process alive. WebSocket clients
+  receive close code 1001; connections that outlive the configured grace period
+  are terminated. Ordinary in-flight HTTP responses can still finish gracefully.
+- Idle sockets and WebSocket upgrades waiting on asynchronous authorization
+  cannot establish or retain a connection after shutdown starts.
+
+This patch does not add producer-side SSE queue limits or change Bun, Deno,
+or Cloudflare runtime behavior. The existing 20-package fixed release group
+stays synchronized; no runtime dependencies are added.
+
 ## [0.6.3] - 2026-09-06
 
 ### Fixed

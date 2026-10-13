@@ -95,6 +95,15 @@ export interface CelsianRequest<TParams = Record<string, string>> extends Reques
    * the plugin index signature below and arriving as `unknown`.
    */
   cookies: Record<string, string>;
+  /**
+   * The client's IP address. By default it is the peer that opened the
+   * connection, as the runtime reports it; with `clientIp` set on the app it is
+   * read from the header your proxy sets. Client-supplied headers are never
+   * consulted otherwise. `undefined` where the runtime exposes no peer address,
+   * such as `app.inject()` without `remoteAddress` or an edge runtime whose
+   * adapter has none to give.
+   */
+  ip?: string;
   /** Populated by plugins */
   [key: string]: unknown;
 }
@@ -449,11 +458,46 @@ export interface RouteManifestEntry {
   kind: "serverless" | "hot" | "task";
 }
 
+/** Where `request.ip` is read from when a proxy sits in front of the app. See `CelsianAppOptions.clientIp`. */
+export interface ClientIpOptions {
+  /**
+   * The header your proxy sets to the client's address, e.g. `"fly-client-ip"`,
+   * `"cf-connecting-ip"`, `"x-real-ip"` or `"x-forwarded-for"`. Case-insensitive.
+   */
+  header: string;
+  /**
+   * For a comma-separated header such as X-Forwarded-For: which entry to use,
+   * counting from the right, the end each proxy appends to. `1` (the default)
+   * is the last entry, written by the proxy nearest the app. Set it to the
+   * number of proxies you run; everything further left was written by the
+   * client.
+   */
+  hops?: number;
+}
+
 export interface CelsianAppOptions {
   /** Base prefix for all routes */
   prefix?: string;
-  /** Trust proxy headers */
+  /**
+   * Trust `x-forwarded-proto`, and `x-forwarded-host` for hosts listed in
+   * `trustedHosts`. Does not affect `request.ip`; see `clientIp` for that.
+   */
   trustProxy?: boolean;
+  /**
+   * Read `request.ip` from a header a proxy you run sets, instead of the
+   * connection's peer address (which, behind a proxy, is the proxy).
+   *
+   * Only set this when every request reaches the app through that proxy and the
+   * proxy overwrites the header: a client that can reach the app directly can
+   * send any value it likes. When the header is missing, or the chain is shorter
+   * than `hops`, or the entry is not an IP address, `request.ip` falls back to
+   * the peer address. Unset (the default), no request header is consulted.
+   *
+   * @example
+   * createApp({ clientIp: { header: 'fly-client-ip' } })
+   * createApp({ clientIp: { header: 'x-forwarded-for', hops: 2 } })
+   */
+  clientIp?: ClientIpOptions;
   /**
    * Allowlist of host values that may be honored from the `x-forwarded-host`
    * header when `trustProxy` is enabled. If unset, `x-forwarded-host` is

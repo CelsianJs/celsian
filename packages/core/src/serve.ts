@@ -1,9 +1,12 @@
 // @celsian/core, Built-in server (Node.js / Bun / Deno runtime detection)
 
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { Socket } from "node:net";
 import type { CelsianApp } from "./app.js";
+import { HttpError } from "./errors.js";
 import { getFastPayload } from "./fast-response.js";
 import { readConfinedFile } from "./reply.js";
+import { setRemoteAddress } from "./request.js";
 import { authorizeWSUpgrade, type WSAllowedOrigins, WSConnectionLimiter } from "./websocket.js";
 
 /** Options for `serve()` -- port, host, static files, graceful shutdown. */
@@ -284,9 +287,16 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
   let inFlight = 0;
   let shuttingDown = false;
   const shutdownTimeout = options.shutdownTimeout ?? 10_000;
+  const sockets = new Set<Socket>();
+  const webSockets = new Set<{
+    close: (code?: number, reason?: string) => void;
+    terminate?: () => void;
+    readyState?: number;
+  }>();
+  const pendingUpgradeSockets = new Set<Socket>();
 
-  // Pre-compute base URL string for Node.js request conversion (avoid per-request concatenation)
-  const baseUrl = `http://${host}:${port}`;
+  // Cache the listener authority; update the actual address after binding port 0.
+  let baseUrl = `http://${host.includes(":") ? `[${host}]` : host}:${port}`;
   const hasStaticDir = !!options.staticDir;
 
   const server = http.createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -298,69 +308,82 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
 
     inFlight++;
 
-    // Static files, only parse URL when staticDir is configured
-    if (hasStaticDir) {
-      const url = new URL(req.url ?? "/", baseUrl);
-      const { resolve } = await import("node:path");
-      const staticRoot = resolve(options.staticDir!);
-      // Decode URI and normalize to prevent path traversal (e.g., /../../../etc/passwd).
-      // Malformed percent-encoding (e.g. "/%ZZ") throws URIError, respond 400
-      // rather than letting it crash the async server callback.
-      let decodedPath: string;
-      try {
-        decodedPath = decodeURIComponent(url.pathname);
-      } catch {
-        res.statusCode = 400;
-        res.end("Bad Request");
-        inFlight--;
-        return;
-      }
-      // `join` first, then confine: a URL path is always absolute ("/app.js"),
-      // and handing that straight to `resolve(root, path)` would let it replace
-      // the root outright, so every request would look like an escape.
-      const filePath = resolve(join(staticRoot, decodedPath));
-      // Containment is delegated to the SAME helper reply.sendFile() uses, so
-      // this second file-serving path cannot drift from it again. It was
-      // lexical-only here (a `startsWith` on the resolved path) while sendFile
-      // had already been hardened with realpath() + O_NOFOLLOW, which meant a
-      // symlink planted inside staticDir served whatever it pointed at:
-      // `GET /avatar.png` returning the contents of `.env` with a 200.
-      //
-      // A rejection falls through to the app handler rather than answering 403,
-      // matching what the lexical check already did for traversal attempts, so
-      // the static layer still never reports on files outside its own root.
-      const file = await readConfinedFile(filePath, { root: staticRoot });
-      if (file.ok) {
-        // Extension comes from the requested path, not the realpath()-resolved
-        // one, so the content-type does not change under the client's feet.
-        const ext = extname(filePath);
-        res.setHeader("content-type", MIME_TYPES[ext] ?? "application/octet-stream");
-        res.setHeader("cache-control", "public, max-age=31536000, immutable");
-        res.end(file.data);
-        inFlight--;
-        return;
-      }
-    }
-
-    // Build Web Request with raw path (let app.handle() do fast URL parsing)
-    const webRequest = nodeToWebRequestFast(req, req.url ?? "/", baseUrl);
-
     try {
+      const requestUrl = nodeRequestUrl(req.url ?? "/", baseUrl);
+      // Static files, only parse URL when staticDir is configured
+      if (hasStaticDir) {
+        const url = typeof requestUrl === "string" ? new URL(requestUrl) : requestUrl;
+        const { resolve } = await import("node:path");
+        const staticRoot = resolve(options.staticDir!);
+        // Decode URI and normalize to prevent path traversal (e.g., /../../../etc/passwd).
+        // Malformed percent-encoding (e.g. "/%ZZ") throws URIError, respond 400
+        // rather than letting it crash the async server callback.
+        let decodedPath: string;
+        try {
+          decodedPath = decodeURIComponent(url.pathname);
+        } catch {
+          throw new HttpError(400, "Bad Request");
+        }
+        // `join` first, then confine: a URL path is always absolute ("/app.js"),
+        // and handing that straight to `resolve(root, path)` would let it replace
+        // the root outright, so every request would look like an escape.
+        const filePath = resolve(join(staticRoot, decodedPath));
+        // Containment is delegated to the SAME helper reply.sendFile() uses, so
+        // this second file-serving path cannot drift from it again. It was
+        // lexical-only here (a `startsWith` on the resolved path) while sendFile
+        // had already been hardened with realpath() + O_NOFOLLOW, which meant a
+        // symlink planted inside staticDir served whatever it pointed at:
+        // `GET /avatar.png` returning the contents of `.env` with a 200.
+        //
+        // A rejection falls through to the app handler rather than answering 403,
+        // matching what the lexical check already did for traversal attempts, so
+        // the static layer still never reports on files outside its own root.
+        const file = await readConfinedFile(filePath, { root: staticRoot });
+        if (file.ok) {
+          // Extension comes from the requested path, not the realpath()-resolved
+          // one, so the content-type does not change under the client's feet.
+          const ext = extname(filePath);
+          res.setHeader("content-type", MIME_TYPES[ext] ?? "application/octet-stream");
+          res.setHeader("cache-control", "public, max-age=31536000, immutable");
+          res.end(file.data);
+          return;
+        }
+      }
+
+      // Build Web Request with raw path (let app.handle() do fast URL parsing)
+      let webRequest: Request;
+      try {
+        webRequest = nodeToWebRequestFast(req, requestUrl);
+      } catch {
+        throw new HttpError(400, "Bad Request");
+      }
+
       const response = await app.handle(webRequest);
       await writeWebResponse(res, response);
     } catch (error) {
       if (!res.destroyed) {
-        console.error("[celsian] Unhandled error:", error);
+        const badRequest = error instanceof HttpError && error.statusCode === 400;
+        if (!badRequest) console.error("[celsian] Unhandled error:", error);
         if (res.headersSent) res.destroy();
         else {
-          res.statusCode = 500;
-          res.end("Internal Server Error");
+          try {
+            res.statusCode = badRequest ? 400 : 500;
+            res.setHeader("connection", "close");
+            res.end(badRequest ? "Bad Request" : "Internal Server Error");
+          } catch {
+            res.destroy();
+          }
         }
       }
     } finally {
       requestSignalCleanup.get(req)?.();
       inFlight--;
     }
+  });
+
+  server.on("connection", (socket: Socket) => {
+    sockets.add(socket);
+    socket.once("close", () => sockets.delete(socket));
   });
 
   // Graceful shutdown
@@ -370,13 +393,50 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
 
     app.log.info("shutting down gracefully");
 
-    // Stop accepting new connections
-    server.close();
+    // Stop accepting new connections. The callback fires only after Node has
+    // closed every tracked HTTP connection, including responses still flushing
+    // to slow clients after the Celsian handler has returned.
+    let serverClosed = false;
+    const serverClosedPromise = new Promise<void>((resolve) => {
+      server.close(() => {
+        serverClosed = true;
+        resolve();
+      });
+    });
+    server.closeIdleConnections?.();
 
-    // Wait for in-flight requests to drain
+    for (const ws of webSockets) {
+      try {
+        ws.close(1001, "Server shutting down");
+      } catch {
+        webSockets.delete(ws);
+      }
+    }
+
+    // Wait until the actual graceful deadline for HTTP sockets, in-flight
+    // handlers, and upgraded WebSockets to drain. A handler can finish before
+    // Node has flushed its response to the client, so `inFlight === 0` alone is
+    // not proof that it is safe to destroy the socket.
     const deadline = Date.now() + shutdownTimeout;
-    while (inFlight > 0 && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 100));
+    while (
+      (inFlight > 0 || webSockets.size > 0 || pendingUpgradeSockets.size > 0 || sockets.size > 0 || !serverClosed) &&
+      Date.now() < deadline
+    ) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+
+    if (inFlight > 0 || webSockets.size > 0 || pendingUpgradeSockets.size > 0 || sockets.size > 0 || !serverClosed) {
+      for (const ws of webSockets) {
+        try {
+          ws.terminate?.();
+        } catch {
+          // Socket may already be closing.
+        }
+      }
+      for (const socket of sockets) {
+        socket.destroy();
+      }
+      await Promise.race([serverClosedPromise, new Promise((resolve) => setTimeout(resolve, 50))]);
     }
 
     await teardownApp(app, options);
@@ -404,97 +464,139 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
         default?: { WebSocketServer?: new (options: Record<string, unknown>) => any };
       };
       const { createWSConnection } = await import("./websocket.js");
-      const { buildRequest, resolveEffectiveUrl } = await import("./request.js");
+      const { buildRequest, resolveClientIp, resolveEffectiveUrl } = await import("./request.js");
       const WSS = wsMod.WebSocketServer ?? (wsMod as any).default?.WebSocketServer;
       // `ws` defaults maxPayload to 100 MB, far too generous for a default.
       const wss = new WSS({ noServer: true, maxPayload: options.maxPayload ?? 1024 * 1024 });
       const limiter = new WSConnectionLimiter(options.maxConnectionsPerIP ?? 64);
 
       server.on("upgrade", async (req: IncomingMessage, socket: any, head: Buffer) => {
-        const url = new URL(req.url ?? "/", `http://${host}:${port}`);
-        const pathname = url.pathname;
-        const handler = app.wsRegistry.getHandler(pathname);
-
-        if (!handler) {
+        if (shuttingDown) {
           socket.destroy();
           return;
         }
+        pendingUpgradeSockets.add(socket);
+        let upgraded = false;
+        try {
+          const requestUrl = nodeRequestUrl(req.url ?? "/", baseUrl);
+          const url = typeof requestUrl === "string" ? new URL(requestUrl) : requestUrl;
+          const pathname = url.pathname;
+          const handler = app.wsRegistry.getHandler(pathname);
 
-        // Gate the handshake: Origin allow-list, onUpgrade callback, then the
-        // app's root onRequest hooks (auth guards, rate limiters). WebSocket
-        // handshakes are exempt from CORS, so without this a cross-site page can
-        // open an authenticated socket with the victim's cookies.
-        const webReq = nodeToWebRequest(req, url);
-        const decision = await authorizeWSUpgrade(app, webReq, pathname, {
-          allowedOrigins: options.allowedOrigins,
-          allowMissingOrigin: options.allowMissingOrigin,
-          onUpgrade: options.onUpgrade,
-          runRequestHooks: options.skipUpgradeHooks !== true,
-        });
+          if (!handler) {
+            socket.destroy();
+            return;
+          }
 
-        if (!decision.allowed) {
-          app.log.warn("WebSocket upgrade rejected", {
-            path: pathname,
-            status: decision.status,
-            reason: decision.reason,
+          // Gate the handshake: Origin allow-list, onUpgrade callback, then the
+          // app's root onRequest hooks (auth guards, rate limiters). WebSocket
+          // handshakes are exempt from CORS, so without this a cross-site page can
+          // open an authenticated socket with the victim's cookies.
+          let webReq: Request;
+          try {
+            webReq = nodeToWebRequest(req, url);
+            if (typeof requestUrl !== "string") webReq.headers.set("host", url.host);
+          } catch {
+            throw new HttpError(400, "Bad Request");
+          }
+          const decision = await authorizeWSUpgrade(app, webReq, pathname, {
+            allowedOrigins: options.allowedOrigins,
+            allowMissingOrigin: options.allowMissingOrigin,
+            onUpgrade: options.onUpgrade,
+            runRequestHooks: options.skipUpgradeHooks !== true,
           });
-          socket.write(`HTTP/1.1 ${decision.status} ${decision.status === 403 ? "Forbidden" : "Rejected"}\r\n\r\n`);
-          socket.destroy();
-          return;
+
+          if (shuttingDown || socket.destroyed) {
+            socket.destroy();
+            return;
+          }
+
+          if (!decision.allowed) {
+            app.log.warn("WebSocket upgrade rejected", {
+              path: pathname,
+              status: decision.status,
+              reason: decision.reason,
+            });
+            socket.write(`HTTP/1.1 ${decision.status} ${decision.status === 403 ? "Forbidden" : "Rejected"}\r\n\r\n`);
+            socket.destroy();
+            return;
+          }
+
+          const clientIp: string = req.socket?.remoteAddress ?? "unknown";
+          if (!limiter.acquire(clientIp)) {
+            app.log.warn("WebSocket upgrade rejected: per-IP connection cap reached", { path: pathname, ip: clientIp });
+            socket.write("HTTP/1.1 429 Too Many Requests\r\n\r\n");
+            socket.destroy();
+            return;
+          }
+          let released = false;
+          const releaseSlot = () => {
+            if (released) return;
+            released = true;
+            limiter.release(clientIp);
+          };
+          socket.once("close", releaseSlot);
+
+          wss.handleUpgrade(req, socket, head, (ws: any) => {
+            upgraded = true;
+            webSockets.add(ws);
+            ws.once("close", () => webSockets.delete(ws));
+            const conn = createWSConnection({
+              send: (data: string | ArrayBuffer) => ws.send(data),
+              close: (code?: number, reason?: string) => ws.close(code, reason),
+            });
+
+            app.wsRegistry.addConnection(pathname, conn);
+            ws.on("close", (code: number, reason: Buffer) => {
+              app.wsRegistry.removeConnection(pathname, conn);
+              releaseSlot();
+              handler.close?.(conn, code, reason.toString());
+            });
+
+            // Build a CelsianRequest for the upgrade (reuses the gated Request).
+            //
+            // `url` above is composed from the address the server BOUND to, which
+            // is `0.0.0.0` in production, so handing it straight to the handler
+            // meant a WebSocket handler saw `http://0.0.0.0:3000/chat` instead of
+            // the host the client addressed. That breaks any handler that routes
+            // on host (multi-tenant apps especially). The upgrade GATE already
+            // resolves this itself, so this was never an auth bypass, only a
+            // wrong value delivered to application code.
+            const effectiveUrl = new URL(resolveEffectiveUrl(webReq.url, webReq.headers, app.getForwardedTrust()));
+            const celsianReq = buildRequest(webReq, effectiveUrl, {});
+            celsianReq.ip = resolveClientIp(webReq, app.getForwardedTrust().clientIp);
+
+            ws.on("error", (err: Error) => {
+              app.log.error("WebSocket error", { path: pathname, connId: conn.id, error: err.message });
+            });
+
+            ws.on("message", (data: Buffer | ArrayBuffer | Buffer[]) => {
+              const msg = Buffer.isBuffer(data) ? data.toString() : data;
+              handler.message?.(conn, msg as string | ArrayBuffer);
+            });
+
+            handler.open?.(conn, celsianReq);
+          });
+        } catch (error) {
+          if (!socket.destroyed) {
+            if (upgraded) {
+              socket.destroy();
+              return;
+            }
+            try {
+              const status =
+                error instanceof HttpError && error.statusCode === 400
+                  ? "400 Bad Request"
+                  : "500 Internal Server Error";
+              socket.end(`HTTP/1.1 ${status}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
+            } catch {
+              socket.destroy();
+            }
+          }
+        } finally {
+          requestSignalCleanup.get(req)?.();
+          pendingUpgradeSockets.delete(socket);
         }
-
-        const clientIp: string = req.socket?.remoteAddress ?? "unknown";
-        if (!limiter.acquire(clientIp)) {
-          app.log.warn("WebSocket upgrade rejected: per-IP connection cap reached", { path: pathname, ip: clientIp });
-          socket.write("HTTP/1.1 429 Too Many Requests\r\n\r\n");
-          socket.destroy();
-          return;
-        }
-        let released = false;
-        const releaseSlot = () => {
-          if (released) return;
-          released = true;
-          limiter.release(clientIp);
-        };
-        socket.once("close", releaseSlot);
-
-        wss.handleUpgrade(req, socket, head, (ws: any) => {
-          const conn = createWSConnection({
-            send: (data: string | ArrayBuffer) => ws.send(data),
-            close: (code?: number, reason?: string) => ws.close(code, reason),
-          });
-
-          app.wsRegistry.addConnection(pathname, conn);
-
-          // Build a CelsianRequest for the upgrade (reuses the gated Request).
-          //
-          // `url` above is composed from the address the server BOUND to, which
-          // is `0.0.0.0` in production, so handing it straight to the handler
-          // meant a WebSocket handler saw `http://0.0.0.0:3000/chat` instead of
-          // the host the client addressed. That breaks any handler that routes
-          // on host (multi-tenant apps especially). The upgrade GATE already
-          // resolves this itself, so this was never an auth bypass, only a
-          // wrong value delivered to application code.
-          const effectiveUrl = new URL(resolveEffectiveUrl(webReq.url, webReq.headers, app.getForwardedTrust()));
-          const celsianReq = buildRequest(webReq, effectiveUrl, {});
-
-          handler.open?.(conn, celsianReq);
-
-          ws.on("error", (err: Error) => {
-            app.log.error("WebSocket error", { path: pathname, connId: conn.id, error: err.message });
-          });
-
-          ws.on("message", (data: Buffer | ArrayBuffer | Buffer[]) => {
-            const msg = Buffer.isBuffer(data) ? data.toString() : data;
-            handler.message?.(conn, msg as string | ArrayBuffer);
-          });
-
-          ws.on("close", (code: number, reason: Buffer) => {
-            handler.close?.(conn, code, reason.toString());
-            app.wsRegistry.removeConnection(pathname, conn);
-            releaseSlot();
-          });
-        });
       });
 
       app.log.info("WebSocket upgrade handler enabled");
@@ -536,6 +638,7 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
   const boundPort = addr !== null && typeof addr === "object" ? addr.port : port;
   const boundFamily = addr !== null && typeof addr === "object" ? addr.family : "";
   const displayHost = boundAddress.includes(":") ? `[${boundAddress}]` : boundAddress;
+  baseUrl = `http://${displayHost}:${boundPort}`;
   // When binding a hostname (e.g. "localhost"), show which family it resolved to.
   const familyNote =
     host !== boundAddress && boundFamily ? ` ("${host}" resolved to ${boundFamily} ${boundAddress})` : "";
@@ -676,6 +779,23 @@ function warnWSUnsupported(app: CelsianApp, runtime: string): void {
 
 const requestSignalCleanup = new WeakMap<IncomingMessage, () => void>();
 
+/** Preserve the origin-form hot path; validate and parse only absolute-form. */
+function nodeRequestUrl(target: string, baseUrl: string): string | URL {
+  // Leading // is still an origin-form path, never a network-path authority.
+  if (target.charCodeAt(0) === 47 /* '/' */) return baseUrl + target;
+  const authority = /^https?:\/\/([^/?#]+)/i.exec(target)?.[1];
+  if (!authority || authority.includes("@") || target.includes("#") || target.includes("\\")) {
+    throw new HttpError(400, "Bad Request");
+  }
+  try {
+    const url = new URL(target);
+    if (!url.hostname || url.username || url.password) throw new HttpError(400, "Bad Request");
+    return url;
+  } catch {
+    throw new HttpError(400, "Bad Request");
+  }
+}
+
 /** IncomingMessage.close also fires after a normal body; watch socket closure instead. */
 function nodeRequestSignal(req: IncomingMessage): AbortSignal {
   const controller = new AbortController();
@@ -711,21 +831,21 @@ export function nodeToWebRequest(req: IncomingMessage, url: URL): Request {
   const method = req.method ?? "GET";
   const hasBody = method !== "GET" && method !== "HEAD";
 
-  return new Request(url.toString(), {
+  const request = new Request(url.toString(), {
     method,
     headers,
     body: hasBody ? (req as unknown as ReadableStream) : undefined,
     duplex: hasBody ? "half" : undefined,
     signal: nodeRequestSignal(req),
   });
+  return setRemoteAddress(request, req.socket?.remoteAddress);
 }
 
 /**
- * Fast variant of nodeToWebRequest that constructs the Request with a
- * path-only URL (e.g., "/json?q=1"), enabling app.handle() to skip
- * full URL parsing. Falls back to full URL when the runtime requires it.
+ * Fast variant of nodeToWebRequest using a prebuilt URL string for origin-form.
+ * Absolute-form uses its parsed authority instead of the received Host header.
  */
-function nodeToWebRequestFast(req: IncomingMessage, rawPath: string, baseUrl: string): Request {
+function nodeToWebRequestFast(req: IncomingMessage, url: string | URL): Request {
   const raw = req.headers;
   // Common case: every header value is a string (Node coalesces duplicates,
   // leaving only set-cookie and a handful as arrays). Pass the plain record
@@ -746,18 +866,25 @@ function nodeToWebRequestFast(req: IncomingMessage, rawPath: string, baseUrl: st
     }
   }
 
+  // Absolute-form carries its own authority; the received Host must not
+  // replace it when the app resolves the effective URL. Origin-form is unchanged.
+  if (typeof url !== "string") {
+    headers = new Headers(headers);
+    headers.set("host", url.host);
+  }
+
   const method = req.method ?? "GET";
   const hasBody = method !== "GET" && method !== "HEAD";
 
-  // Use full URL (required by Request constructor) but keep it minimal
-  // by concatenating baseUrl + rawPath instead of calling new URL()
-  return new Request(baseUrl + rawPath, {
+  // Origin-form's full URL was built by concatenation, without a URL allocation.
+  const request = new Request(url, {
     method,
     headers,
     body: hasBody ? (req as unknown as ReadableStream) : undefined,
     duplex: hasBody ? "half" : undefined,
     signal: nodeRequestSignal(req),
   });
+  return setRemoteAddress(request, req.socket?.remoteAddress);
 }
 
 /** Write a Web Standard Response back to a Node.js ServerResponse, preserving Set-Cookie headers. */
@@ -785,7 +912,12 @@ async function writeNodeResponse(res: ServerResponse, response: Response): Promi
     if (body !== null) {
       headers["content-length"] = String(typeof body === "string" ? Buffer.byteLength(body) : body.byteLength);
     }
-    if (fast.cookies.length > 0) headers["set-cookie"] = fast.cookies;
+    if (fast.cookies.length > 0) {
+      // A Set-Cookie put in the plain headers by `reply.header()` is a cookie
+      // too; it goes out alongside the `reply.cookie()` ones, not instead.
+      const fromHeader = headers["set-cookie"];
+      headers["set-cookie"] = typeof fromHeader === "string" ? [fromHeader, ...fast.cookies] : fast.cookies;
+    }
     res.writeHead(fast.status, headers);
     if (body === null) res.end();
     else res.end(body);

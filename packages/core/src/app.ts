@@ -12,8 +12,17 @@ import { runHooks, runHooksFireAndForget, runOnSendHooks } from "./hooks.js";
 import { createInject, type InjectOptions } from "./inject.js";
 import { createLogger, generateRequestId, type Logger } from "./logger.js";
 import { MemoryQueue, type QueueBackend } from "./queue.js";
-import { createReply } from "./reply.js";
-import { applyForwardedAuthority, buildRequest, buildRequestFast, type ForwardedTrustOptions } from "./request.js";
+import { createReply, replyCookies } from "./reply.js";
+import {
+  applyForwardedAuthority,
+  buildRequest,
+  buildRequestFast,
+  type ForwardedTrustOptions,
+  remoteAddressFromServeContext,
+  resolveClientIp,
+  setRemoteAddress,
+} from "./request.js";
+import { mergeReplyIntoResponse } from "./response-merge.js";
 import { resolveResponseSchema } from "./response-schema.js";
 import { Router } from "./router.js";
 import { createEnqueue, type TaskDefinition, TaskRegistry, TaskWorker, type TaskWorkerOptions } from "./task.js";
@@ -142,6 +151,18 @@ export class CelsianApp {
     this.cachedBodyLimit = options.bodyLimit ?? 1_048_576;
     this.cachedRequestTimeout = options.requestTimeout ?? 30_000;
     this.responseValidationEnabled = options.validateResponses !== false;
+
+    const clientIp = options.clientIp;
+    if (clientIp !== undefined) {
+      // A blank header or a hop count below 1 can never name a client, so every
+      // request would silently report the proxy's address instead.
+      if (typeof clientIp.header !== "string" || clientIp.header.trim() === "") {
+        throw new CelsianError("clientIp.header must name the header your proxy sets, e.g. 'fly-client-ip'.");
+      }
+      if (clientIp.hops !== undefined && (!Number.isInteger(clientIp.hops) || clientIp.hops < 1)) {
+        throw new CelsianError(`clientIp.hops must be an integer >= 1, got ${String(clientIp.hops)}.`);
+      }
+    }
 
     // Logger setup
     this.usingNoopLogger = !options.logger;
@@ -480,7 +501,11 @@ export class CelsianApp {
    * request does.
    */
   getForwardedTrust(): ForwardedTrustOptions {
-    return { trustProxy: this.options.trustProxy, trustedHosts: this.options.trustedHosts };
+    return {
+      trustProxy: this.options.trustProxy,
+      trustedHosts: this.options.trustedHosts,
+      clientIp: this.options.clientIp,
+    };
   }
 
   /**
@@ -812,7 +837,10 @@ export class CelsianApp {
         missContext.reply,
         this.rootScope,
       );
-      return this.applyOnSend(response, missContext.request, missContext.reply, this.rootScope.onSend);
+      return this.finishMiss(
+        await this.applyOnSend(response, missContext.request, missContext.reply, this.rootScope.onSend),
+        missContext,
+      );
     }
 
     if (!match) {
@@ -838,24 +866,33 @@ export class CelsianApp {
       const missHooks =
         allowed.length > 0 ? this.routeScopeHooks(pathname, allowed) : this.onRequestHooksForPath(pathname);
       const earlyResponse = await runHooks(missHooks, missContext.request, missContext.reply);
-      if (earlyResponse) return earlyResponse;
-      const missHeaders = this.mergeReplyHeaders(CelsianApp.JSON_CONTENT_TYPE, missContext.reply);
+      if (earlyResponse)
+        return this.finishMiss(mergeReplyIntoResponse(earlyResponse, missContext.reply, null), missContext);
 
       if (isMethodMismatch) {
-        if (allowed.length > 0) missHeaders.set("allow", allowed.join(", "));
         const r405 = new Response(CelsianApp.METHOD_NOT_ALLOWED_BODY, {
           status: 405,
-          headers: missHeaders,
+          headers:
+            allowed.length > 0
+              ? { ...CelsianApp.JSON_CONTENT_TYPE, allow: allowed.join(", ") }
+              : CelsianApp.JSON_CONTENT_TYPE,
         });
-        return this.applyOnSend(r405, missContext.request, missContext.reply, this.rootScope.onSend);
+        return this.finishMiss(
+          await this.applyOnSend(r405, missContext.request, missContext.reply, this.rootScope.onSend),
+          missContext,
+        );
       }
       if (this.notFoundHandler) {
         try {
           const result = await this.notFoundHandler(missContext.request, missContext.reply);
-          if (result instanceof Response)
-            return this.applyOnSend(result, missContext.request, missContext.reply, this.rootScope.onSend);
-          if (missContext.reply.sent) return new Response(null, { status: missContext.reply.statusCode });
-          return new Response(null, { status: 404 });
+          if (result instanceof Response) {
+            return this.finishMiss(
+              await this.applyOnSend(result, missContext.request, missContext.reply, this.rootScope.onSend),
+              missContext,
+            );
+          }
+          const empty = new Response(null, { status: missContext.reply.sent ? missContext.reply.statusCode : 404 });
+          return this.finishMiss(mergeReplyIntoResponse(empty, missContext.reply, null), missContext);
         } catch (error) {
           if (this.hasLogger) {
             this.log.error("notFound handler error", {
@@ -866,16 +903,22 @@ export class CelsianApp {
           }
           const r404 = new Response(CelsianApp.NOT_FOUND_BODY, {
             status: 404,
-            headers: missHeaders,
+            headers: CelsianApp.JSON_CONTENT_TYPE,
           });
-          return this.applyOnSend(r404, missContext.request, missContext.reply, this.rootScope.onSend);
+          return this.finishMiss(
+            await this.applyOnSend(r404, missContext.request, missContext.reply, this.rootScope.onSend),
+            missContext,
+          );
         }
       }
       const r404 = new Response(CelsianApp.NOT_FOUND_BODY, {
         status: 404,
-        headers: missHeaders,
+        headers: CelsianApp.JSON_CONTENT_TYPE,
       });
-      return this.applyOnSend(r404, missContext.request, missContext.reply, this.rootScope.onSend);
+      return this.finishMiss(
+        await this.applyOnSend(r404, missContext.request, missContext.reply, this.rootScope.onSend),
+        missContext,
+      );
     }
 
     // Hooks and decorations that apply to this route, resolved from the chain of
@@ -886,6 +929,7 @@ export class CelsianApp {
 
     // Build CelsianRequest with fast query parsing (skip URL object when possible)
     const celsianRequest = buildRequestFast(request, pathname, queryString, match.params, effectiveUrl);
+    if (celsianRequest.ip === undefined) celsianRequest.ip = resolveClientIp(request, this.options.clientIp);
 
     // Apply request decorations (skip loop if none registered)
     if (scope.requestDecorations.size > 0) {
@@ -945,7 +989,7 @@ export class CelsianApp {
         if (isHead) response = new Response(null, { status: response.status, headers: response.headers });
         const duration = Math.round(performance.now() - start);
         this.log.info("request completed", { method, url: pathname, statusCode: response.status, duration, requestId });
-        return response;
+        return this.finish(response, celsianRequest, reply, scope.onResponse);
       } catch (thrown) {
         const error = wrapNonError(thrown);
         let response = await this.handleError(error, celsianRequest, reply, scope);
@@ -960,25 +1004,33 @@ export class CelsianApp {
           requestId,
           error: error.message,
         });
-        return response;
+        return this.finish(response, celsianRequest, reply, scope.onResponse);
       }
     }
 
     try {
       let response = await this.runWithTimeout(celsianRequest, reply, match.route, scope, timeout);
       if (isHead) response = new Response(null, { status: response.status, headers: response.headers });
-      return response;
+      return this.finish(response, celsianRequest, reply, scope.onResponse);
     } catch (thrown) {
       let response = await this.handleError(wrapNonError(thrown), celsianRequest, reply, scope);
       response = await this.applyOnSend(response, celsianRequest, reply, scope.onSend);
       if (isHead) response = new Response(null, { status: response.status, headers: response.headers });
-      return response;
+      return this.finish(response, celsianRequest, reply, scope.onResponse);
     }
   }
 
-  /** Bound `handle` method, compatible with Bun.serve and Deno.serve. */
-  get fetch(): (request: Request) => Promise<Response> {
-    return this.handle.bind(this);
+  /**
+   * `handle` as a standalone fetch handler, for `Bun.serve`, `Deno.serve` and
+   * Workers. The runtime's second argument is read for the peer address that
+   * becomes `request.ip`: Bun's server (`requestIP()`) or Deno's handler info
+   * (`remoteAddr`). Any other second argument is ignored.
+   */
+  get fetch(): (request: Request, context?: unknown) => Promise<Response> {
+    return (request, context) =>
+      this.handle(
+        context === undefined ? request : setRemoteAddress(request, remoteAddressFromServeContext(request, context)),
+      );
   }
 
   /** Return all registered routes, optionally filtered by deployment kind. */
@@ -1068,13 +1120,13 @@ export class CelsianApp {
     // 1. onRequest hooks (skip if empty)
     if (scope.onRequest.length > 0) {
       earlyResponse = await runHooks(scope.onRequest, request, reply);
-      if (earlyResponse) return earlyResponse;
+      if (earlyResponse) return mergeReplyIntoResponse(earlyResponse, reply, null);
     }
 
     // 2. preParsing hooks (skip if empty)
     if (scope.preParsing.length > 0) {
       earlyResponse = await runHooks(scope.preParsing, request, reply);
-      if (earlyResponse) return earlyResponse;
+      if (earlyResponse) return mergeReplyIntoResponse(earlyResponse, reply, null);
     }
 
     // 3. Body parsing
@@ -1083,7 +1135,7 @@ export class CelsianApp {
     // 4. preValidation hooks (skip if empty)
     if (scope.preValidation.length > 0) {
       earlyResponse = await runHooks(scope.preValidation, request, reply);
-      if (earlyResponse) return earlyResponse;
+      if (earlyResponse) return mergeReplyIntoResponse(earlyResponse, reply, null);
     }
 
     // 5. Schema validation
@@ -1094,7 +1146,7 @@ export class CelsianApp {
     // 6. preHandler hooks (skip if empty)
     if (scope.preHandler.length > 0) {
       earlyResponse = await runHooks(scope.preHandler, request, reply);
-      if (earlyResponse) return earlyResponse;
+      if (earlyResponse) return mergeReplyIntoResponse(earlyResponse, reply, null);
     }
 
     // 7. Handler
@@ -1108,19 +1160,28 @@ export class CelsianApp {
     } else if (handlerResult !== null && handlerResult !== undefined) {
       // Auto-serialize non-Response return values (strings → text, objects → JSON)
       if (typeof handlerResult === "string") {
-        response = fastResponse(handlerResult, reply.statusCode || 200, {
-          "content-type": "text/plain; charset=utf-8",
-          ...reply.headers,
-        });
+        response = fastResponse(
+          handlerResult,
+          reply.statusCode || 200,
+          { "content-type": "text/plain; charset=utf-8", ...reply.headers },
+          replyCookies(reply) as string[],
+        );
       } else {
-        response = fastResponse(JSON.stringify(handlerResult), reply.statusCode || 200, {
-          "content-type": "application/json; charset=utf-8",
-          ...reply.headers,
-        });
+        response = fastResponse(
+          JSON.stringify(handlerResult),
+          reply.statusCode || 200,
+          { "content-type": "application/json; charset=utf-8", ...reply.headers },
+          replyCookies(reply) as string[],
+        );
       }
     } else {
       response = new Response(null, { status: 204 });
     }
+
+    // Headers and cookies set on the reply belong on the response however the
+    // handler finished. The reply helpers and the serializer above already
+    // wrote them, so this only changes a Response the handler built itself.
+    response = mergeReplyIntoResponse(response, reply, null);
 
     // 8. Response schema validation (only for routes that declare schema.response)
     if (route.schema?.response && this.responseValidationEnabled) {
@@ -1132,48 +1193,22 @@ export class CelsianApp {
       await runHooks(scope.preSerialization, request, reply);
     }
 
-    // 10. onSend hooks, the resolved chain already runs root → plugin → route
+    // 10. onSend hooks, the resolved chain already runs root → plugin → route.
+    // They are shown the status that will actually be sent.
+    reply.statusCode = response.status;
     if (scope.onSend.length > 0) {
-      const headersBefore = new Map<string, string>();
-      for (const [k, v] of Object.entries(reply.headers)) {
-        headersBefore.set(k, v);
-      }
-
+      const shown = { ...reply.headers };
       try {
         await runOnSendHooks(scope.onSend, request, reply);
       } catch (err) {
         this.log.error("onSend hook error", { error: err instanceof Error ? err.message : String(err) });
         return response;
       }
-
-      const replyHeaders = reply.headers;
-      let needsMerge = false;
-      for (const [k, v] of Object.entries(replyHeaders)) {
-        if (headersBefore.get(k) !== v) {
-          needsMerge = true;
-          break;
-        }
-      }
-      if (needsMerge) {
-        const mergedHeaders = new Headers(response.headers);
-        for (const [k, v] of Object.entries(replyHeaders)) {
-          if (headersBefore.get(k) !== v) {
-            mergedHeaders.set(k, v);
-          }
-        }
-        response = new Response(response.body, {
-          status: response.status,
-          statusText: response.statusText,
-          headers: mergedHeaders,
-        });
-      }
+      response = mergeReplyIntoResponse(response, reply, shown);
     }
 
-    // 11. onResponse hooks (fire-and-forget, skip if empty)
-    if (scope.onResponse.length > 0) {
-      runHooksFireAndForget(scope.onResponse, request, reply, this.log);
-    }
-
+    // onResponse runs in `handle()`, once the final response is known, so it
+    // also covers early returns, errors and timeouts.
     return response;
   }
 
@@ -1183,6 +1218,7 @@ export class CelsianApp {
   ): Promise<{ request: CelsianRequest; reply: CelsianReply }> {
     const fullUrl = new URL(effectiveUrl, "http://localhost");
     const celsianRequest = buildRequest(request, fullUrl, {});
+    if (celsianRequest.ip === undefined) celsianRequest.ip = resolveClientIp(request, this.options.clientIp);
     const reply = createReply(fullUrl, request.headers);
     if (this.rootScope.replyDecorations.size > 0) {
       for (const [key, value] of this.rootScope.replyDecorations) {
@@ -1192,14 +1228,6 @@ export class CelsianApp {
     return { request: celsianRequest, reply };
   }
 
-  private mergeReplyHeaders(base: Record<string, string>, reply: CelsianReply): Headers {
-    const headers = new Headers(base);
-    for (const [key, value] of Object.entries(reply.headers)) {
-      headers.set(key, value);
-    }
-    return headers;
-  }
-
   /** Run an already-resolved onSend chain against a response built outside the normal lifecycle. */
   private async applyOnSend(
     response: Response,
@@ -1207,24 +1235,34 @@ export class CelsianApp {
     reply: CelsianReply,
     hooks: HookHandler[],
   ): Promise<Response> {
-    if (hooks.length === 0) return response;
+    let merged = mergeReplyIntoResponse(response, reply, null);
+    reply.statusCode = merged.status;
+    if (hooks.length === 0) return merged;
+    const shown = { ...reply.headers };
     try {
       await runOnSendHooks(hooks, request, reply);
     } catch (err) {
       this.log.error("onSend hook error", { error: err instanceof Error ? err.message : String(err) });
-      return response;
+      return merged;
     }
-    const replyHeaders = reply.headers;
-    if (Object.keys(replyHeaders).length === 0) return response;
-    const merged = new Headers(response.headers);
-    for (const [k, v] of Object.entries(replyHeaders)) {
-      merged.set(k, v);
-    }
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: merged,
-    });
+    merged = mergeReplyIntoResponse(merged, reply, shown);
+    return merged;
+  }
+
+  /**
+   * Hand the final response to `onResponse`. `reply.statusCode` is set to the
+   * status actually sent first: a Response built by a handler, an error handler
+   * or an early-returning hook never went through `reply.status()`.
+   */
+  private finish(response: Response, request: CelsianRequest, reply: CelsianReply, hooks: HookHandler[]): Response {
+    reply.statusCode = response.status;
+    if (hooks.length > 0) runHooksFireAndForget(hooks, request, reply, this.log);
+    return response;
+  }
+
+  /** {@link finish} for a request that matched no route, which runs the root scope's hooks. */
+  private finishMiss(response: Response, context: { request: CelsianRequest; reply: CelsianReply }): Response {
+    return this.finish(response, context.request, context.reply, this.rootScope.onResponse);
   }
 
   private validateRequest(request: CelsianRequest, schema: NonNullable<InternalRoute["schema"]>): void {

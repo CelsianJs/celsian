@@ -32,6 +32,7 @@ Railway.
 | Guide | What it covers |
 | --- | --- |
 | [Deployment Guide](deployment.md) | Per-platform entry points and adapters for all eight supported targets. |
+| [Deploy to Vura](deploy-to-vura.md) | Zero-config deploys of a CelsianJS app on Vura |
 
 ## Elsewhere
 

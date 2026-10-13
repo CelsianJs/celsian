@@ -72,6 +72,31 @@ describe('isRetryableRegistryInstallError', () => {
     expect(isRetryableRegistryInstallError(new Error('EACCES: permission denied'))).toBe(false);
     expect(isRetryableRegistryInstallError(new Error('ENOSPC: no space left on device'))).toBe(false);
   });
+
+  it('retries a peer resolution that cannot see a just-published version yet', () => {
+    const lagging = [
+      'npm error code ERESOLVE',
+      'npm error ERESOLVE unable to resolve dependency tree',
+      'npm error While resolving: celsian-registry-smoke-ad1imp@1.0.0',
+      'npm error Found: @celsian/core@undefined',
+      'npm error node_modules/@celsian/core',
+      'npm error   @celsian/core@"0.6.4" from the root project',
+      'npm error Could not resolve dependency:',
+      'npm error peer @celsian/core@">=0.5.0 <1.0.0" from @celsian/adapter-bun@0.6.4',
+    ].join('\n');
+    expect(isRetryableRegistryInstallError(new Error(lagging))).toBe(true);
+  });
+
+  it('does not retry a real peer conflict', () => {
+    const conflict = [
+      'npm error code ERESOLVE',
+      'npm error ERESOLVE unable to resolve dependency tree',
+      'npm error Found: @celsian/core@0.4.2',
+      'npm error Could not resolve dependency:',
+      'npm error peer @celsian/core@">=0.5.0 <1.0.0" from @celsian/adapter-bun@0.6.4',
+    ].join('\n');
+    expect(isRetryableRegistryInstallError(new Error(conflict))).toBe(false);
+  });
 });
 
 describe('retryNpmInstall', () => {

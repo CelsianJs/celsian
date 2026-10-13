@@ -53,7 +53,7 @@ export type {
 } from "./queue.js";
 export { DEFAULT_VISIBILITY_TIMEOUT, generateQueueId, MemoryQueue } from "./queue.js";
 export { createReply } from "./reply.js";
-export { buildRequest } from "./request.js";
+export { buildRequest, resolveClientIp, setRemoteAddress } from "./request.js";
 export { isStatusKeyedResponseMap, resolveResponseSchema } from "./response-schema.js";
 export { Router } from "./router.js";
 export type { ServeOptions, ServeResult } from "./serve.js";
@@ -66,6 +66,7 @@ export type {
   CelsianAppOptions,
   CelsianReply,
   CelsianRequest,
+  ClientIpOptions,
   ExtractRouteParams,
   HookFunction,
   HookHandler,
