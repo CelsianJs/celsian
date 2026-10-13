@@ -596,3 +596,21 @@ describe("full template CSRF excludes (prefix-match semantics)", () => {
     expect(fullTemplate["src/index.ts"]).toContain("authRoutes(app)");
   });
 });
+
+// npm 10 (bundled with Node 20 and 22) crashes resolving vitest 4's optional
+// peer cycle, so every template ships an .npmrc that turns off automatic peer
+// installs. The install itself is proven by scripts/smoke-scaffold-npm-install.mjs
+// in CI, under the npm that ships with each Node version.
+describe("npm 10 install compatibility", () => {
+  const all = { basic: basicTemplate, "rest-api": restApiTemplate, "rpc-api": rpcApiTemplate, full: fullTemplate };
+
+  it.each(Object.entries(all))("%s template ships .npmrc with legacy-peer-deps", (_name, template) => {
+    expect(template[".npmrc"]).toMatch(/^legacy-peer-deps=true$/m);
+  });
+
+  it("full template Dockerfile copies .npmrc before both npm ci runs", () => {
+    const copies = fullTemplate.Dockerfile.match(/^COPY package\.json .*$/gm) ?? [];
+    expect(copies).toHaveLength(2);
+    for (const line of copies) expect(line).toContain(".npmrc");
+  });
+});

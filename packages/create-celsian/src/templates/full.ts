@@ -1,4 +1,5 @@
 import { CELSIAN_VERSION, DEPS, DEV_DEPS } from "../versions.js";
+import { NPMRC } from "./npmrc.js";
 
 // Shipped both as `.env.example` (committed) and `.env` (gitignored) so the
 // dev/start scripts' --env-file=.env works immediately after scaffolding.
@@ -89,6 +90,7 @@ export const fullTemplate: Record<string, string> = {
   // Both the dev and start scripts load it via --env-file=.env.
   ".env": ENV_FILE,
 
+  ".npmrc": NPMRC,
   ".gitignore": `node_modules/
 dist/
 *.tsbuildinfo
@@ -817,7 +819,7 @@ describe('RPC', () => {
 FROM node:22-slim AS builder
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
+COPY package.json package-lock.json* .npmrc* ./
 RUN npm ci --ignore-scripts
 
 COPY tsconfig.json ./
@@ -834,7 +836,7 @@ ENV NODE_ENV=production
 # Create non-root user
 RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
 
-COPY package.json package-lock.json* ./
+COPY package.json package-lock.json* .npmrc* ./
 RUN npm ci --omit=dev --ignore-scripts
 
 COPY --from=builder /app/dist ./dist
