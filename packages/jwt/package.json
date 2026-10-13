@@ -1,6 +1,6 @@
 {
   "name": "@celsian/jwt",
-  "version": "0.6.5",
+  "version": "0.6.6",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@celsian/core": "workspace:*",
-    "jose": "^6.2.4"
+    "jose": "^6.2.10"
   },
   "license": "MIT",
   "publishConfig": {

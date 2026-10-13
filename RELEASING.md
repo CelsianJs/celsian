@@ -13,6 +13,12 @@ dirty worktree.
 6. When packages are published, the workflow runs `pnpm verify:registry` and uploads
    `artifacts/registry-smoke.json`.
 
+If repository settings prevent the Changesets bot from opening a pull request,
+the action can still generate and push `changeset-release/main`. A maintainer
+can open that existing branch as a normal version PR, synchronize the root
+changelog, and complete its usual review and CI checks. No additional bot
+permissions or disabled release gates are needed for this fallback.
+
 ## Local Pre-Release Gate
 
 Use the repo-pinned package manager:

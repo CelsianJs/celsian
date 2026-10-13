@@ -1,5 +1,11 @@
 # @celsian/rpc
 
+## 0.6.6
+
+### Patch Changes
+
+- @celsian/schema@0.6.6
+
 ## 0.6.5
 
 ### Patch Changes
