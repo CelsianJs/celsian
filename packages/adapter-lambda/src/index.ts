@@ -1,6 +1,7 @@
 // @celsian/adapter-lambda -- AWS Lambda adapter (API Gateway v2, v1/REST, and ALB)
 
 import type { CelsianApp } from "@celsian/core";
+import { setRemoteAddress } from "@celsian/core";
 
 /** API Gateway HTTP API (payload format 2.0) event. */
 export interface APIGatewayProxyEventV2 {
@@ -188,10 +189,23 @@ function v1EventToRequest(event: APIGatewayProxyEventV1 | ALBEvent): Request {
   });
 }
 
+/**
+ * The address API Gateway saw the request come from. An ALB target event has
+ * none: the load balancer appends it to X-Forwarded-For instead, which the app
+ * can read with `clientIp: { header: "x-forwarded-for" }`.
+ */
+function sourceIp(event: LambdaEvent, shape: EventShape): string | undefined {
+  if (shape === "v2") return (event as APIGatewayProxyEventV2).requestContext.http?.sourceIp;
+  if (shape === "v1") return (event as APIGatewayProxyEventV1).requestContext.identity?.sourceIp;
+  return undefined;
+}
+
 function lambdaEventToRequest(event: LambdaEvent, shape: EventShape): Request {
-  return shape === "v2"
-    ? v2EventToRequest(event as APIGatewayProxyEventV2)
-    : v1EventToRequest(event as APIGatewayProxyEventV1 | ALBEvent);
+  const request =
+    shape === "v2"
+      ? v2EventToRequest(event as APIGatewayProxyEventV2)
+      : v1EventToRequest(event as APIGatewayProxyEventV1 | ALBEvent);
+  return setRemoteAddress(request, sourceIp(event, shape));
 }
 
 interface ConvertedResponse {

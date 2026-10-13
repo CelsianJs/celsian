@@ -52,6 +52,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
 
+      # Older npm Arborist versions crash resolving file: overrides in the
+      # packed scaffold smoke (edgesOut of null). Keep Node 22 and pin only
+      # the verification/publishing tool, not consumers' runtime requirements.
+      - run: npm install --global npm@11.16.0
+
       - name: Run tests
         run: pnpm test
         env:
@@ -91,6 +96,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
 
+      - run: npm install --global npm@11.16.0
+
       # PINNED TO THE v1 LINE ON PURPOSE. The action major is coupled to the
       # Changesets CLI major: v2 of this action refuses to run against CLI v2
       # ("designed to work with Changesets CLI v3"), and CLI v3 in turn requires
@@ -125,11 +132,13 @@ jobs:
           NPM_CONFIG_PROVENANCE: true
 
       - name: Verify npm registry packages
-        if: steps.changesets.outputs.published == 'true'
+        # A rerun after registry propagation must verify too, even though the
+        # immutable versions are already published and must not be republished.
+        if: steps.changesets.outputs.hasChangesets == 'false'
         run: pnpm verify:registry
 
       - name: Upload registry smoke artifact
-        if: ${{ always() && steps.changesets.outputs.published == 'true' }}
+        if: ${{ always() && steps.changesets.outputs.hasChangesets == 'false' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: celsian-registry-smoke

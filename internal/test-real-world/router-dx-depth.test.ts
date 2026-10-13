@@ -1,7 +1,8 @@
 // Stress-test pass 4: router edge cases, error handling, WebSocket registry,
 // adapter-node utilities, hook lifecycle depth, DX ergonomics, plugin composition
 
-import type { IncomingMessage } from "node:http";
+import { IncomingMessage } from "node:http";
+import { Socket } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createLambdaHandler } from "../../packages/adapter-lambda/src/index.js";
 import { nodeToWebRequest } from "../../packages/adapter-node/src/index.js";
@@ -442,13 +443,21 @@ describe("SSE patterns", () => {
 // ─── adapter-node utilities ─────────────────────────────────────
 
 describe("adapter-node utilities", () => {
+  const sockets: Socket[] = [];
+  afterEach(() => {
+    for (const socket of sockets.splice(0)) socket.destroy();
+  });
   function mockIncomingMessage(overrides: Partial<IncomingMessage> = {}): IncomingMessage {
-    return {
+    const socket = new Socket();
+    sockets.push(socket);
+    const incoming = new IncomingMessage(socket);
+    incoming.push(null);
+    return Object.assign(incoming, {
       method: "GET",
       url: "/test",
       headers: { host: "localhost:3000", "content-type": "application/json" },
       ...overrides,
-    } as unknown as IncomingMessage;
+    });
   }
 
   it("nodeToWebRequest should convert GET request", () => {
