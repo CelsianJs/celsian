@@ -4,6 +4,7 @@
 
 ### Patch Changes
 
+- Requires `jose` `^6.2.10` (was `^6.2.4`).
 - @celsian/core@0.6.7
 
 ## 0.6.6
