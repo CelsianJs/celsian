@@ -1,5 +1,14 @@
 # @celsian/cli
 
+## 0.6.7
+
+### Patch Changes
+
+- Updated dependencies [051a5a2]
+  - create-celsian@0.6.7
+  - @celsian/core@0.6.7
+  - @celsian/schema@0.6.7
+
 ## 0.6.6
 
 ### Patch Changes

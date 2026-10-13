@@ -1,5 +1,13 @@
 # example-aws-lambda
 
+## 1.0.16
+
+### Patch Changes
+
+- @celsian/core@0.6.7
+- @celsian/schema@0.6.7
+- @celsian/adapter-lambda@0.6.7
+
 ## 1.0.15
 
 ### Patch Changes

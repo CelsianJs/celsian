@@ -1,5 +1,12 @@
 # @celsian/example-saas-demo
 
+## 0.0.16
+
+### Patch Changes
+
+- @celsian/core@0.6.7
+- @celsian/jwt@0.6.7
+
 ## 0.0.15
 
 ### Patch Changes
