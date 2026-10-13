@@ -19,6 +19,11 @@ export interface CachedResponse {
   cachedAt: number;
 }
 
+interface StoredResponse extends CachedResponse {
+  /** Full base for invalidation when the store key's readable head is truncated. */
+  keyBase?: string;
+}
+
 export interface ResponseCacheOptions {
   /** KV store to use for caching */
   store: KVStore;
@@ -459,7 +464,9 @@ export function createResponseCache(options: ResponseCacheOptions) {
   function normalizeSearch(url: URL): string {
     const params = [...url.searchParams.entries()].filter(([name]) => !queryParams || queryParams.has(name));
     if (params.length === 0) return "";
-    params.sort((a, b) => (a[0] === b[0] ? (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0) : a[0] < b[0] ? -1 : 1));
+    // Stable name-only sorting preserves get()/getAll() semantics for repeated
+    // parameters while still sharing entries across distinct-name reordering.
+    params.sort((a, b) => (a[0] === b[0] ? 0 : a[0] < b[0] ? -1 : 1));
     return `?${params.map(([name, value]) => `${encodeURIComponent(name)}=${encodeURIComponent(value)}`).join("&")}`;
   }
 
@@ -496,7 +503,7 @@ export function createResponseCache(options: ResponseCacheOptions) {
    * Hashing is on the slow path only: a digest costs ~20us, which would
    * otherwise be paid by every cache hit.
    */
-  async function cacheKeyForRequest(request: Request): Promise<string> {
+  async function cacheKeyForRequest(request: Request): Promise<{ key: string; keyBase?: string }> {
     const readable = keyGenerator(request);
     // Reflected CORS responses carry `Vary: Origin`, but the response is not
     // available when the lookup key is created. Partition Origin eagerly so
@@ -507,11 +514,11 @@ export function createResponseCache(options: ResponseCacheOptions) {
     }
 
     const plain = prefix + logical;
-    if (plain.length <= maxKeyLength) return plain;
+    if (plain.length <= maxKeyLength) return { key: plain };
 
     const digest = (await sha256Hex(logical)).slice(0, DIGEST_LENGTH);
     const budget = Math.max(0, maxKeyLength - prefix.length - HASH_MARKER.length - DIGEST_LENGTH);
-    return `${prefix}${readable.slice(0, budget)}${HASH_MARKER}${digest}`;
+    return { key: `${prefix}${readable.slice(0, budget)}${HASH_MARKER}${digest}`, keyBase: readable };
   }
 
   function isExcluded(pathname: string): boolean {
@@ -622,7 +629,7 @@ export function createResponseCache(options: ResponseCacheOptions) {
       hasZeroMaxAge(requestCacheControl) ||
       hasPragmaNoCache(request.headers.get("pragma"));
 
-    const cacheKey = await cacheKeyForRequest(request);
+    const { key: cacheKey, keyBase } = await cacheKeyForRequest(request);
 
     /** Replay a stored entry. */
     const replay = (entry: CachedResponse): Response => {
@@ -712,7 +719,7 @@ export function createResponseCache(options: ResponseCacheOptions) {
       const declared = declaredFreshnessMs(replayHeaders.get("cache-control"), replayHeaders.get("expires"));
       const effectiveTtl = typeof declared === "number" ? Math.min(configuredTtl, declared) : configuredTtl;
 
-      await store.set<CachedResponse>(
+      await store.set<StoredResponse>(
         cacheKey,
         {
           status: response.status,
@@ -720,6 +727,7 @@ export function createResponseCache(options: ResponseCacheOptions) {
           body: bytesToBase64(bytes),
           encoding: "base64",
           cachedAt: Date.now(),
+          ...(keyBase === undefined ? {} : { keyBase }),
         },
         effectiveTtl,
       );
@@ -763,24 +771,31 @@ export function createResponseCache(options: ResponseCacheOptions) {
    */
   async function invalidate(key: string): Promise<boolean> {
     const keys = await store.keys();
-    const target = splitBase(key);
     const targetHasQuery = key.includes("?");
 
-    const matches = keys.filter((candidate) => {
-      if (!candidate.startsWith(prefix)) return false;
-      // Recover the readable base: drop the `#sha256=` tail of a hashed key,
-      // then the eager `|header=value` partitions of a verbatim one.
-      const rest = candidate.slice(prefix.length);
-      const marker = rest.indexOf(HASH_MARKER);
-      const base = (marker >= 0 ? rest.slice(0, marker) : rest).split("|", 1)[0]!;
-      if (base === key) return true;
+    const deleted = await Promise.all(
+      keys.map(async (candidate) => {
+        if (!candidate.startsWith(prefix)) return false;
+        // Recover the readable base: drop the `#sha256=` tail of a hashed key,
+        // then the eager `|header=value` partitions of a verbatim one.
+        const rest = candidate.slice(prefix.length);
+        const marker = rest.indexOf(HASH_MARKER);
+        // Keep identity in the entry, not a process-local index: another cache
+        // instance sharing this store must invalidate long paths too. Old entries
+        // without metadata retain the readable-prefix matching they had before.
+        const storedBase = marker >= 0 ? (await store.get<StoredResponse>(candidate))?.keyBase : undefined;
+        const base = storedBase ?? (marker >= 0 ? rest.slice(0, marker) : rest).split("|", 1)[0]!;
+        if (base === key) return store.delete(candidate);
 
-      const parsed = splitBase(base);
-      if (parsed.method === null || parsed.authority === null) return false;
-      const path = targetHasQuery ? parsed.path : parsed.path.split("?", 1)[0]!;
-      return `${parsed.method}:${parsed.authority}:${path}` === key || `${parsed.method}:${path}` === key;
-    });
-    const deleted = await Promise.all(matches.map((candidate) => store.delete(candidate)));
+        const parsed = splitBase(base);
+        if (parsed.method === null || parsed.authority === null) return false;
+        const path = targetHasQuery ? parsed.path : parsed.path.split("?", 1)[0]!;
+        if (`${parsed.method}:${parsed.authority}:${path}` === key || `${parsed.method}:${path}` === key) {
+          return store.delete(candidate);
+        }
+        return false;
+      }),
+    );
     return deleted.some(Boolean);
   }
 

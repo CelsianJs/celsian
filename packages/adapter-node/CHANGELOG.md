@@ -1,5 +1,60 @@
 # @celsian/adapter-node
 
+## 0.6.6
+
+### Patch Changes
+
+- e79f5ff: Handle unsupported request targets and conversion failures safely in the Node adapter, preserve absolute-form authority, and report the bound port correctly.
+- Updated dependencies [e79f5ff]
+  - @celsian/core@0.6.6
+
+## 0.6.5
+
+### Patch Changes
+
+- Updated dependencies [879fd05]
+  - @celsian/core@0.6.5
+
+## 0.6.4
+
+### Patch Changes
+
+- Updated dependencies [48fb11d]
+  - @celsian/core@0.6.4
+
+## 0.6.3
+
+### Patch Changes
+
+- Updated dependencies
+  - @celsian/core@0.6.3
+
+## 0.6.2
+
+### Patch Changes
+
+- 4246e07: Preserve stream ownership from request to transport. SSE data now handles CR,
+  CRLF and LF safely, and cancelled or pre-aborted subscriptions release hub
+  membership and timers. Node response writers respect backpressure, cancel idle
+  producers on disconnect, and retain transport cancellation alongside request
+  timeouts. The Node adapter shares the core HTTP conversion implementation.
+
+  Response cache keys preserve the order of repeated query parameters while still
+  normalizing distinct parameter names. Hashed entries retain their full logical
+  key so invalidation works for long paths, including across cache instances.
+
+  **Upgrade note:** clear or rebuild existing persistent response-cache entries
+  when deploying this release. Previous entries may have collapsed repeated-query
+  ordering or lack the identity metadata needed to invalidate long hashed keys;
+  their original identity cannot be reconstructed. Invalidation of hashed entries
+  now reads stored metadata, which adds KV reads; ordinary short-key cache hits do
+  not add a metadata lookup.
+
+- Updated dependencies [4246e07]
+- Updated dependencies [bc87e6e]
+- Updated dependencies [d1e677e]
+  - @celsian/core@0.6.2
+
 ## 0.6.1
 
 ### Patch Changes
