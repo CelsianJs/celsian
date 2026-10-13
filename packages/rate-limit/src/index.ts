@@ -17,6 +17,10 @@ export interface RateLimitOptions {
    * How to bucket requests. THE RECOMMENDED CHOICE: key on an authenticated
    * user / API key id, which is not attacker-controlled. Proxy-header keying is
    * only as trustworthy as the trust boundary you declare below.
+   *
+   * To key on the connection's address, use `(req) => req.ip ?? "anonymous"`.
+   * Behind a proxy that address is the proxy's, so set `clientIp` on the app
+   * to read the header your proxy writes.
    */
   keyGenerator?: (req: CelsianRequest) => string;
   store?: RateLimitStore;
@@ -296,7 +300,8 @@ function createDefaultKeyGenerator(options: {
     throw new CelsianError(
       "[@celsian/rate-limit] No way to identify clients. Rate limiting needs a key. In order of preference: " +
         "(1) pass a `keyGenerator` keyed on an authenticated user or API-key id, attacker-controlled headers are not " +
-        "a trust boundary; (2) declare `trustedProxies: ['10.0.0.0/8', ...]` so the client IP is the rightmost " +
+        "a trust boundary, or `(req) => req.ip ?? 'anonymous'` for the connection's address (behind a proxy, set " +
+        "`clientIp` on the app so that is the client and not the proxy); (2) declare `trustedProxies: ['10.0.0.0/8', ...]` so the client IP is the rightmost " +
         "X-Forwarded-For entry that is not one of your proxies; (3) as a last resort set `trustProxy: true` with a " +
         "fixed `trustedProxyHops`. Registration fails rather than silently rate limiting nothing.",
     );
@@ -319,6 +324,13 @@ function createDefaultKeyGenerator(options: {
       const canonical = realIp ? canonicalizeIp(realIp) : null;
       if (canonical) return canonical;
     }
+
+    // No forwarding header yielded a client address. `req.ip` is the address
+    // that opened the connection, which the client cannot choose, or what the
+    // app's own `clientIp` setting read. Either is a sound key, and better than
+    // putting every such request in the one shared bucket below.
+    const peer = typeof req.ip === "string" ? canonicalizeIp(req.ip) : null;
+    if (peer) return peer;
 
     // Fail closed: when we cannot identify the client, bucket all such requests
     // under one shared key so they share a single limit. A per-request unique
