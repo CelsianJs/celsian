@@ -38,7 +38,7 @@ export type { DatabaseOptions, DatabasePool, TransactionCapablePool, Transaction
 export { database, transactionLifecycle, withTransaction } from "./plugins/database.js";
 export type { ETagOptions } from "./plugins/etag.js";
 export { withETag } from "./plugins/etag.js";
-export type { OpenAPIOptions } from "./plugins/openapi.js";
+export type { OpenAPIOptions, OpenAPISecurityScheme } from "./plugins/openapi.js";
 export { openapi } from "./plugins/openapi.js";
 export type { SecurityOptions } from "./plugins/security.js";
 export { security } from "./plugins/security.js";
@@ -53,7 +53,7 @@ export type {
 } from "./queue.js";
 export { DEFAULT_VISIBILITY_TIMEOUT, generateQueueId, MemoryQueue } from "./queue.js";
 export { createReply } from "./reply.js";
-export { buildRequest } from "./request.js";
+export { buildRequest, resolveClientIp, setRemoteAddress } from "./request.js";
 export { isStatusKeyedResponseMap, resolveResponseSchema } from "./response-schema.js";
 export { Router } from "./router.js";
 export type { ServeOptions, ServeResult } from "./serve.js";
@@ -66,6 +66,7 @@ export type {
   CelsianAppOptions,
   CelsianReply,
   CelsianRequest,
+  ClientIpOptions,
   ExtractRouteParams,
   HookFunction,
   HookHandler,
@@ -81,6 +82,7 @@ export type {
   RouteManifestEntry,
   RouteMatch,
   RouteMethod,
+  RouteOpenAPIOptions,
   RouteOptions,
   RouteResponseSchema,
   RouteSchemaOptions,

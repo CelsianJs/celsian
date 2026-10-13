@@ -14,6 +14,116 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > notices. `pnpm check:root-changelog` now fails CI when this file's newest entry is
 > behind `packages/core/package.json`, so the third time cannot happen quietly.
 
+## [0.6.6] - 2026-10-08
+
+### Fixed
+
+- Improved Node request conversion and connection-error handling in the core
+  server and standalone Node adapter.
+- Corrected listener URL reporting for ephemeral ports and IPv6 addresses.
+- Kept connection cleanup consistent across ordinary responses and upgrades.
+
+This patch uses the existing twenty-package fixed release group. It adds no
+external runtime dependencies or changes to the public Node adapter API.
+
+## [0.6.5] - 2026-09-28
+
+### Fixed
+
+- `csrf({ trustedOrigins })` now admits the origins it lists. A browser labels a
+  request from a separate front-end origin `Sec-Fetch-Site: same-site` or
+  `cross-site`, and the plugin refused those labels before it read
+  `trustedOrigins`, so the option could never admit a real browser request. Such
+  a request is now accepted only when its `Origin` is listed, and it still needs a
+  valid token. A missing, opaque or unlisted `Origin` is still refused.
+- `onSend` and `onResponse` see the status that is actually sent. `reply.statusCode`
+  used to stay 200 when a handler returned its own `Response`, threw, missed a
+  route (404/405) or was answered early by a hook. `onResponse` now also runs for
+  thrown errors, timeouts, misses and early returns, once per request.
+- Cookies set with `reply.cookie()` reach the client when a handler returns a
+  plain object, a string or nothing. On Node, a `set-cookie` set with
+  `reply.header()` is no longer dropped when the response also carries
+  `reply.cookie()` cookies.
+- Headers set with `reply.header()` are kept when a handler returns its own
+  `Response`. When both set the same header the `Response` keeps its value, `Vary`
+  values are combined and `Set-Cookie` values are appended.
+
+### Added
+
+- `request.ip`: the address of the peer that opened the connection, on Node,
+  Vercel, Bun, Deno, Cloudflare (`CF-Connecting-IP`) and Lambda. No request header
+  is trusted unless the app names one with the new `clientIp` option, for example
+  `createApp({ clientIp: { header: 'fly-client-ip' } })` or
+  `{ header: 'x-forwarded-for', hops: 2 }`. `app.inject()` accepts `remoteAddress`.
+- `@celsian/rate-limit` keys a request with no usable forwarding header on
+  `request.ip` instead of one shared bucket.
+
+### Upgrade notes
+
+- `onResponse` hooks now run for errors, misses and early returns, so metrics and
+  access logs built on them count requests they previously missed.
+- Headers and cookies set on the reply before a handler throws now reach the error
+  response.
+- `@celsian/adapter-bun` and `@celsian/adapter-deno` now require `@celsian/core`
+  0.6.5 or later. Upgrade them together.
+
+## [0.6.4] - 2026-09-26
+
+### Fixed
+
+- Node `serve()` shutdown now closes long-lived SSE and WebSocket connections
+  instead of returning while they keep the process alive. WebSocket clients
+  receive close code 1001; connections that outlive the configured grace period
+  are terminated. Ordinary in-flight HTTP responses can still finish gracefully.
+- Idle sockets and WebSocket upgrades waiting on asynchronous authorization
+  cannot establish or retain a connection after shutdown starts.
+
+This patch does not add producer-side SSE queue limits or change Bun, Deno,
+or Cloudflare runtime behavior. The existing 20-package fixed release group
+stays synchronized; no runtime dependencies are added.
+
+## [0.6.3] - 2026-09-06
+
+### Fixed
+
+- The full scaffold now exposes Swagger's **Authorize** control, marks PUT/DELETE
+  user operations as requiring Bearer JWTs, and documents the required
+  `x-csrf-token` header on POST/PUT/DELETE. Its README walks through development
+  token retrieval, authorization, and a protected Swagger mutation.
+- Core OpenAPI supports explicit security schemes and per-route security,
+  description, and parameter metadata. Parameters merge by `(in, name)`: later
+  explicit fields override inferred/earlier fields, omitted fields persist,
+  explicit schemas replace whole schemas, and path parameters stay required.
+  Duplicate explicit entries appear only once in the generated document.
+
+### Upgrade notes
+
+OpenAPI metadata is documentation only. It does not install authentication hooks,
+disable JWT or CSRF checks, or change request validation. Keep runtime guards and
+security plugins in place. Public routes remain public.
+
+All 20 public packages release together at 0.6.3. The scaffolder requests at least
+this patch so generated metadata types cannot resolve against a pre-fix core.
+No external runtime dependencies were added.
+
+## [0.6.2] - 2026-09-05
+
+### Fixed
+
+- Streaming JSON responses are no longer buffered by response-schema validation. Validation still applies to JSON serialized by Celsian, but not manually constructed `Response` bodies.
+- Prefix-scoped request guards now run before custom 404 handlers. Protected missing routes may now return the guard's rejection instead of 404.
+- Cron day-of-month and day-of-week fields follow Unix OR semantics when both are restricted; affected schedules can run more often than before.
+- Development servers bind `127.0.0.1` by default. Explicit IPv6 callers must set `HOST=::1`; production binding is unchanged. Listen failures now explain port conflicts and invalid bind addresses.
+- `create-celsian` honors documented short/equal template flags and rejects unknown flags or extra positional arguments rather than silently generating the wrong template. Use npm's `--` separator before template flags.
+- SSE safely frames CR/CRLF data and promptly releases cancelled or pre-aborted channels. Node streaming respects backpressure and disconnect cancellation, including when request timeouts are configured. The Node adapter reuses the core transport bridge.
+- Response caches preserve repeated-query ordering and invalidate long hashed keys across instances without a process-local index.
+
+### Upgrade notes
+
+Clear or rebuild existing persistent response-cache entries during rollout. Old entries may collapse repeated-query ordering or lack the full identity metadata needed to invalidate long hashed keys; the original identity cannot be reconstructed. If clearing is not feasible, isolate the new cache namespace until old entries have expired. Hashed-key invalidation now reads stored metadata and adds KV reads; ordinary short-key hits do not add metadata lookups.
+
+All 20 public packages release together at 0.6.2. No external runtime dependencies were added. The scaffolder now requests at least this patch within the 0.6 release line.
+
 ## [0.6.1] - 2026-07-27
 
 ### Fixed

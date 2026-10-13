@@ -34,8 +34,11 @@ export interface CSRFOptions {
    */
   getSessionId?: (request: CelsianRequest) => string | undefined;
   /**
-   * Additional origins accepted on mutating requests. The request's own origin
-   * is always accepted.
+   * Additional origins accepted on mutating requests, as full origins
+   * (`https://app.example.com`) or bare hosts (`app.example.com`). The request's
+   * own origin is always accepted. A browser labels a request from one of these
+   * `Sec-Fetch-Site: same-site` or `cross-site`; such a request is admitted only
+   * when its `Origin` is listed here, and it still needs a valid token.
    */
   trustedOrigins?: string[];
   /**
@@ -225,22 +228,37 @@ export function csrf(options: CSRFOptions = {}): PluginFunction {
       // attacker whose request announces itself as cross-site.
       if (checkOrigin) {
         const secFetchSite = request.headers.get("sec-fetch-site");
-        if (secFetchSite && secFetchSite !== "same-origin" && secFetchSite !== "none") {
-          return reply.status(403).json({ error: "CSRF origin mismatch", statusCode: 403 });
-        }
         const origin = request.headers.get("origin");
-        if (origin && origin !== "null") {
-          let originHost: string;
+        const usableOrigin = origin !== null && origin !== "" && origin !== "null" ? origin : null;
+        let originHost: string | null = null;
+        if (usableOrigin !== null) {
           try {
-            originHost = new URL(origin).host.toLowerCase();
+            originHost = new URL(usableOrigin).host.toLowerCase();
           } catch {
             return reply.status(403).json({ error: "CSRF origin mismatch", statusCode: 403 });
           }
+        }
+        const isTrusted =
+          usableOrigin !== null &&
+          (trustedOrigins.has(usableOrigin) || (originHost !== null && trustedOrigins.has(originHost)));
+
+        if (secFetchSite === "same-site" || secFetchSite === "cross-site") {
+          // The browser says another site initiated this. Only an origin the
+          // app explicitly trusts may do that, and it has to name itself: no
+          // Origin, or an opaque one, is refused. Matching this request's own
+          // host is not enough here, since the browser has already said the
+          // initiator is a different site (another scheme, say).
+          if (!isTrusted) {
+            return reply.status(403).json({ error: "CSRF origin mismatch", statusCode: 403 });
+          }
+        } else if (secFetchSite && secFetchSite !== "same-origin" && secFetchSite !== "none") {
+          return reply.status(403).json({ error: "CSRF origin mismatch", statusCode: 403 });
+        } else if (originHost !== null) {
           // Compare authorities, the same test `checkWSOrigin` applies to a
           // handshake. `url.host` is the host the browser addressed, not the
           // interface this process bound to.
           const expectedHost = url.host.toLowerCase();
-          if (originHost !== expectedHost && !trustedOrigins.has(origin) && !trustedOrigins.has(originHost)) {
+          if (originHost !== expectedHost && !isTrusted) {
             return reply.status(403).json({ error: "CSRF origin mismatch", statusCode: 403 });
           }
         }

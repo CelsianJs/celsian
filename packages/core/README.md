@@ -51,7 +51,7 @@ const res = await app.inject({ url: '/ping' });
 console.log(res.status, await res.json());  // 200 { pong: true }
 ```
 
-`inject()` accepts `{ method, url, payload, headers, cookies }`.
+`inject()` accepts `{ method, url, payload, headers, cookies, remoteAddress }`. `remoteAddress` is what the handler sees as `req.ip`; without it `req.ip` is `undefined`, since no socket exists.
 
 Because it returns a standard `Response`, the status property is **`res.status`**, not Fastify's `res.statusCode`. `res.statusCode` is `undefined`, so `expect(res.statusCode).toBe(200)` fails rather than silently passing. Body access is async: `await res.json()` / `await res.text()`.
 
@@ -117,6 +117,8 @@ await app.register(productRoutes());
 
 `excludePaths` on `csrf()` matches exactly **or** as a path-segment prefix: `'/_rpc'` covers `/_rpc/anything` but not `/_rpcx`.
 
+`trustedOrigins` on `csrf()` admits a separate front-end origin, such as a dashboard at `https://app.example.com` calling `https://api.example.com`. Browsers label those requests `Sec-Fetch-Site: same-site` or `cross-site`, and they are accepted only when their `Origin` is listed. They still need a valid token.
+
 ```ts
 import { cors, csrf, security, openapi } from '@celsian/core';
 
@@ -127,6 +129,43 @@ await app.register(openapi({ title: 'My API', version: '1.0.0' }));
 ```
 
 Rate limiting, JWT auth, compression and caching live in separate packages (`@celsian/rate-limit`, `@celsian/jwt`, `@celsian/compress`, `@celsian/cache`).
+
+### Documenting authentication and CSRF
+
+Declare available HTTP or API-key schemes in `openapi({ securitySchemes })`, then
+add requirements only to the routes that enforce them. Swagger UI displays an
+**Authorize** control for these schemes. Route `openapi` metadata is documentation
+only: it never installs authentication hooks, disables CSRF, or changes validation.
+
+```ts
+await app.register(openapi({
+  securitySchemes: {
+    bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+  },
+}));
+
+app.put('/users/:id', {
+  onRequest: requireAuth, // Your JWT guard; keep runtime enforcement explicit.
+  openapi: {
+    security: [{ bearerAuth: [] }],
+    parameters: [{
+      name: 'x-csrf-token', in: 'header', required: true,
+      description: 'Must match the _csrf cookie issued by a previous GET.',
+      schema: { type: 'string' },
+    }],
+  },
+}, updateUser);
+```
+
+`openapi.description` adds operation documentation; `openapi.parameters` merges
+with schema-derived query/path parameters by `(in, name)`. Later explicit entries
+override earlier/inferred fields while preserving unspecified fields. An explicit
+`schema` replaces the entire earlier schema; path parameters always remain
+`required: true`. Duplicate explicit entries follow the same last-entry-wins rule
+and appear only once in the document. Omit `openapi.security` for public
+operations, or use `[]` to explicitly document no authentication. Auth requirements
+are never inferred from hooks. A CSRF cookie is sent automatically by same-origin
+browsers, but callers must still supply the matching header.
 
 ## Background tasks and cron
 

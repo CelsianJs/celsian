@@ -9,6 +9,8 @@ import {
   buildRequest,
   type CelsianApp,
   createWSConnection,
+  resolveClientIp,
+  setRemoteAddress,
   type WSAllowedOrigins,
   type WSConnection,
   WSConnectionLimiter,
@@ -120,7 +122,9 @@ export function createBunWebSocketHandler(app: CelsianApp, options: BunAdapterOp
       connections.set(ws, conn);
       app.wsRegistry.addConnection(pathname, conn);
 
-      handler.open?.(conn, buildRequest(request, new URL(request.url), {}));
+      const celsianRequest = buildRequest(request, new URL(request.url), {});
+      celsianRequest.ip = resolveClientIp(request, app.getForwardedTrust().clientIp);
+      handler.open?.(conn, celsianRequest);
     },
 
     message(ws, message) {
@@ -179,6 +183,9 @@ export function createBunWebSocketHandler(app: CelsianApp, options: BunAdapterOp
  */
 export function createBunHandler(app: CelsianApp, options: BunAdapterOptions = {}): BunFetchHandler {
   return async (request: Request, server: BunServer): Promise<Response | undefined> => {
+    // Bun reports the peer per request; recorded here it becomes `request.ip`.
+    setRemoteAddress(request, server?.requestIP?.(request)?.address);
+
     if (app.wsRegistry.hasAnyHandlers() && isWebSocketUpgrade(request)) {
       const url = new URL(request.url);
       const pathname = url.pathname;

@@ -150,11 +150,23 @@ app.addHook('onSend', async (req, reply) => {
 
 This is how the CORS plugin works -- it adds `Access-Control-Allow-Origin` in an onSend hook.
 
+`reply.statusCode` holds the status that will be sent, however the response was built: a reply helper, a `Response` the handler returned, an error, or a 404/405.
+
+Headers set on the reply reach the client with any response, including a `Response` the handler built itself. When the reply and that `Response` both set the same header, the `Response` keeps its value: an onSend hook reads `reply.headers` and cannot see the `Response`, so it cannot overwrite a value it never saw. A hook can still replace a value it was shown in `reply.headers`. `Vary` values from both sides are combined, and `Set-Cookie` values are appended.
+
+```typescript
+app.addHook('onSend', (req, reply) => {
+  // Fills in a default. A route that returns its own Response with a
+  // cache-control header keeps that header.
+  if (reply.headers['cache-control'] === undefined) reply.header('cache-control', 'no-store');
+});
+```
+
 **Scope:** App-level and route-level.
 
 ### onResponse
 
-Runs after the response has been sent. This is fire-and-forget -- exceptions are silently ignored, and the hook does not block the response.
+Runs once for every request, after the final response is known: a normal response, a thrown error, a 404/405, a timeout, or a hook that returned a response early. `reply.statusCode` is the status that was sent. This is fire-and-forget -- the hook does not block the response, and an exception it throws is logged rather than sent to the client.
 
 ```typescript
 app.addHook('onResponse', (req, reply) => {
@@ -197,6 +209,8 @@ app.addHook('onRequest', async (req, reply) => {
   }
 });
 ```
+
+A short-circuited response skips `onSend`. `onResponse` still runs for it, with `reply.statusCode` set to its status.
 
 ## Execution Order with Plugins
 

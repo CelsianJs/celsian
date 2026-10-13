@@ -1,0 +1,54 @@
+name: Verify registry packages
+
+# Verification-only fallback for immutable releases whose publish succeeded but
+# the immediate post-publish registry smoke hit npm propagation lag. This
+# workflow has no npm token and no publish step.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact published package version to verify, without the leading v
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.version }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  HUSKY: 0
+
+jobs:
+  verify-registry:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      # Older npm Arborist versions have failed on generated consumer installs
+      # in the release verifier; keep this manual verifier aligned with
+      # release.yml.
+      - run: npm install --global npm@11.16.0
+
+      - name: Verify published registry consumers
+        run: node scripts/verify-registry-install.mjs
+        env:
+          npm_config_registry: https://registry.npmjs.org
+          CELSIAN_REGISTRY_VERSION: ${{ inputs.version }}
+          CELSIAN_REGISTRY_SMOKE_ARTIFACT: artifacts/registry-smoke-node-22.json
+
+      - name: Upload registry smoke artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: celsian-registry-smoke-node-22
+          path: artifacts/registry-smoke-node-22.json
+          if-no-files-found: error
