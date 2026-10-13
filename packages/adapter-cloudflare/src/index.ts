@@ -1,7 +1,7 @@
 // @celsian/adapter-cloudflare -- Cloudflare Workers adapter
 
 import type { CelsianApp } from "@celsian/core";
-import { CelsianError } from "@celsian/core";
+import { CelsianError, setRemoteAddress } from "@celsian/core";
 
 /**
  * Cloudflare Workers environment bindings (KV, D1, R2, etc.)
@@ -68,6 +68,10 @@ export function createCloudflareHandler(app: CelsianApp): CloudflareWorkerExport
         // Attach Cloudflare env and ctx to request for handler access
         (request as unknown as Record<string, unknown>).env = env;
         (request as unknown as Record<string, unknown>).ctx = ctx;
+        // A Worker never sees a socket. Cloudflare's edge sets CF-Connecting-IP
+        // to the client address and overwrites any value the client sent, so it
+        // is the peer address here, and only here.
+        setRemoteAddress(request, request.headers.get("cf-connecting-ip"));
         return await app.handle(request);
       } catch (error) {
         console.error("[celsian] Unhandled error in Cloudflare handler:", error);

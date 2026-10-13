@@ -3,7 +3,7 @@
 // Deno.serve uses Web Standard Request/Response natively, so this adapter is thin:
 // it wraps app.handle(request) and returns a Deno.serve-compatible handler.
 
-import { type CelsianApp, CelsianError } from "@celsian/core";
+import { type CelsianApp, CelsianError, setRemoteAddress } from "@celsian/core";
 
 /** Options for the Deno adapter. */
 export interface DenoAdapterOptions {
@@ -18,9 +18,16 @@ export interface DenoAdapterOptions {
 }
 
 /**
+ * The second argument Deno.serve passes a handler (subset of `Deno.ServeHandlerInfo`).
+ */
+export interface DenoServeHandlerInfo {
+  remoteAddr?: { hostname?: string; port?: number; transport?: string };
+}
+
+/**
  * Deno.serve handler shape, accepts a Request and returns a Response.
  */
-export type DenoFetchHandler = (request: Request) => Response | Promise<Response>;
+export type DenoFetchHandler = (request: Request, info?: DenoServeHandlerInfo) => Response | Promise<Response>;
 
 /**
  * Deno.serve options shape (subset of Deno's types, avoids depending on deno-types).
@@ -48,9 +55,10 @@ export interface DenoServeOptions {
  * ```
  */
 export function createDenoHandler(app: CelsianApp): DenoFetchHandler {
-  return async (request: Request): Promise<Response> => {
+  return async (request: Request, info?: DenoServeHandlerInfo): Promise<Response> => {
     try {
-      return await app.handle(request);
+      // Deno reports the peer per request; recorded here it becomes `request.ip`.
+      return await app.handle(setRemoteAddress(request, info?.remoteAddr?.hostname));
     } catch (error) {
       console.error("[celsian] Unhandled error in Deno handler:", error);
       return new Response(JSON.stringify({ error: "Internal Server Error", statusCode: 500 }), {

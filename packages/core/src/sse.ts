@@ -54,9 +54,10 @@ function formatSSEEvent(event: SSEEvent): string {
     result += `retry: ${Math.trunc(Number(event.retry))}\n`;
   }
 
-  // Data can be multi-line, each line needs its own `data:` prefix
+  // EventSource treats LF, CRLF and lone CR as line endings. Prefix every
+  // logical line so a CR in application data cannot forge another SSE field.
   const data = typeof event.data === "string" ? event.data : JSON.stringify(event.data);
-  const lines = data.split("\n");
+  const lines = data.split(/\r\n|[\r\n]/);
   for (const line of lines) {
     result += `data: ${line}\n`;
   }
@@ -125,12 +126,19 @@ export function createSSEStream(request: Request, options?: SSEStreamOptions): S
       pingTimer = null;
     }
 
+    request.signal?.removeEventListener("abort", close);
     writer.close().catch(() => {});
     onClose?.();
   }
 
+  // Cancelling the readable side rejects writer.closed even when no write or
+  // keep-alive ping is pending. Observe it to release the channel immediately.
+  // Callback errors must not become an unhandled rejection in this observer.
+  writer.closed.then(close, close).catch(() => {});
+
   // Detect client disconnect via abort signal
-  request.signal?.addEventListener("abort", close);
+  if (request.signal?.aborted) close();
+  else request.signal?.addEventListener("abort", close, { once: true });
 
   const headers: Record<string, string> = {
     "content-type": "text/event-stream",
@@ -233,14 +241,16 @@ export function createSSEHub(hubOptions?: SSEHubOptions): SSEHub {
 
   return {
     subscribe(request: Request, options?: SSEStreamOptions): SSEChannel {
-      const channel = createSSEStream(request, {
+      // A pre-aborted request closes synchronously during stream creation.
+      let channel: SSEChannel | undefined;
+      channel = createSSEStream(request, {
         ...options,
         onClose: () => {
-          channels.delete(channel);
+          if (channel) channels.delete(channel);
           options?.onClose?.();
         },
       });
-      channels.add(channel);
+      if (channel.open) channels.add(channel);
       return channel;
     },
 

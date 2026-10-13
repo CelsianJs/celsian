@@ -1,6 +1,6 @@
 {
   "name": "celsian-auth-flow-example",
-  "version": "1.0.10",
+  "version": "1.0.15",
   "private": true,
   "type": "module",
   "scripts": {
@@ -15,7 +15,7 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
-    "tsx": "^4.23.0",
+    "tsx": "^4.23.15",
     "vitest": "^3.0.0"
   }
 }

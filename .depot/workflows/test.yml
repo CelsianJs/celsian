@@ -117,6 +117,14 @@ jobs:
         # tsconfig.typecheck.json.
         run: pnpm typecheck
 
+      # Exercise the same packed consumer gate before merge, rather than first
+      # discovering installer/template failures in the release workflow.
+      - name: Verify packed packages and generated consumers
+        if: matrix.node-version == 22
+        run: |
+          npm install --global npm@11.16.0
+          pnpm verify:publish
+
   lint:
     runs-on: depot-ubuntu-24.04
     steps:

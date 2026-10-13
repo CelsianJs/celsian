@@ -1,5 +1,187 @@
 # @celsian/core
 
+## 0.6.6
+
+### Patch Changes
+
+- e79f5ff: Improve Node server request handling, URL conversion, and connection cleanup.
+  - @celsian/schema@0.6.6
+
+## 0.6.5
+
+### Patch Changes
+
+- 879fd05: `csrf({ trustedOrigins })` now admits the origins it lists. A browser labels a
+  request from a separate front-end origin `Sec-Fetch-Site: same-site` or
+  `cross-site`, and the plugin rejected every such label before it looked at
+  `trustedOrigins`, so the option could never let a real browser request through.
+  A same-site or cross-site request is now accepted when its `Origin` is listed,
+  and it still needs a valid token. One that names no Origin, an opaque one, or an
+  unlisted one is still refused.
+
+  Handlers can read the client's address as `request.ip`. It is the peer that
+  opened the connection: the Node socket, Bun's `server.requestIP()`, Deno's
+  `remoteAddr`, Cloudflare's `CF-Connecting-IP`, or API Gateway's source IP.
+  Request headers are not consulted unless you name one with the new `clientIp`
+  app option, e.g. `createApp({ clientIp: { header: 'fly-client-ip' } })` or
+  `{ header: 'x-forwarded-for', hops: 2 }`. `app.fetch` reads the peer address
+  from Bun's and Deno's second argument, and `app.inject()` takes a
+  `remoteAddress`. Hooks run on a WebSocket handshake see the same value.
+  `@celsian/rate-limit` keys a request that carries no usable
+  forwarding header on `request.ip` instead of the one shared "anonymous" bucket.
+
+  `onSend` and `onResponse` now see the status that is actually sent.
+  `reply.statusCode` used to stay 200 when a handler returned its own `Response`,
+  threw, missed a route (404/405) or was answered early by a hook. `onResponse`
+  also runs for thrown errors, timeouts, 404/405 misses and early returns, once
+  per request. An early return still skips `onSend`.
+
+  Cookies set with `reply.cookie()` now reach the client when the handler returns
+  a plain object, a string or nothing. On Node, a cookie set with
+  `reply.header("set-cookie", ...)` (as the CSRF plugin does) is no longer
+  dropped when the same response also carries `reply.cookie()` cookies.
+
+  Headers set with `reply.header()` are kept when the handler returns its own
+  `Response`. When the reply and that `Response` set the same header, the
+  `Response` keeps its value, so an `onSend` default such as
+  `cache-control: no-store` no longer overwrites a route's own header. An `onSend`
+  hook can still replace a value it was shown in `reply.headers`. `Vary` values
+  from both sides are combined and `Set-Cookie` values are appended. 404 and 405
+  responses follow the same rule, so their JSON `content-type` is no longer
+  replaced by a reply header.
+
+  **Behaviour changes to check when upgrading:** headers and cookies set on the
+  reply before a handler throws now reach the error response even without
+  `onSend` hooks; `onResponse` hooks now also run for errors, misses and early
+  returns, so metrics and access logs built on them will count requests they
+  previously missed.
+
+  - @celsian/schema@0.6.5
+
+## 0.6.4
+
+### Patch Changes
+
+- 48fb11d: Close long-lived SSE and WebSocket connections during Node `serve()` shutdown so open streams do not keep processes alive after the grace period.
+  - @celsian/schema@0.6.4
+
+## 0.6.3
+
+### Patch Changes
+
+- Make the full scaffold's protected operations usable from Swagger UI. Declare
+  HTTP or API-key schemes with `openapi({ securitySchemes })` and per-route
+  `openapi.security`, `openapi.parameters`, and `openapi.description` metadata.
+  The full template documents Bearer JWT requirements on PUT/DELETE and the
+  matching `x-csrf-token` header on POST/PUT/DELETE, with a complete development
+  token and Swagger authorization walkthrough.
+
+  Documentation is declarative only: it does not install authentication hooks,
+  bypass JWT/CSRF enforcement, or alter runtime schema validation. Public routes
+  remain public. Parameters merge by `(in, name)`; later explicit fields override
+  earlier/inferred fields, unspecified fields persist, explicit schemas replace
+  whole schemas, and path parameters always remain required.
+
+  All public packages ship together at 0.6.3, and generated projects require at
+  least this patch so the new metadata types resolve against the matching core.
+
+  - @celsian/schema@0.6.3
+
+## 0.6.2
+
+### Patch Changes
+
+- 4246e07: Preserve stream ownership from request to transport. SSE data now handles CR,
+  CRLF and LF safely, and cancelled or pre-aborted subscriptions release hub
+  membership and timers. Node response writers respect backpressure, cancel idle
+  producers on disconnect, and retain transport cancellation alongside request
+  timeouts. The Node adapter shares the core HTTP conversion implementation.
+
+  Response cache keys preserve the order of repeated query parameters while still
+  normalizing distinct parameter names. Hashed entries retain their full logical
+  key so invalidation works for long paths, including across cache instances.
+
+  **Upgrade note:** clear or rebuild existing persistent response-cache entries
+  when deploying this release. Previous entries may have collapsed repeated-query
+  ordering or lack the identity metadata needed to invalidate long hashed keys;
+  their original identity cannot be reconstructed. Invalidation of hashed entries
+  now reads stored metadata, which adds KV reads; ordinary short-key cache hits do
+  not add a metadata lookup.
+
+- bc87e6e: Three first-run fixes, two of which change behaviour. Read those two before upgrading.
+
+  **BEHAVIOUR CHANGE: the dev server now binds `127.0.0.1` instead of the name
+  `localhost`.** Node stopped reordering resolver results in v17, so
+  `listen("localhost")` binds whichever family DNS returns first, in practice
+  `::1` alone. The server printed `http://[::1]:3000` and answered
+  `http://localhost:3000`, while `curl http://127.0.0.1:3000` was refused, which
+  is the address most tooling, documentation and muscle memory reaches for. The
+  `basic` template sets no `HOST`, so the simplest template was the one that
+  broke. Binding the IPv4 literal serves both spellings: a client that resolves
+  `localhost` to `::1` first falls back to `127.0.0.1` when that connection is
+  refused. Anything binding the dev default and then connecting to `::1`
+  explicitly must now set `HOST=::1`. Production is untouched: `0.0.0.0` under
+  `NODE_ENV=production`, and the loopback-in-production warning still fires.
+
+  **BEHAVIOUR CHANGE: `create-celsian` now refuses an argv it used to accept
+  silently.** `npm create celsian@latest my-api --template basic` never delivers
+  the flag. npm claims every flag after the package name unless a `--` separates
+  them, so it ate `--template` and passed the value through as a bare positional.
+  That positional was discarded and the default `full` template was scaffolded
+  instead, with no warning: a user who asked for a minimal server got JWT, CSRF
+  and a Dockerfile. A second positional is now an error that names the likely
+  cause and prints both invocations that survive npm's parsing, and nothing is
+  written to disk. Inferring the template from the leftover would only move the
+  guess one level up, where a wrong guess is invisible again. `--template=<id>`,
+  `-t <id>` and `-t=<id>` are now honoured (the README already documented `-t`,
+  and both spellings previously fell through to `full`), and an unknown flag is
+  an error rather than being ignored.
+
+  **A port that is already in use now explains itself.** `PORT=3000 npm run dev`
+  against a taken port surfaced as `unhandledRejection, shutting down` plus a
+  `node:net` stack, which reads like the framework crashed. `serve()` now rejects
+  with a `ServeListenError` carrying one plain line ("Port 3000 is already in
+  use ... pick another port with PORT=3001"), the original Node error is kept as
+  `cause`, and the fatal handler prints that line on its own without the crash
+  framing. `EACCES` on a privileged port and `EADDRNOTAVAIL` on a host this
+  machine does not own get the same treatment. The exit code is still non-zero
+  and unrecognised listen failures are passed through untouched.
+
+- d1e677e: Three fixes, two of which change behaviour. Read those two before upgrading.
+
+  **A response schema no longer defeats a streaming JSON response.** Validating a
+  handler-built `Response` called `response.clone().json()`, which tees the body
+  and drains it to completion. Any route returning `reply.stream()` with a JSON
+  content type alongside a 2xx `schema.response` was fully buffered before the
+  client saw a byte, and an endless stream hung until the request timeout fired a 504. Measured on a stream whose first chunk arrives at 600ms, `handle()`
+  returned at 603ms with a schema and 18ms without; it now returns at 0ms with
+  one. Validation now reads only a body Celsian serialized itself, so no stream is
+  ever touched.
+
+  Deliberate narrowing: a handler that hand-builds
+  `new Response(JSON.stringify(x), { 'content-type': 'application/json' })`,
+  bypassing both `reply.json()` and the auto-serializer, is no longer
+  response-validated. A buffered `Response` and a streaming one expose an
+  identical `body`, so there is no way to read the first without risking draining
+  the second. Every documented way to send JSON is unaffected.
+
+  **BEHAVIOUR CHANGE: a prefix-scoped guard now runs before a custom 404
+  handler.** A genuine 404 resolved `onRequest` from the root scope only, so a
+  plugin registered with `{ prefix: '/admin' }` never saw a request to
+  `/admin/nonexistent` while the identical un-prefixed guard did. The 404 path now
+  takes the same union of covering guards that an unrouted WebSocket upgrade
+  does. An app with a prefix-scoped guard will now get that guard's response
+  (commonly 401) where it previously got its custom or default 404.
+
+  **BEHAVIOUR CHANGE: cron day fields follow unix semantics, so some jobs fire
+  more often.** `shouldRun` ANDed all five fields; Vixie cron runs the job when
+  either day-of-month or day-of-week matches whenever both are restricted.
+  `0 0 13 * 5` means "the 13th of every month, and every Friday" and previously
+  fired only when the 13th was a Friday. This only affects expressions where
+  neither day field begins with `*`. Everything else is unchanged.
+
+  - @celsian/schema@0.6.2
+
 ## 0.6.1
 
 ### Patch Changes

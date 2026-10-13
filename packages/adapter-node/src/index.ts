@@ -3,7 +3,10 @@
 import { readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, join, resolve } from "node:path";
-import type { CelsianApp } from "@celsian/core";
+import { type CelsianApp, HttpError, nodeToWebRequest, writeWebResponse } from "@celsian/core";
+
+// Keep stream ownership and HTTP conversion identical to the built-in Node server.
+export { nodeToWebRequest, writeWebResponse } from "@celsian/core";
 
 // ─── Removed: build adapter ───
 //
@@ -25,10 +28,23 @@ export interface NodeAdapterOptions {
 
 // ─── Runtime: Start a Node server from a CelsianApp ───
 
+function requestUrl(target: string, baseUrl: string): URL {
+  if (target.includes("#") || target.includes("\\")) throw new HttpError(400, "Bad Request");
+  // Even leading // is an origin-form path, not a network-path authority.
+  if (target.charCodeAt(0) === 47) return new URL(baseUrl + target);
+  const authority = /^https?:\/\/([^/?#]+)/i.exec(target)?.[1];
+  if (!authority || authority.includes("@")) throw new HttpError(400, "Bad Request");
+  const url = new URL(target);
+  if (!url.hostname || url.username || url.password) throw new HttpError(400, "Bad Request");
+  return url;
+}
+
 export function serve(app: CelsianApp, options: NodeAdapterOptions = {}): void {
   const port = options.port ?? parseInt(process.env.PORT ?? "3000", 10);
   const host = options.host ?? "0.0.0.0";
   const staticDir = options.staticDir;
+  const displayHost = host.includes(":") ? `[${host}]` : host;
+  let baseUrl = `http://${displayHost}:${port}`;
 
   const MIME_TYPES: Record<string, string> = {
     ".html": "text/html",
@@ -44,111 +60,82 @@ export function serve(app: CelsianApp, options: NodeAdapterOptions = {}): void {
   };
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
-    const url = new URL(req.url ?? "/", `http://${host}:${port}`);
-
-    // Try static files
-    if (staticDir) {
-      // Decode URI and resolve to prevent path traversal (e.g., /../../../etc/passwd).
-      // Malformed percent-encoding (e.g. "/%ZZ") throws URIError, respond 400
-      // instead of letting it escape the async server callback.
-      let decodedPath: string;
+    try {
+      const target = req.url ?? "/";
+      let url: URL;
       try {
-        decodedPath = decodeURIComponent(url.pathname);
+        url = requestUrl(target, baseUrl);
       } catch {
-        res.statusCode = 400;
-        res.end("Bad Request");
-        return;
+        throw new HttpError(400, "Bad Request");
       }
-      const resolvedRoot = resolve(staticDir);
-      const filePath = resolve(join(staticDir, decodedPath));
-      // Ensure the resolved path is within the static directory
-      if (filePath.startsWith(`${resolvedRoot}/`) || filePath === resolvedRoot) {
+
+      // Try static files
+      if (staticDir) {
+        // Decode URI and resolve to prevent path traversal (e.g., /../../../etc/passwd).
+        // Malformed percent-encoding (e.g. "/%ZZ") throws URIError, respond 400
+        // instead of letting it escape the async server callback.
+        let decodedPath: string;
         try {
-          const s = await stat(filePath);
-          if (s.isFile()) {
-            const content = await readFile(filePath);
+          decodedPath = decodeURIComponent(url.pathname);
+        } catch {
+          throw new HttpError(400, "Bad Request");
+        }
+        const resolvedRoot = resolve(staticDir);
+        const filePath = resolve(join(staticDir, decodedPath));
+        // Ensure the resolved path is within the static directory
+        if (filePath.startsWith(`${resolvedRoot}/`) || filePath === resolvedRoot) {
+          let content: Buffer | undefined;
+          try {
+            const s = await stat(filePath);
+            if (s.isFile()) content = await readFile(filePath);
+          } catch {
+            // Not a static file, continue
+          }
+          if (content) {
             const ext = extname(filePath);
             res.setHeader("content-type", MIME_TYPES[ext] ?? "application/octet-stream");
             res.setHeader("cache-control", "public, max-age=31536000, immutable");
             res.end(content);
             return;
           }
-        } catch {
-          // Not a static file, continue
         }
       }
-    }
 
-    // Convert Node request to Web Standard Request
-    const webRequest = nodeToWebRequest(req, url);
-
-    try {
+      // Convert Node request to Web Standard Request
+      let webRequest: Request;
+      try {
+        webRequest = nodeToWebRequest(req, url);
+        // Absolute-form target authority takes precedence over the received Host.
+        if (target.charCodeAt(0) !== 47) webRequest.headers.set("host", url.host);
+      } catch {
+        throw new HttpError(400, "Bad Request");
+      }
       const response = await app.handle(webRequest);
       await writeWebResponse(res, response);
     } catch (error) {
-      console.error("[celsian] Unhandled error:", error);
-      res.statusCode = 500;
-      res.end("Internal Server Error");
+      if (!res.destroyed) {
+        try {
+          const badRequest = error instanceof HttpError && error.statusCode === 400;
+          if (!badRequest) console.error("[celsian] Unhandled error:", error);
+          if (res.headersSent) res.destroy();
+          else {
+            res.statusCode = badRequest ? 400 : 500;
+            res.setHeader("connection", "close");
+            res.end(badRequest ? "Bad Request" : "Internal Server Error");
+          }
+        } catch {
+          res.destroy();
+        }
+      }
     }
   });
 
   server.listen(port, host, () => {
-    console.log(`[celsian] Server running at http://${host}:${port}`);
+    const address = server.address();
+    const boundPort = address && typeof address === "object" ? address.port : port;
+    baseUrl = `http://${displayHost}:${boundPort}`;
+    console.log(`[celsian] Server running at ${baseUrl}`);
   });
-}
-
-// ─── Conversion Helpers ───
-
-export function nodeToWebRequest(req: IncomingMessage, url: URL): Request {
-  const headers = new Headers();
-  for (const [key, value] of Object.entries(req.headers)) {
-    if (typeof value === "string") {
-      headers.set(key, value);
-    } else if (Array.isArray(value)) {
-      for (const v of value) headers.append(key, v);
-    }
-  }
-
-  const method = req.method ?? "GET";
-  const hasBody = method !== "GET" && method !== "HEAD";
-
-  return new Request(url.toString(), {
-    method,
-    headers,
-    body: hasBody ? (req as unknown as ReadableStream) : undefined,
-    duplex: hasBody ? "half" : undefined,
-  });
-}
-
-export async function writeWebResponse(res: ServerResponse, response: Response): Promise<void> {
-  res.statusCode = response.status;
-
-  for (const [key, value] of response.headers.entries()) {
-    if (key.toLowerCase() === "set-cookie") continue; // handled below
-    res.setHeader(key, value);
-  }
-
-  // Headers.entries() collapses repeated Set-Cookie into one comma-joined value,
-  // which corrupts cookies containing commas (e.g. Expires dates). Write the
-  // array form so every cookie gets its own header line.
-  const cookies = (response.headers as { getSetCookie?: () => string[] }).getSetCookie?.() ?? [];
-  if (cookies.length > 0) {
-    res.setHeader("set-cookie", cookies);
-  }
-
-  if (response.body) {
-    const reader = response.body.getReader();
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        res.write(value);
-      }
-    } finally {
-      reader.releaseLock();
-    }
-  }
-  res.end();
 }
 
 export default serve;
