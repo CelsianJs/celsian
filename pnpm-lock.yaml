@@ -80,7 +80,7 @@ importers:
     devDependencies:
       '@hono/node-server':
         specifier: ^2.0.12
-        version: 2.1.1(hono@4.13.5)
+        version: 2.1.1(hono@4.13.13)
       '@types/autocannon':
         specifier: ^7.12.7
         version: 7.12.7
@@ -97,8 +97,8 @@ importers:
         specifier: ^5.12.1
         version: 5.12.5
       hono:
-        specifier: ^4.13.5
-        version: 4.13.5
+        specifier: ^4.13.13
+        version: 4.13.13
 
   examples/auth-flow:
     dependencies:
@@ -2143,8 +2143,8 @@ packages:
   hdr-histogram-percentiles-obj@3.0.0:
     resolution: {integrity: sha512-7kIufnBqdsBGcSZLPJwqHT3yhk1QTsSlFsVD3kx5ixH/AlgBs9yM1q6DPhXZ8f8gtdqgh7N7/5btRLpQsS2gHw==}
 
-  hono@4.13.5:
-    resolution: {integrity: sha512-O6+/eCYRkzzzy0rPWwKLiGBR1nFuUPZynnwjxN1MBA62NNqbT0wQEzQyK2gSO5yDIDB336sXQleAhOHrzlYyKw==}
+  hono@4.13.13:
+    resolution: {integrity: sha512-CQ46U0ZkAGmbT/4UxdzzGJpacP2IeKgY4a5/tOI9AABbpOMfK739wfDXmv1usCk+3RkKj1hQy4/fjhiwa2xlrA==}
     engines: {node: '>=16.9.0'}
 
   html-escaper@2.0.2:
@@ -3567,9 +3567,9 @@ snapshots:
       '@shikijs/types': 3.23.0
       '@shikijs/vscode-textmate': 10.0.2
 
-  '@hono/node-server@2.1.1(hono@4.13.5)':
+  '@hono/node-server@2.1.1(hono@4.13.13)':
     dependencies:
-      hono: 4.13.5
+      hono: 4.13.13
 
   '@img/colour@1.1.0': {}
 
@@ -4591,7 +4591,7 @@ snapshots:
 
   hdr-histogram-percentiles-obj@3.0.0: {}
 
-  hono@4.13.5: {}
+  hono@4.13.13: {}
 
   html-escaper@2.0.2: {}
 
