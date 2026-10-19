@@ -1,5 +1,8 @@
 name: Test
 
+# Runs on GitHub-hosted runners: free for this public repository, and public
+# repositories never use ZVN's self-hosted runners (a fork pull request could
+# run code on them). Moved here from Depot CI (.depot/workflows/) on 2026-10-19.
 on:
   push:
     branches: [main]
@@ -25,19 +28,11 @@ env:
 # version in a trailing comment. A floating tag (`@v4`) is a mutable pointer:
 # whoever controls the action repo can retag it at any time, and that code then
 # runs inside jobs that hold secrets.
-#
-# DEPENDABOT DOES NOT SEE THIS FILE. Its github-actions ecosystem only scans
-# .github/workflows/ (plus a root action.yml) and cannot be pointed elsewhere,
-# so nothing bumps these pins automatically. The claim that Dependabot keeps
-# them current was carried over from the .github copy and was false here.
-# `pnpm check:action-pins` (in the lint job) fails when an action used in both
-# trees drifts, so a Dependabot bump to .github cannot land without this file
-# following. Actions used ONLY here have no upstream at all and need a periodic
-# manual look; the script lists them on every run.
+# Dependabot's github-actions ecosystem keeps these pins current.
 
 jobs:
   test:
-    runs-on: depot-ubuntu-24.04-4
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         node-version: [20, 22]
@@ -134,7 +129,7 @@ jobs:
           pnpm verify:publish
 
   lint:
-    runs-on: depot-ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -149,12 +144,6 @@ jobs:
 
       - name: Verify release surface
         run: pnpm assert:release-private
-
-      - name: Verify action pins have not drifted
-        # Dependabot cannot see .depot/workflows/, so this is the only thing
-        # keeping its pinned action SHAs from silently falling behind the
-        # .github copy that Dependabot does update.
-        run: pnpm check:action-pins
 
       - name: Verify the root changelog is not behind the packages
         # Changesets writes packages/*/CHANGELOG.md; nothing writes the root
@@ -181,7 +170,7 @@ jobs:
         run: npx biome check . --diagnostic-level=error
 
   security-audit:
-    runs-on: depot-ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -212,7 +201,7 @@ jobs:
   # before this job, which is how the flagship showcase example shipped with a
   # cron expression that made it throw on startup.
   examples:
-    runs-on: depot-ubuntu-24.04-4
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -232,7 +221,7 @@ jobs:
   # Bun smoke test: boots the built @celsian/adapter-bun in the real Bun
   # runtime and asserts it serves a Request->Response. Mirrors test-deno.
   test-bun:
-    runs-on: depot-ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -270,7 +259,7 @@ jobs:
 
   # Deno smoke test: verifies the Deno adapter type-checks under Deno
   test-deno:
-    runs-on: depot-ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -302,7 +291,7 @@ jobs:
   # workerd smoke test: boots the built @celsian/adapter-cloudflare in the
   # real workerd runtime via `wrangler dev` and asserts a 200 response.
   test-workerd:
-    runs-on: depot-ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -339,7 +328,7 @@ jobs:
     # discarded. It is now a sub-second runtime smoke that exits non-zero on
     # failure, so it is a real gate like test-deno and test-workerd.
     needs: [test, lint, security-audit, examples, test-bun, test-deno, test-workerd]
-    runs-on: depot-ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - name: Check all jobs passed
         run: |
