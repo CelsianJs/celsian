@@ -1,6 +1,7 @@
 // @celsian/core -- Default error handling and response building
 
 import { HttpError, ValidationError } from "./errors.js";
+import { fastResponse } from "./fast-response.js";
 import { isThenable, toPromise } from "./hooks.js";
 import type { Logger } from "./logger.js";
 import type { CelsianReply, CelsianRequest, OnErrorHandler } from "./types.js";
@@ -129,23 +130,25 @@ function runOnErrorHooks(
   return defaultErrorResponse(error, request, logger);
 }
 
+/**
+ * A JSON error body as a fast response, so the Node server writes it in one
+ * go like any other JSON answer instead of draining it from a stream.
+ */
+function jsonError(body: unknown, status: number): Response {
+  return fastResponse(JSON.stringify(body), status, { "content-type": "application/json; charset=utf-8" });
+}
+
 /** The JSON response for an error nothing else answered. */
 function defaultErrorResponse(error: Error, request: CelsianRequest, logger: Logger | null | undefined): Response {
   if (error instanceof ValidationError) {
-    return new Response(JSON.stringify(error.toJSON()), {
-      status: 400,
-      headers: { "content-type": "application/json; charset=utf-8" },
-    });
+    return jsonError(error.toJSON(), 400);
   }
 
   if (error instanceof HttpError) {
     // An intentional 5xx still has its message stripped from the production
     // response (HttpError.toJSON), so it needs the same trace as an unknown one.
     if (error.statusCode >= 500) reportServerError(logger, error, request, error.statusCode);
-    return new Response(JSON.stringify(error.toJSON()), {
-      status: error.statusCode,
-      headers: { "content-type": "application/json; charset=utf-8" },
-    });
+    return jsonError(error.toJSON(), error.statusCode);
   }
 
   // Anything that reaches here is not an HttpError, so its `statusCode` is
@@ -168,8 +171,5 @@ function defaultErrorResponse(error: Error, request: CelsianRequest, logger: Log
     body.stack = error.stack;
   }
 
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json; charset=utf-8" },
-  });
+  return jsonError(body, status);
 }

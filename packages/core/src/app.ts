@@ -1004,20 +1004,19 @@ export class CelsianApp {
     allowed: RouteMethod[],
   ): Outgoing | Promise<Outgoing> {
     if (isMethodMismatch) {
-      const r405 = new Response(CelsianApp.METHOD_NOT_ALLOWED_BODY, {
-        status: 405,
-        headers:
-          allowed.length > 0
-            ? { ...CelsianApp.JSON_CONTENT_TYPE, allow: allowed.join(", ") }
-            : CelsianApp.JSON_CONTENT_TYPE,
-      });
+      // The built-in miss answers are fast responses, like any other JSON
+      // body: one write on Node instead of a stream drain.
+      const r405 = fastResponse(
+        CelsianApp.METHOD_NOT_ALLOWED_BODY,
+        405,
+        allowed.length > 0
+          ? { ...CelsianApp.JSON_CONTENT_TYPE, allow: allowed.join(", ") }
+          : { ...CelsianApp.JSON_CONTENT_TYPE },
+      );
       return this.sendMiss(r405, missContext);
     }
     if (this.notFoundHandler) return this.answerWithNotFoundHandler(this.notFoundHandler, missContext);
-    const r404 = new Response(CelsianApp.NOT_FOUND_BODY, {
-      status: 404,
-      headers: CelsianApp.JSON_CONTENT_TYPE,
-    });
+    const r404 = fastResponse(CelsianApp.NOT_FOUND_BODY, 404, { ...CelsianApp.JSON_CONTENT_TYPE });
     return this.sendMiss(r404, missContext);
   }
 
@@ -1043,10 +1042,7 @@ export class CelsianApp {
       } else {
         console.error("[celsian]", error);
       }
-      const r404 = new Response(CelsianApp.NOT_FOUND_BODY, {
-        status: 404,
-        headers: CelsianApp.JSON_CONTENT_TYPE,
-      });
+      const r404 = fastResponse(CelsianApp.NOT_FOUND_BODY, 404, { ...CelsianApp.JSON_CONTENT_TYPE });
       return this.finishMiss(
         await this.applyOnSend(r404, missContext.request, missContext.reply, this.rootScope.onSend),
         missContext,
@@ -1615,7 +1611,7 @@ export class CelsianApp {
     if (this.usingNoopLogger) {
       console.error("[celsian] response schema validation failed", detail);
     }
-    return fastResponse(CelsianApp.RESPONSE_VALIDATION_BODY, 500, CelsianApp.JSON_CONTENT_TYPE);
+    return fastResponse(CelsianApp.RESPONSE_VALIDATION_BODY, 500, { ...CelsianApp.JSON_CONTENT_TYPE });
   }
 
   private handleError(
