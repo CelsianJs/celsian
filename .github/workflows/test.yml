@@ -319,7 +319,7 @@ jobs:
         run: node scripts/workerd-smoke.mjs
 
   # Per-request allocation gate. Counts the promises, timers, web objects and
-  # young-generation GCs one request costs CelsianJS on Node, for seven kinds of
+  # young-generation GCs one request costs CelsianJS on Node, for nine kinds of
   # request, and fails when any count is above its ceiling in
   # benchmarks/alloc-ceilings.json. Counts, not timings, so the result does not
   # depend on how busy the runner is.

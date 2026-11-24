@@ -70,10 +70,11 @@ packages/
 
 ### Per-request allocation gate
 
-`pnpm test:alloc` (after `pnpm build`) counts what one request costs CelsianJS on Node: promises, timers, the web objects it builds, and young-generation GCs, for seven kinds of request. CI fails when a count is above its ceiling in `benchmarks/alloc-ceilings.json`. These are counts, not timings, so they are the same on a busy laptop and on a CI runner. They do not depend on where the repository is checked out either: the one scenario that could, the thrown error, runs with `NODE_ENV=production`, so its body carries no stack and with it no absolute path.
+`pnpm test:alloc` (after `pnpm build`) counts what one request costs CelsianJS on Node: promises, timers, the web objects it builds, and young-generation GCs, for nine kinds of request. CI fails when a count is above its ceiling in `benchmarks/alloc-ceilings.json`. These are counts, not timings, so they are the same on a busy laptop and on a CI runner. They do not depend on where the repository is checked out either: the one scenario that could, the thrown error, runs with `NODE_ENV=production`, so its body carries no stack and with it no absolute path.
 
 - A failure names the scenario and the counter. `ALLOC_SCENARIOS=json ALLOC_TRACE=PROMISE node benchmarks/alloc-gate.mjs` prints the stack of every place that kind of object is created.
-- `node benchmarks/alloc-gate.mjs --compare` counts Express, Fastify and Hono beside it.
+- Synchronous and `async` handlers are separate scenarios (`json` and `jsonAsync`, `body` and `bodyAsync`). An `async` handler costs promises a synchronous one does not, and most real handlers are `async`, so the `Async` rows are what most applications get.
+- `node benchmarks/alloc-gate.mjs --compare` counts Express, Fastify and Hono beside it, like for like: within a scenario every framework runs the same handler style and sends the same status, the same response header names and a body of the same length, and the run stops if they do not.
 - If your change is meant to cost more, or costs less, run `node benchmarks/alloc-gate.mjs --update` on the Node major recorded in the ceilings file, commit the result, and say why in the pull request.
 
 ## Adding a Plugin

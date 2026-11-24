@@ -4,6 +4,19 @@
 // young-generation collections through a GC performance observer.
 //
 // Usage: node alloc-server.mjs <celsian|express|fastify|hono>[:headers]
+//
+// Every framework is set up to do the same work and send the same response, so
+// that `--compare` sets like beside like (alloc-gate.mjs checks the responses
+// against each other and refuses to print a table when they differ):
+//   - each route exists twice, with a synchronous handler and with an `async`
+//     one (`/json` and `/json-async`, `/echo` and `/echo-async`). An `async`
+//     handler costs every framework promises a synchronous one does not, so a
+//     scenario uses the same style everywhere;
+//   - the same JSON bodies, for the 404 and the 500 as well, which each
+//     framework would otherwise word, and size, in its own way;
+//   - the same response headers: Express's `X-Powered-By` and `ETag` are
+//     switched off, and the "headers" variant sets by hand, in each framework,
+//     the header names CelsianJS's cors() and security() send.
 // It listens on an OS-assigned port and talks to the parent over IPC:
 //   child -> { ready: port }      parent -> "begin"   child -> "go"
 //   parent -> "end"               child -> { counts, ctor, minorGC, majorGC }
@@ -82,9 +95,13 @@ for (const name of Object.keys(ctor)) {
   globalThis[name] = Wrapped;
 }
 
-// The headers `cors()` and `security()` put on a response, set by hand in
-// Express and Fastify (which have no built-in equivalent installed here) so
-// they do the same work in the "headers" variant.
+// The bodies every framework answers a miss and a thrown error with: the ones
+// CelsianJS sends by itself (in production, where the 500 carries no stack).
+const NOT_FOUND = { error: "Not Found", statusCode: 404, code: "NOT_FOUND" };
+const SERVER_ERROR = { error: "Internal Server Error", statusCode: 500, code: "INTERNAL_SERVER_ERROR" };
+
+// The headers `cors()` and `security()` put on a response, set by hand in the
+// other frameworks so they send the same ones in the "headers" variant.
 const EXTRA_HEADERS = [
   ["access-control-allow-origin", "*"],
   ["x-content-type-options", "nosniff"],
@@ -107,10 +124,12 @@ async function start() {
       await app.register(security(), { encapsulate: false });
     }
     app.get("/json", (_req, reply) => reply.json({ message: "Hello, World!" }));
+    app.get("/json-async", async (_req, reply) => reply.json({ message: "Hello, World!" }));
     app.get("/user/:id", (req, reply) =>
       reply.json({ id: req.params.id, name: `User ${req.params.id}`, email: `user${req.params.id}@test.com` }),
     );
     app.post("/echo", (req, reply) => reply.json(req.parsedBody));
+    app.post("/echo-async", async (req, reply) => reply.json(req.parsedBody));
     app.get("/error", () => {
       throw new Error("Intentional benchmark error");
     });
@@ -137,6 +156,9 @@ async function start() {
   if (framework === "express") {
     const express = require("express");
     const app = express();
+    // Headers and work the others do not send or do: no hash of every body.
+    app.disable("x-powered-by");
+    app.set("etag", false);
     app.use(express.json());
     if (withHeaders) {
       app.use((_req, res, next) => {
@@ -145,14 +167,21 @@ async function start() {
       });
     }
     app.get("/json", (_req, res) => res.json({ message: "Hello, World!" }));
+    app.get("/json-async", async (_req, res) => {
+      res.json({ message: "Hello, World!" });
+    });
     app.get("/user/:id", (req, res) =>
       res.json({ id: req.params.id, name: `User ${req.params.id}`, email: `user${req.params.id}@test.com` }),
     );
     app.post("/echo", (req, res) => res.json(req.body));
+    app.post("/echo-async", async (req, res) => {
+      res.json(req.body);
+    });
     app.get("/error", () => {
       throw new Error("Intentional benchmark error");
     });
-    app.use((err, _req, res, _next) => res.status(500).json({ error: err.message }));
+    app.use((_req, res) => res.status(404).json(NOT_FOUND));
+    app.use((_err, _req, res, _next) => res.status(500).json(SERVER_ERROR));
     return new Promise((resolve) => {
       const server = app.listen(0, "127.0.0.1", () => resolve(server.address().port));
     });
@@ -167,18 +196,25 @@ async function start() {
         done(null, payload);
       });
     }
-    app.get("/json", async () => ({ message: "Hello, World!" }));
-    app.get("/user/:id", async (req) => ({
-      id: req.params.id,
-      name: `User ${req.params.id}`,
-      email: `user${req.params.id}@test.com`,
-    }));
-    app.post("/echo", async (req) => req.body);
-    app.get("/error", async () => {
+    app.get("/json", (_req, reply) => {
+      reply.send({ message: "Hello, World!" });
+    });
+    app.get("/json-async", async () => ({ message: "Hello, World!" }));
+    app.get("/user/:id", (req, reply) => {
+      reply.send({ id: req.params.id, name: `User ${req.params.id}`, email: `user${req.params.id}@test.com` });
+    });
+    app.post("/echo", (req, reply) => {
+      reply.send(req.body);
+    });
+    app.post("/echo-async", async (req) => req.body);
+    app.get("/error", () => {
       throw new Error("Intentional benchmark error");
     });
-    app.setErrorHandler(async (error, _req, reply) => {
-      reply.status(500).send({ error: error.message });
+    app.setNotFoundHandler((_req, reply) => {
+      reply.status(404).send(NOT_FOUND);
+    });
+    app.setErrorHandler((_error, _req, reply) => {
+      reply.status(500).send(SERVER_ERROR);
     });
     await app.listen({ port: 0, host: "127.0.0.1" });
     return app.server.address().port;
@@ -189,22 +225,27 @@ async function start() {
     const { serve } = require("@hono/node-server");
     const app = new Hono();
     if (withHeaders) {
-      // Hono ships its own equivalents of cors() and security().
-      const { cors } = require("hono/cors");
-      const { secureHeaders } = require("hono/secure-headers");
-      app.use(cors());
-      app.use(secureHeaders());
+      // By hand rather than with hono/cors and hono/secure-headers: those send
+      // a different set of headers, and add them to a copy of the response.
+      app.use((c, next) => {
+        for (const [key, value] of EXTRA_HEADERS) c.header(key, value);
+        return next();
+      });
     }
     app.get("/json", (c) => c.json({ message: "Hello, World!" }));
+    app.get("/json-async", async (c) => c.json({ message: "Hello, World!" }));
     app.get("/user/:id", (c) => {
       const id = c.req.param("id");
       return c.json({ id, name: `User ${id}`, email: `user${id}@test.com` });
     });
+    // Hono has no synchronous way to read a body, so both of these await it.
     app.post("/echo", async (c) => c.json(await c.req.json()));
+    app.post("/echo-async", async (c) => c.json(await c.req.json()));
     app.get("/error", () => {
       throw new Error("Intentional benchmark error");
     });
-    app.onError((err, c) => c.json({ error: err.message }, 500));
+    app.notFound((c) => c.json(NOT_FOUND, 404));
+    app.onError((_err, c) => c.json(SERVER_ERROR, 500));
     return new Promise((resolve) => {
       serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1" }, (info) => resolve(info.port));
     });

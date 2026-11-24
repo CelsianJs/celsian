@@ -13,6 +13,18 @@
 // Timeout, AbortController, Request, Response, Headers, ReadableStream, URL)
 // prints the stack of every place one is created.
 //
+// Synchronous and `async` handlers are separate scenarios. A handler declared
+// `async` costs promises a synchronous one does not: its own, the one that
+// waits for it, and one for each step after it that now has to wait as well.
+// Most real handlers are `async`, so `jsonAsync` and `bodyAsync` are the
+// numbers most applications get; `json` and `body` are the floor.
+//
+// `--compare` is like for like: within a scenario every framework runs the
+// same handler style, answers with the same status, the same response header
+// names and a body of the same length (see alloc-server.mjs), and the run
+// stops when they do not. Read each scenario as a row-by-row comparison, not
+// one scenario against another.
+//
 // Nothing here depends on where the repository is checked out. The one
 // scenario that could, the thrown error, runs with NODE_ENV=production: in
 // development CelsianJS puts the stack in the body, the stack holds absolute
@@ -61,7 +73,10 @@ const BODY = JSON.stringify({ name: "test", value: 42, nested: { a: 1, b: [1, 2,
  */
 const SCENARIOS = {
   json: { method: "GET", path: "/json", status: 200 },
+  // The same route with an `async` handler.
+  jsonAsync: { method: "GET", path: "/json-async", status: 200 },
   body: { method: "POST", path: "/echo", body: BODY, status: 200 },
+  bodyAsync: { method: "POST", path: "/echo-async", body: BODY, status: 200 },
   params: { method: "GET", path: "/user/42", status: 200 },
   notFound: { method: "GET", path: "/nope", status: 404 },
   // In production, so the body holds no stack and with it no checkout path.
@@ -109,6 +124,32 @@ function request(port, method, path, body) {
   });
 }
 
+/** Headers Node adds to every response whatever the framework. */
+const TRANSPORT_HEADERS = new Set(["date", "connection", "keep-alive"]);
+
+/**
+ * What one response looks like on the wire, for checking that the frameworks
+ * in a comparison answered alike: the status, the header names the framework
+ * sent (sorted) and the body's length.
+ */
+function describeResponse(port, method, path, body) {
+  return new Promise((resolve, reject) => {
+    const headers = body === undefined ? {} : { "content-type": "application/json", "content-length": Buffer.byteLength(body) };
+    const req = http.request({ port, host: "127.0.0.1", method, path, agent, headers }, (res) => {
+      let bytes = 0;
+      res.on("data", (chunk) => {
+        bytes += chunk.length;
+      });
+      res.on("end", () => {
+        const names = Object.keys(res.headers).filter((name) => !TRANSPORT_HEADERS.has(name));
+        resolve({ status: res.statusCode, headers: names.sort().join(", "), bodyBytes: bytes });
+      });
+    });
+    req.on("error", reject);
+    req.end(body);
+  });
+}
+
 async function measure(framework, scenario) {
   const { method, path, body, variant = "plain", status: expected, env = "development" } = SCENARIOS[scenario];
   const child = fork(`${HERE}alloc-server.mjs`, [`${framework}:${variant}`], {
@@ -133,6 +174,7 @@ async function measure(framework, scenario) {
 
   try {
     const { ready: port } = await next((m) => typeof m === "object" && m !== null && "ready" in m);
+    const wire = await describeResponse(port, method, path, body);
     for (let i = 0; i < WARMUP; i++) await request(port, method, path, body);
     child.send("begin");
     await next((m) => m === "go");
@@ -149,6 +191,7 @@ async function measure(framework, scenario) {
       for (const [stack, count] of result.sites) console.log(`${(count / N).toFixed(2)}/req\n${stack}\n`);
     }
     return {
+      wire,
       promises: result.counts.PROMISE / N,
       timers: result.counts.Timeout / N,
       AbortController: result.ctor.AbortController / N,
@@ -208,11 +251,24 @@ const failures = [];
 for (const scenario of selected) {
   if (!(scenario in SCENARIOS)) throw new Error(`unknown scenario: ${scenario}`);
   const rows = [];
+  let celsianWire;
   for (const framework of frameworks) {
     if (framework !== "celsian" && SCENARIOS[scenario].celsianOnly === true) continue;
-    const counts = await measure(framework, scenario);
+    const { wire, ...counts } = await measure(framework, scenario);
     rows.push([framework, counts]);
-    if (framework !== "celsian") continue;
+    if (framework !== "celsian") {
+      // A comparison is only worth printing when both sides did the same job.
+      for (const key of ["status", "headers", "bodyBytes"]) {
+        if (wire[key] !== celsianWire[key]) {
+          throw new Error(
+            `${scenario}: not like for like. ${framework} answered with ${key} ${JSON.stringify(wire[key])}, ` +
+              `celsian with ${JSON.stringify(celsianWire[key])}. Make the servers in alloc-server.mjs answer alike.`,
+          );
+        }
+      }
+      continue;
+    }
+    celsianWire = wire;
     measured[scenario] = counts;
     if (update) continue;
     const ceiling = ceilings.scenarios?.[scenario];
@@ -232,7 +288,8 @@ for (const scenario of selected) {
   }
   if (!asJson) {
     const { method, path, env = "development" } = SCENARIOS[scenario];
-    printTable(`== ${scenario}: ${method} ${path} (NODE_ENV=${env}) ==`, rows);
+    const sent = `HTTP ${celsianWire.status}, ${celsianWire.bodyBytes} body bytes, headers: ${celsianWire.headers}`;
+    printTable(`== ${scenario}: ${method} ${path} (NODE_ENV=${env}) -> ${sent} ==`, rows);
   }
 }
 

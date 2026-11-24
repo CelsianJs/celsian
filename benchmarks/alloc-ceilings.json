@@ -14,6 +14,17 @@
       "URL": 1,
       "minorGCs": 432
     },
+    "jsonAsync": {
+      "promises": 10,
+      "timers": 2,
+      "AbortController": 1,
+      "Request": 1,
+      "Response": 1,
+      "Headers": 0,
+      "ReadableStream": 1,
+      "URL": 1,
+      "minorGCs": 482
+    },
     "body": {
       "promises": 22,
       "timers": 2,
@@ -24,6 +35,17 @@
       "ReadableStream": 3,
       "URL": 1,
       "minorGCs": 749
+    },
+    "bodyAsync": {
+      "promises": 25,
+      "timers": 2,
+      "AbortController": 1,
+      "Request": 1,
+      "Response": 1,
+      "Headers": 0,
+      "ReadableStream": 3,
+      "URL": 1,
+      "minorGCs": 775
     },
     "params": {
       "promises": 3,
