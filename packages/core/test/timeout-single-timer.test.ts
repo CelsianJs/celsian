@@ -39,6 +39,30 @@ describe("request timeout: one timer", () => {
     expect(vi.getTimerCount() - before).toBe(0);
   });
 
+  it("sets no timer for a request that is answered synchronously, whatever answers it", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const app = createApp({ requestTimeout: 1000 });
+    app.get("/sync", (_req, reply) => reply.json({ ok: true }));
+    app.get("/value", () => ({ ok: true }));
+    app.get("/throws", () => {
+      throw new Error("boom");
+    });
+    app.get("/hooked", { onRequest: (_req, reply) => reply.status(403).json({ no: true }) }, () => ({ ok: true }));
+
+    const set = vi.spyOn(globalThis, "setTimeout");
+    for (const [path, status] of [
+      ["/sync", 200],
+      ["/value", 200],
+      ["/throws", 500],
+      ["/hooked", 403],
+      ["/missing", 404],
+    ] as const) {
+      const response = await app.handle(new Request(`http://localhost${path}`));
+      expect(response.status, path).toBe(status);
+    }
+    expect(set).not.toHaveBeenCalled();
+  });
+
   it("clears the timer when the handler throws", async () => {
     vi.useFakeTimers();
     vi.spyOn(console, "error").mockImplementation(() => {});

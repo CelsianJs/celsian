@@ -43,6 +43,21 @@ const MODES = {
           }
         },
       }) as unknown as Promise<Response | undefined>,
+  // A function with a `then` method is a thenable as well: `await` waits on
+  // anything whose `then` is callable, whether it is an object or a function.
+  "callable thenable":
+    (step: Step): HookHandler =>
+    (request, reply) =>
+      Object.assign(() => {}, {
+        // biome-ignore lint/suspicious/noThenProperty: a hand-made thenable is the point of this mode
+        then(resolve: (value: unknown) => void, reject: (reason: unknown) => void) {
+          try {
+            resolve(step(request, reply));
+          } catch (error) {
+            reject(error);
+          }
+        },
+      }) as unknown as Promise<Response | undefined>,
 };
 
 const modes = Object.keys(MODES) as (keyof typeof MODES)[];

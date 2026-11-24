@@ -356,6 +356,68 @@ describe.each([0, 30_000])("request.signal on core's Node server, requestTimeout
     expect(after?.aborted).toBe(false);
   });
 
+  // The other side of the test above. A request the client abandoned, whose
+  // signal nobody read while it was in flight, must still say so afterwards.
+  it("reports the abort on a signal first read after the request ended, when the client had gone by then", async () => {
+    const app = createApp({ requestTimeout });
+    const entered = gate();
+    const release = gate();
+    const finished = gate();
+    let request: { signal: AbortSignal } | undefined;
+    app.addHook("onResponse", () => {
+      finished.open();
+    });
+    app.get("/pending", async (req) => {
+      // Held, but its signal is not read.
+      request = req;
+      entered.open();
+      await release.opened;
+      return new Response("done");
+    });
+    app.get("/completed", (req, reply) => {
+      request = req;
+      return reply.json({ ok: true });
+    });
+    const port = await listen(app);
+
+    const client = httpRequest(`http://127.0.0.1:${port}/pending`);
+    client.on("error", () => {});
+    client.end();
+    await entered.opened;
+    client.destroy();
+    // Let the server see the hang-up before the handler answers.
+    await sleep(50);
+    release.open();
+    await finished.opened;
+    await sleep(20);
+
+    const late = request?.signal;
+    expect(late).toBeInstanceOf(AbortSignal);
+    expect(late?.aborted).toBe(true);
+    // The same signal on every later read.
+    expect(request?.signal).toBe(late);
+
+    // And a request that completed normally, on a connection that then stayed
+    // open, reports no abort, however late it is asked.
+    const agent = new Agent({ keepAlive: true, maxSockets: 1 });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const req = httpRequest({ port, host: "127.0.0.1", path: "/completed", agent }, (res) => {
+          res.resume();
+          res.on("end", () => resolve());
+        });
+        req.on("error", reject);
+        req.end();
+      });
+      await sleep(30);
+      const kept = request?.signal;
+      expect(kept).not.toBe(late);
+      expect(kept?.aborted).toBe(false);
+    } finally {
+      agent.destroy();
+    }
+  });
+
   it("leaves no listener behind on a keep-alive socket", async () => {
     const app = createApp({ requestTimeout });
     app.get("/read", (req, reply) => reply.json({ aborted: req.signal.aborted }));

@@ -398,6 +398,61 @@ const SCENARIOS: Scenario[] = [
     build: (r) => r.status(201).json({ made: true }),
     after: (r) => r.header("location", "/things/1"),
   },
+  // The response's own record carries a capitalised Set-Cookie, and only a
+  // cookie is merged, so no other header triggers the lower-case check.
+  {
+    name: "a capitalised Set-Cookie on the response, then only a cookie queued in onSend",
+    before: (r) => {
+      r.headers["Set-Cookie"] = "raw=1";
+    },
+    onSend: (r) => r.cookie("a", "1"),
+  },
+  {
+    name: "a capitalised header on the response, then only a cookie queued after it",
+    before: (r) => {
+      r.headers["X-Mixed"] = "response";
+    },
+    after: (r) => r.cookie("a", "1"),
+    onSend: (r) => r.cookie("b", "2"),
+  },
+  // The second merge starts from a response that already gained headers, and
+  // then meets something only the Headers merge can be trusted with.
+  {
+    name: "a header added after the response, then a padded value in onSend",
+    after: (r) => r.header("x-a", "1"),
+    onSend: (r) => r.header("x-b", "  padded  "),
+  },
+  {
+    name: "a header added after the response, then a capitalised name in onSend",
+    after: (r) => r.header("x-a", "1"),
+    onSend: (r) => {
+      r.headers["X-Late"] = "2";
+    },
+  },
+  {
+    name: "a cookie added after the response, then a padded Set-Cookie header in onSend",
+    after: (r) => r.cookie("a", "1"),
+    onSend: (r) => r.header("set-cookie", "  padded=1  "),
+  },
+  { name: "a padded Set-Cookie header", onSend: (r) => r.header("set-cookie", "  padded=1  ") },
+  {
+    name: "a padded Set-Cookie carried by the response's record, then a cookie queued in onSend",
+    before: (r) => r.header("set-cookie", "  padded=1  "),
+    after: (r) => {
+      delete r.headers["set-cookie"];
+      r.header("x-a", "1");
+    },
+    onSend: (r) => r.cookie("b", "2"),
+  },
+  {
+    name: "an own __proto__ header, replaced in onSend",
+    before: (r) => Object.defineProperty(r.headers, "__proto__", { value: "a", enumerable: true, writable: true }),
+    onSend: (r) => Object.defineProperty(r.headers, "__proto__", { value: "b", enumerable: true, writable: true }),
+  },
+  {
+    name: "an own __proto__ header set in onSend",
+    onSend: (r) => Object.defineProperty(r.headers, "__proto__", { value: "b", enumerable: true, writable: true }),
+  },
 ];
 
 describe("merging reply headers onto a fast response gives what the Headers merge gives", () => {
@@ -449,6 +504,99 @@ describe("merging reply headers onto a fast response gives what the Headers merg
         (r) => r.header("x-b", "2"),
       ),
     ).not.toBeInstanceOf(WireResponse);
+  });
+
+  // The parity cases above cannot see these: a name or value `Headers` refuses
+  // makes BOTH merges end in a TypeError, one while merging and the other only
+  // when the result is turned into a Response. What matters is where. The
+  // plain-record merge must refuse it itself, at merge time, inside the
+  // request lifecycle, where the error path answers it. Kept, it would reach
+  // the Node writer as plain data and fail in writeHead(), after the lifecycle.
+  it("refuses a name or value Headers would refuse at merge time, not at write time", () => {
+    const merge = (onSend: (reply: CelsianReply) => void, after?: (reply: CelsianReply) => void) => {
+      const reply = createReply("http://localhost/");
+      let out: Outgoing = reply.json({ a: 1 });
+      if (after) {
+        after(reply);
+        out = mergeReply(out, reply, null);
+      }
+      const shown = { ...reply.headers };
+      onSend(reply);
+      return mergeReply(out, reply, shown);
+    };
+
+    for (const name of ["x a", "", "x-caf\u00e9", "x:y", "x\ty"]) {
+      expect(() => merge((r) => r.header(name, "1")), JSON.stringify(name)).toThrow(TypeError);
+      // And from a response that had already gained a header.
+      expect(
+        () =>
+          merge(
+            (r) => r.header(name, "1"),
+            (r) => r.header("x-first", "1"),
+          ),
+        JSON.stringify(name),
+      ).toThrow(TypeError);
+    }
+    for (const cookie of ["a=\u2603", "a=\u0000"]) {
+      expect(() => merge((r) => r.header("set-cookie", cookie)), JSON.stringify(cookie)).toThrow(TypeError);
+      expect(
+        () =>
+          merge(
+            (r) => r.header("set-cookie", cookie),
+            (r) => r.header("x-first", "1"),
+          ),
+        JSON.stringify(cookie),
+      ).toThrow(TypeError);
+    }
+  });
+
+  // And these it cannot see because `Headers` trims as it stores, so turning
+  // the result into a Response hides the difference. The Node writer sends a
+  // WireResponse's record as it stands, padding included.
+  it("falls back for a padded Set-Cookie, so the Node writer never sends the padding", () => {
+    // Set in onSend.
+    const reply = createReply("http://localhost/");
+    const built = reply.json({ a: 1 });
+    reply.header("set-cookie", "  padded=1  ");
+    const merged = mergeReply(built, reply, null);
+    expect(merged).not.toBeInstanceOf(WireResponse);
+    expect(toResponse(merged).headers.getSetCookie()).toEqual(["padded=1"]);
+
+    // Carried by a response that already gained a header, when a cookie is queued.
+    const second = createReply("http://localhost/");
+    second.header("set-cookie", "  padded=1  ");
+    const response = second.json({ a: 1 });
+    delete second.headers["set-cookie"];
+    second.header("x-a", "1");
+    const first = mergeReply(response, second, null);
+    expect(first).toBeInstanceOf(WireResponse);
+    expect((first as WireResponse).headers["set-cookie"]).toBe("  padded=1  ");
+    second.cookie("b", "2", { secure: false });
+    const final = mergeReply(first, second, { ...second.headers });
+    expect(final).not.toBeInstanceOf(WireResponse);
+    expect(
+      toResponse(final)
+        .headers.getSetCookie()
+        .map((c) => c.split(";")[0]),
+    ).toEqual(["padded=1", "b=2"]);
+  });
+
+  it("merges through Headers, rather than not at all, when a response that already gained headers needs it", () => {
+    const reply = createReply("http://localhost/");
+    const built = reply.json({ a: 1 });
+    reply.header("x-first", "1");
+    const first = mergeReply(built, reply, null);
+    expect(first).toBeInstanceOf(WireResponse);
+
+    const shown = { ...reply.headers };
+    reply.header("x-padded", "  2  ");
+    const second = mergeReply(first, reply, shown);
+    // Not the WireResponse handed in, and not another one.
+    expect(second).not.toBe(first);
+    expect(second).not.toBeInstanceOf(WireResponse);
+    const res = toResponse(second);
+    expect(res.headers.get("x-first")).toBe("1");
+    expect(res.headers.get("x-padded")).toBe("2");
   });
 
   it("does not use the plain record once the Response's headers have been handed out", () => {
