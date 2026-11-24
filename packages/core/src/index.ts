@@ -52,7 +52,8 @@ export type {
   TaskFailure,
 } from "./queue.js";
 export { DEFAULT_VISIBILITY_TIMEOUT, generateQueueId, MemoryQueue } from "./queue.js";
-export { createReply } from "./reply.js";
+export type { ConfinedRead, SendFileOptions } from "./reply.js";
+export { createReply, readConfinedFile } from "./reply.js";
 export { buildRequest, resolveClientIp, setRemoteAddress } from "./request.js";
 export { isStatusKeyedResponseMap, resolveResponseSchema } from "./response-schema.js";
 export { Router } from "./router.js";

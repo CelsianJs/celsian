@@ -1,9 +1,8 @@
 // @celsian/adapter-node, Standalone Node.js server adapter
 
-import { readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, join, resolve } from "node:path";
-import { type CelsianApp, HttpError, nodeToWebRequest, writeWebResponse } from "@celsian/core";
+import { type CelsianApp, HttpError, nodeToWebRequest, readConfinedFile, writeWebResponse } from "@celsian/core";
 
 // Keep stream ownership and HTTP conversion identical to the built-in Node server.
 export { nodeToWebRequest, writeWebResponse } from "@celsian/core";
@@ -80,24 +79,28 @@ export function serve(app: CelsianApp, options: NodeAdapterOptions = {}): void {
         } catch {
           throw new HttpError(400, "Bad Request");
         }
-        const resolvedRoot = resolve(staticDir);
-        const filePath = resolve(join(staticDir, decodedPath));
-        // Ensure the resolved path is within the static directory
-        if (filePath.startsWith(`${resolvedRoot}/`) || filePath === resolvedRoot) {
-          let content: Buffer | undefined;
-          try {
-            const s = await stat(filePath);
-            if (s.isFile()) content = await readFile(filePath);
-          } catch {
-            // Not a static file, continue
-          }
-          if (content) {
-            const ext = extname(filePath);
-            res.setHeader("content-type", MIME_TYPES[ext] ?? "application/octet-stream");
-            res.setHeader("cache-control", "public, max-age=31536000, immutable");
-            res.end(content);
-            return;
-          }
+        const staticRoot = resolve(staticDir);
+        // `join` first, then confine: a URL path is always absolute ("/app.js"),
+        // and `resolve(root, "/app.js")` would replace the root outright.
+        const filePath = resolve(join(staticRoot, decodedPath));
+        // Containment is delegated to the helper core's serve() and
+        // reply.sendFile() use. This was a second copy of the static-file logic
+        // that kept only the lexical check (`startsWith` on the resolved path,
+        // then stat + readFile by name), so a symlink inside staticDir served
+        // whatever it pointed at: `GET /avatar.png` returning `.env` with a 200.
+        // The helper also compares realpath()s and reads through one
+        // O_NOFOLLOW handle, so the check and the read cannot disagree.
+        //
+        // A rejection falls through to the app handler, as a traversal attempt
+        // already did, so this layer never reports on files outside its root.
+        const file = await readConfinedFile(filePath, { root: staticRoot });
+        if (file.ok) {
+          // Extension comes from the requested path, not the resolved one.
+          const ext = extname(filePath);
+          res.setHeader("content-type", MIME_TYPES[ext] ?? "application/octet-stream");
+          res.setHeader("cache-control", "public, max-age=31536000, immutable");
+          res.end(file.data);
+          return;
         }
       }
 
