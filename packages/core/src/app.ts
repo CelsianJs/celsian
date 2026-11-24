@@ -1082,19 +1082,102 @@ export class CelsianApp {
       this.log.info("incoming request", { method, url: pathname, requestId });
     }
 
+    // From here until the lifecycle settles, the timeout may abort
+    // `request.signal`. The signal itself is only built if something reads it.
+    const timeout = this.cachedRequestTimeout;
+    let started = 0;
+    if (timeout > 0) {
+      armRequestTimeout(request);
+      started = performance.now();
+    }
+
     let out: Outgoing | Promise<Outgoing>;
     try {
-      out = this.runWithTimeout(request, reply, route, scope, this.cachedRequestTimeout);
+      out = this.runLifecycle(request, reply, route, scope);
     } catch (thrown) {
+      if (timeout > 0) disarmRequestTimeout(request);
       return this.recover(thrown, request, reply, scope, isHead, trace);
     }
-    if (out instanceof Promise) {
+    if (!(out instanceof Promise)) {
+      // Answered synchronously. A timer could not have interrupted that, so
+      // none was ever set.
+      if (timeout > 0) disarmRequestTimeout(request);
+      return this.complete(out, request, reply, scope, isHead, trace);
+    }
+    if (timeout <= 0) {
       return out.then(
         (settled) => this.complete(settled, request, reply, scope, isHead, trace),
         (thrown) => this.recover(thrown, request, reply, scope, isHead, trace),
       );
     }
-    return this.complete(out, request, reply, scope, isHead, trace);
+
+    // Hooks and a handler that worked synchronously before the first
+    // asynchronous step have used part of the timeout already. Usually that is
+    // nothing, and then the timer gets the configured duration itself: Node
+    // keeps timers of one duration in one list, so a server's request timeouts
+    // all share it. Past the deadline already, the timer is due at once, and
+    // as with a timer set at the start, a lifecycle that settles without
+    // waiting on anything still answers first.
+    const elapsed = performance.now() - started;
+    const remaining = elapsed < 1 ? timeout : Math.max(1, Math.ceil(timeout - elapsed));
+    return this.settleWithin(out, remaining, request, reply, scope, isHead, trace);
+  }
+
+  /**
+   * The answer to a lifecycle that went asynchronous, with `remaining` ms of
+   * the request timeout left: the lifecycle's own if it settles in time, a 504
+   * through the error path if not.
+   *
+   * One timer, cleared by whichever way the lifecycle settles, and one
+   * promise. The lifecycle is watched once, and that same callback finishes
+   * the response (`complete`, or `recover` for a throw) instead of handing it
+   * through a second promise to do so. When the timer wins, the lifecycle
+   * keeps running and its eventual result, or rejection, is dropped.
+   */
+  private settleWithin(
+    pending: Promise<Outgoing>,
+    remaining: number,
+    request: CelsianRequest,
+    reply: CelsianReply,
+    scope: ResolvedScope,
+    isHead: boolean,
+    trace: RequestTrace | null,
+  ): Promise<Outgoing> {
+    return new Promise<Outgoing>((resolve, reject) => {
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        try {
+          // Aborted (in addition to answering 504) so in-flight work can stop promptly.
+          fireRequestTimeout(request, new HttpError(504, "Gateway Timeout"));
+          resolve(this.recover(new HttpError(504, "Gateway Timeout"), request, reply, scope, isHead, trace));
+        } catch (failure) {
+          reject(failure);
+        }
+      }, remaining);
+      pending.then(
+        (settled) => {
+          if (timedOut) return;
+          clearTimeout(timer);
+          disarmRequestTimeout(request);
+          try {
+            resolve(this.complete(settled, request, reply, scope, isHead, trace));
+          } catch (failure) {
+            reject(failure);
+          }
+        },
+        (thrown) => {
+          if (timedOut) return;
+          clearTimeout(timer);
+          disarmRequestTimeout(request);
+          try {
+            resolve(this.recover(thrown, request, reply, scope, isHead, trace));
+          } catch (failure) {
+            reject(failure);
+          }
+        },
+      );
+    });
   }
 
   /** The lifecycle answered: log it and hand the response to onResponse. */
@@ -1222,73 +1305,6 @@ export class CelsianApp {
   }
 
   // ─── Internal ───
-
-  /**
-   * Run the request lifecycle with an optional timeout.
-   *
-   * The timer is only set once the lifecycle has actually become asynchronous.
-   * A lifecycle that returns its answer synchronously cannot be interrupted by
-   * a timer anyway, so it never pays for one. The deadline is still counted
-   * from the start of the request: whatever the synchronous part took comes
-   * off the timer.
-   */
-  private runWithTimeout(
-    request: CelsianRequest,
-    reply: CelsianReply,
-    route: InternalRoute,
-    scope: ResolvedScope,
-    timeout: number,
-  ): Outgoing | Promise<Outgoing> {
-    if (timeout <= 0) {
-      return this.runLifecycle(request, reply, route, scope);
-    }
-    // From here until the lifecycle settles, the timeout may abort
-    // `request.signal`. The signal itself is only built if something reads it.
-    armRequestTimeout(request);
-    const started = performance.now();
-    let lifecycle: Outgoing | Promise<Outgoing>;
-    try {
-      lifecycle = this.runLifecycle(request, reply, route, scope);
-    } catch (thrown) {
-      disarmRequestTimeout(request);
-      throw thrown;
-    }
-    if (!(lifecycle instanceof Promise)) {
-      disarmRequestTimeout(request);
-      return lifecycle;
-    }
-    const pending = lifecycle;
-    // Hooks and a handler that worked synchronously before the first
-    // asynchronous step have used part of the timeout already. Usually that is
-    // nothing, and then the timer gets the configured duration itself: Node
-    // keeps timers of one duration in one list, so a server's request timeouts
-    // all share it. Past the deadline already, the timer is due at once, and
-    // as with a timer set at the start, a lifecycle that settles without
-    // waiting on anything still answers first.
-    const elapsed = performance.now() - started;
-    const remaining = elapsed < 1 ? timeout : Math.max(1, Math.ceil(timeout - elapsed));
-    // One timer, cleared by whichever way the lifecycle settles. When the timer
-    // wins, the lifecycle keeps running and its eventual result is dropped.
-    return new Promise<Outgoing>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        // Aborted (in addition to rejecting with 504) so in-flight work can stop promptly.
-        fireRequestTimeout(request, new HttpError(504, "Gateway Timeout"));
-        reject(new HttpError(504, "Gateway Timeout"));
-      }, remaining);
-      pending.then(
-        (response) => {
-          clearTimeout(timer);
-          disarmRequestTimeout(request);
-          resolve(response);
-        },
-        (error) => {
-          clearTimeout(timer);
-          disarmRequestTimeout(request);
-          reject(error);
-        },
-      );
-    });
-  }
 
   // The lifecycle, one method per stretch between two steps that may be
   // asynchronous. Each runs straight through into the next while its hooks

@@ -121,6 +121,99 @@ describe("request timeout: one timer", () => {
   });
 });
 
+// The callback that watches the lifecycle also finishes the response, and the
+// timer's callback answers the 504 itself. Whatever the error path does next,
+// synchronously or not, has to come out of the same promise.
+describe("request timeout: what answers after it fires or after the lifecycle settles", () => {
+  it("waits for an asynchronous error handler and asynchronous onSend hooks after a timeout", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const app = createApp({ requestTimeout: 30 });
+    const order: string[] = [];
+    app.setErrorHandler(async (error) => {
+      await sleep(10);
+      order.push("errorHandler");
+      return new Response(`handled ${(error as { statusCode?: number }).statusCode}`, { status: 599 });
+    });
+    app.addHook("onSend", async (_request, reply) => {
+      await sleep(10);
+      order.push("onSend");
+      reply.header("x-sent", "1");
+    });
+    app.addHook("onResponse", () => {
+      order.push("onResponse");
+    });
+    app.get("/never", async () => {
+      await new Promise(() => {});
+    });
+
+    const response = await app.handle(new Request("http://localhost/never"));
+    expect(response.status).toBe(599);
+    expect(await response.text()).toBe("handled 504");
+    expect(response.headers.get("x-sent")).toBe("1");
+    expect(order).toEqual(["errorHandler", "onSend", "onResponse"]);
+  });
+
+  it("answers a rejection through the error path, and a later timeout changes nothing", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.useFakeTimers();
+    const app = createApp({ requestTimeout: 1000 });
+    let onResponse = 0;
+    app.addHook("onResponse", () => {
+      onResponse++;
+    });
+    app.get("/rejects", async () => {
+      await Promise.resolve();
+      throw new Error("nope");
+    });
+
+    const before = vi.getTimerCount();
+    const response = await app.handle(new Request("http://localhost/rejects"));
+    expect(response.status).toBe(500);
+    expect(vi.getTimerCount() - before).toBe(0);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(onResponse).toBe(1);
+  });
+
+  it("runs onResponse once and answers HEAD without a body when an asynchronous handler finishes in time", async () => {
+    const app = createApp({ requestTimeout: 1000 });
+    let onResponse = 0;
+    app.addHook("onResponse", () => {
+      onResponse++;
+    });
+    app.get("/thing", async (_request, reply) => {
+      await sleep(5);
+      return reply.header("x-thing", "1").json({ thing: true });
+    });
+
+    const get = await app.handle(new Request("http://localhost/thing"));
+    expect(await get.json()).toEqual({ thing: true });
+    const head = await app.handle(new Request("http://localhost/thing", { method: "HEAD" }));
+    expect(head.status).toBe(200);
+    expect(head.headers.get("x-thing")).toBe("1");
+    expect(await head.text()).toBe("");
+    await sleep(5);
+    expect(onResponse).toBe(2);
+  });
+
+  it("rejects handle() when the error path itself throws, in time or after a timeout", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    for (const requestTimeout of [20, 1000]) {
+      const app = createApp({ requestTimeout });
+      // A header name no response can carry: merging it throws while the 500 or 504 is being built.
+      app.addHook("onSend", (_request, reply) => {
+        reply.headers["bad name"] = "x";
+      });
+      app.get("/x", async () => {
+        if (requestTimeout === 20) await new Promise(() => {});
+        await Promise.resolve();
+        throw new Error("boom");
+      });
+
+      await expect(app.handle(new Request("http://localhost/x"))).rejects.toBeInstanceOf(TypeError);
+    }
+  });
+});
+
 // The timer is only set when the lifecycle first goes asynchronous, but the
 // deadline is the one a timer set at the start of the request would have had.
 describe("request timeout: counted from the start of the request", () => {

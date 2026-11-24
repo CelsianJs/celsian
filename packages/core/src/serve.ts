@@ -341,34 +341,10 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
     return true;
   };
 
-  /**
-   * Hand `req` to the app and write its answer. Returns `undefined` when the
-   * response was written before this returned, which is every request the app
-   * answers synchronously with a fast response, and a promise otherwise.
-   */
-  const answer = (req: IncomingMessage, res: ServerResponse, requestUrl: string | URL): Promise<void> | undefined => {
-    // An app whose `handle` was replaced or overridden keeps going through
-    // it, and that code is handed the Request itself. It may rebuild it
-    // (`handle(new Request(request, { headers }))`), and a rebuilt Request
-    // follows the signal the original holds internally, not the one its
-    // `signal` property reports. So such an app gets a Request built with its
-    // signal, as every Request was before signals became lazy.
-    const stock = app.handle === CelsianApp.prototype.handle;
-
-    // Build Web Request with raw path (let the app do fast URL parsing)
-    let webRequest: Request;
-    try {
-      webRequest = nodeToWebRequestFast(req, requestUrl, !stock);
-    } catch {
-      throw new HttpError(400, "Bad Request");
-    }
-
-    // The app's internal entry point can answer without a promise, and with a
-    // fast response whose final headers are still beside it, which
-    // writeOutgoing sends as is.
-    const response = stock ? dispatchRequest(app, webRequest) : app.handle(webRequest);
-    if (response instanceof Promise) return response.then((settled) => writeOutgoing(res, settled));
-    return writeOutgoing(res, response);
+  /** Runs once per request, however it ended. */
+  const done = (req: IncomingMessage): void => {
+    endTransportSignal(req);
+    inFlight--;
   };
 
   /** Answer for a request that failed before or while it was written. */
@@ -388,10 +364,72 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
     }
   };
 
-  /** Runs once per request, however it ended. */
-  const done = (req: IncomingMessage): void => {
-    endTransportSignal(req);
-    inFlight--;
+  const failed = (req: IncomingMessage, res: ServerResponse, error: unknown): void => {
+    fail(res, error);
+    done(req);
+  };
+
+  /**
+   * Write the app's answer and finish the request. A fast response is written
+   * and finished before this returns; a body stream is drained first.
+   */
+  const write = (req: IncomingMessage, res: ServerResponse, out: Outgoing): void => {
+    let draining: Promise<void> | undefined;
+    try {
+      draining = writeOutgoing(res, out);
+    } catch (error) {
+      failed(req, res, error);
+      return;
+    }
+    if (draining === undefined) done(req);
+    else
+      draining.then(
+        () => done(req),
+        (error) => failed(req, res, error),
+      );
+  };
+
+  /**
+   * Hand `req` to the app, write its answer and finish the request. All of it
+   * happens before this returns when the app answers synchronously with a fast
+   * response. An answer that is still pending is waited on once: the same
+   * callback writes it and finishes the request.
+   */
+  const answer = (req: IncomingMessage, res: ServerResponse, requestUrl: string | URL): void => {
+    let response: Outgoing | Promise<Outgoing>;
+    try {
+      // An app whose `handle` was replaced or overridden keeps going through
+      // it, and that code is handed the Request itself. It may rebuild it
+      // (`handle(new Request(request, { headers }))`), and a rebuilt Request
+      // follows the signal the original holds internally, not the one its
+      // `signal` property reports. So such an app gets a Request built with its
+      // signal, as every Request was before signals became lazy.
+      const stock = app.handle === CelsianApp.prototype.handle;
+
+      // Build Web Request with raw path (let the app do fast URL parsing)
+      let webRequest: Request;
+      try {
+        webRequest = nodeToWebRequestFast(req, requestUrl, !stock);
+      } catch {
+        throw new HttpError(400, "Bad Request");
+      }
+
+      // The app's internal entry point can answer without a promise, and with a
+      // fast response whose final headers are still beside it, which
+      // writeOutgoing sends as is.
+      response = stock ? dispatchRequest(app, webRequest) : app.handle(webRequest);
+    } catch (error) {
+      failed(req, res, error);
+      return;
+    }
+    if (response instanceof Promise) {
+      response.then(
+        (settled) => write(req, res, settled),
+        (error) => failed(req, res, error),
+      );
+    } else {
+      write(req, res, response);
+    }
   };
 
   // Not an async function: a request the app answers synchronously is written
@@ -405,28 +443,31 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
 
     inFlight++;
 
-    let pending: Promise<void> | undefined;
+    let requestUrl: string | URL;
     try {
-      const requestUrl = nodeRequestUrl(req.url ?? "/", baseUrl);
-      // Static files, only parse URL when staticDir is configured
-      pending = hasStaticDir
-        ? serveStatic(res, requestUrl).then((served) => (served ? undefined : answer(req, res, requestUrl)))
-        : answer(req, res, requestUrl);
+      requestUrl = nodeRequestUrl(req.url ?? "/", baseUrl);
     } catch (error) {
-      fail(res, error);
-      done(req);
+      failed(req, res, error);
       return;
     }
-    if (pending === undefined) {
-      done(req);
+    // Static files, only parse URL when staticDir is configured
+    if (!hasStaticDir) {
+      answer(req, res, requestUrl);
       return;
     }
-    pending.then(
-      () => done(req),
-      (error) => {
-        fail(res, error);
-        done(req);
+    let serving: Promise<boolean>;
+    try {
+      serving = serveStatic(res, requestUrl);
+    } catch (error) {
+      failed(req, res, error);
+      return;
+    }
+    serving.then(
+      (served) => {
+        if (served) done(req);
+        else answer(req, res, requestUrl);
       },
+      (error) => failed(req, res, error),
     );
   });
 
