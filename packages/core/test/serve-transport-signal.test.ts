@@ -8,7 +8,7 @@
 
 import { Agent, request as httpRequest } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type CelsianApp, createApp } from "../src/app.js";
+import { CelsianApp, createApp } from "../src/app.js";
 import { type ServeResult, serve } from "../src/serve.js";
 
 let server: ServeResult | undefined;
@@ -146,6 +146,186 @@ describe.each([0, 30_000])("request.signal on core's Node server, requestTimeout
       release.open();
       client.destroy();
     }
+  });
+
+  // A Request made from another Request follows the signal the source holds
+  // internally, which is not the one its `signal` property reports. A lazily
+  // built Request holds one that never aborts, so the two places a Request
+  // leaves core (a replaced `app.handle`, and `clone()`) get a real one.
+  it.each([
+    [
+      "replaced on the instance",
+      (app: CelsianApp) => {
+        const handle = app.handle.bind(app);
+        app.handle = (request) => handle(new Request(request, { headers: new Headers(request.headers) }));
+      },
+    ],
+    [
+      "wrapped without rebuilding the request",
+      (app: CelsianApp) => {
+        const handle = app.handle.bind(app);
+        app.handle = (request) => handle(request);
+      },
+    ],
+  ])("aborts the signal of a request that went through an app.handle %s", async (_label, wrap) => {
+    const app = createApp({ requestTimeout });
+    const entered = gate();
+    const release = gate();
+    let signal: AbortSignal | undefined;
+    let abortEvents = 0;
+    app.post("/pending", async (req) => {
+      signal = req.signal;
+      signal.addEventListener("abort", () => abortEvents++, { once: true });
+      entered.open();
+      await release.opened;
+      return { body: req.parsedBody };
+    });
+    wrap(app);
+    const port = await listen(app);
+
+    const client = httpRequest(`http://127.0.0.1:${port}/pending`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+    });
+    client.on("error", () => {});
+    client.end('{"n":1}');
+    try {
+      await entered.opened;
+      expect(signal?.aborted).toBe(false);
+      client.destroy();
+      await expect.poll(() => signal?.aborted, { timeout: 1000 }).toBe(true);
+      expect(abortEvents).toBe(1);
+    } finally {
+      release.open();
+      client.destroy();
+    }
+  });
+
+  it("aborts the signal of a request that an overriding subclass rebuilt", async () => {
+    class Rebuilding extends CelsianApp {
+      override handle(request: Request): Promise<Response> {
+        return super.handle(new Request(request, { headers: new Headers(request.headers) }));
+      }
+    }
+    const app = new Rebuilding({ requestTimeout });
+    const entered = gate();
+    const release = gate();
+    let signal: AbortSignal | undefined;
+    app.get("/pending", async (req) => {
+      signal = req.signal;
+      entered.open();
+      await release.opened;
+      return new Response("done");
+    });
+    const port = await listen(app);
+
+    const client = httpRequest(`http://127.0.0.1:${port}/pending`);
+    client.on("error", () => {});
+    client.end();
+    try {
+      await entered.opened;
+      expect(signal?.aborted).toBe(false);
+      client.destroy();
+      await expect.poll(() => signal?.aborted, { timeout: 1000 }).toBe(true);
+    } finally {
+      release.open();
+      client.destroy();
+    }
+  });
+
+  it("still parses the body of a request that a replaced app.handle rebuilt", async () => {
+    const app = createApp({ requestTimeout });
+    app.post("/echo", (req) => ({ body: req.parsedBody, marked: req.headers.get("x-wrapped") }));
+    const handle = app.handle.bind(app);
+    app.handle = (request) => {
+      const headers = new Headers(request.headers);
+      headers.set("x-wrapped", "1");
+      return handle(new Request(request, { headers }));
+    };
+    const port = await listen(app);
+
+    const res = await fetch(`http://127.0.0.1:${port}/echo`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Ada", n: [1, 2, 3] }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ body: { name: "Ada", n: [1, 2, 3] }, marked: "1" });
+  });
+
+  it("aborts the signal of a Request built from a clone, and of a clone of a clone", async () => {
+    const app = createApp({ requestTimeout });
+    const entered = gate();
+    const release = gate();
+    let rebuilt: AbortSignal | undefined;
+    let twice: AbortSignal | undefined;
+    let cloneBody: string | undefined;
+    app.post("/pending", async (req) => {
+      const clone = req.clone();
+      twice = clone.clone().signal;
+      // What `fetch(clone)` and any proxying code does with it.
+      const upstream = new Request(clone, { headers: { "x-forwarded": "1" } });
+      rebuilt = upstream.signal;
+      cloneBody = await upstream.text();
+      entered.open();
+      await release.opened;
+      return new Response("done");
+    });
+    const port = await listen(app);
+
+    // A content type nothing parses, so the body is still there to clone.
+    const client = httpRequest(`http://127.0.0.1:${port}/pending`, {
+      method: "POST",
+      headers: { "content-type": "application/octet-stream" },
+    });
+    client.on("error", () => {});
+    client.end("payload");
+    try {
+      await entered.opened;
+      expect(cloneBody).toBe("payload");
+      expect(rebuilt?.aborted).toBe(false);
+      expect(twice?.aborted).toBe(false);
+      client.destroy();
+      await expect.poll(() => rebuilt?.aborted, { timeout: 1000 }).toBe(true);
+      await expect.poll(() => twice?.aborted, { timeout: 1000 }).toBe(true);
+    } finally {
+      release.open();
+      client.destroy();
+    }
+  });
+
+  it("gives a clone the method, URL, headers and body of the request", async () => {
+    const app = createApp({ requestTimeout });
+    app.post("/clone", async (req) => {
+      const clone = req.clone();
+      return {
+        isRequest: clone instanceof Request,
+        method: clone.method,
+        path: new URL(clone.url).pathname + new URL(clone.url).search,
+        header: clone.headers.get("x-thing"),
+        usedBefore: clone.bodyUsed,
+        text: await clone.text(),
+        usedAfter: clone.bodyUsed,
+        original: await req.text(),
+      };
+    });
+    const port = await listen(app);
+
+    const res = await fetch(`http://127.0.0.1:${port}/clone?a=1`, {
+      method: "POST",
+      headers: { "content-type": "application/octet-stream", "x-thing": "yes" },
+      body: "h\u00e9llo",
+    });
+    expect(await res.json()).toEqual({
+      isRequest: true,
+      method: "POST",
+      path: "/clone?a=1",
+      header: "yes",
+      usedBefore: false,
+      text: "h\u00e9llo",
+      usedAfter: true,
+      original: "h\u00e9llo",
+    });
   });
 
   it("does not abort after the response, whether the signal was read during the request or only afterwards", async () => {

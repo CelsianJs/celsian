@@ -347,20 +347,26 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
    * answers synchronously with a fast response, and a promise otherwise.
    */
   const answer = (req: IncomingMessage, res: ServerResponse, requestUrl: string | URL): Promise<void> | undefined => {
+    // An app whose `handle` was replaced or overridden keeps going through
+    // it, and that code is handed the Request itself. It may rebuild it
+    // (`handle(new Request(request, { headers }))`), and a rebuilt Request
+    // follows the signal the original holds internally, not the one its
+    // `signal` property reports. So such an app gets a Request built with its
+    // signal, as every Request was before signals became lazy.
+    const stock = app.handle === CelsianApp.prototype.handle;
+
     // Build Web Request with raw path (let the app do fast URL parsing)
     let webRequest: Request;
     try {
-      webRequest = nodeToWebRequestFast(req, requestUrl);
+      webRequest = nodeToWebRequestFast(req, requestUrl, !stock);
     } catch {
       throw new HttpError(400, "Bad Request");
     }
 
     // The app's internal entry point can answer without a promise, and with a
     // fast response whose final headers are still beside it, which
-    // writeOutgoing sends as is. An app whose `handle` was replaced or
-    // overridden keeps going through it.
-    const response =
-      app.handle === CelsianApp.prototype.handle ? dispatchRequest(app, webRequest) : app.handle(webRequest);
+    // writeOutgoing sends as is.
+    const response = stock ? dispatchRequest(app, webRequest) : app.handle(webRequest);
     if (response instanceof Promise) return response.then((settled) => writeOutgoing(res, settled));
     return writeOutgoing(res, response);
   };
@@ -875,6 +881,12 @@ function nodeRequestSignal(req: IncomingMessage): AbortSignal {
 // request was answered gets a signal in the state the eager one would be in by
 // then: aborted if the request was aborted before it was answered, otherwise
 // not aborted and never going to be.
+//
+// What the property cannot reach is the signal a Request holds internally,
+// which is the one `new Request(request, init)` and `fetch(request)` follow.
+// A lazy Request's internal signal never aborts. Only core sees such a
+// Request, with two exceptions that are therefore built with a real signal:
+// the Request handed to a replaced `app.handle`, and any clone.
 
 /** The transport signal of a Node request, once something has read it. On the IncomingMessage, so a clone shares it. */
 const TRANSPORT_SIGNAL = Symbol("celsian.transportSignal");
@@ -922,9 +934,14 @@ class NodeRequest extends BaseRequest {
     // Cloning tees the body stream, and both halves read from the Node stream
     // through it. The body parser must then do the same.
     clearNodeBody(this);
-    const copy = super.clone() as NodeRequest;
-    Object.setPrototypeOf(copy, NodeRequest.prototype);
-    copy[INCOMING] = this[INCOMING];
+    // A clone leaves core: `request.clone()` in a handler returns it. So it is
+    // rebuilt around the transport signal, which makes that the signal it
+    // holds internally as well as the one it reports. A Request made from the
+    // clone (`new Request(clone, init)`, `fetch(clone)`) then still aborts when
+    // the client goes away. Costs a second Request, on clone() only.
+    const incoming = this[INCOMING];
+    const copy = new NodeRequest(super.clone(), { signal: transportSignal(incoming) });
+    copy[INCOMING] = incoming;
     return copy;
   }
 }
@@ -967,8 +984,11 @@ export function nodeToWebRequest(req: IncomingMessage, url: URL): Request {
 /**
  * Fast variant of nodeToWebRequest using a prebuilt URL string for origin-form.
  * Absolute-form uses its parsed authority instead of the received Host header.
+ *
+ * `eagerSignal` builds the transport signal now and gives it to the Request,
+ * for a Request that code outside core will hold (see {@link NodeRequest}).
  */
-function nodeToWebRequestFast(req: IncomingMessage, url: string | URL): Request {
+function nodeToWebRequestFast(req: IncomingMessage, url: string | URL, eagerSignal: boolean): Request {
   const raw = req.headers;
   // Common case: every header value is a string (Node coalesces duplicates,
   // leaving only set-cookie and a handful as arrays). Pass the plain record
@@ -1004,8 +1024,10 @@ function nodeToWebRequestFast(req: IncomingMessage, url: string | URL): Request 
   const duplex = hasBody ? "half" : undefined;
   let request: Request;
   if (Request === BaseRequest) {
-    // No `signal` is passed: NodeRequest builds it when it is first read.
-    const lazy = new NodeRequest(url, { method, headers, body, duplex });
+    // Normally no `signal` is passed: NodeRequest builds it when it is first read.
+    const lazy = eagerSignal
+      ? new NodeRequest(url, { method, headers, body, duplex, signal: transportSignal(req) })
+      : new NodeRequest(url, { method, headers, body, duplex });
     lazy[INCOMING] = req;
     // Lets the body parser read `req` itself instead of the web stream around it.
     if (hasBody) setNodeBody(lazy, req);
