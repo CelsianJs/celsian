@@ -3,11 +3,12 @@ import * as v from "valibot";
 import { describe, expect, it } from "vitest";
 import { type ZodType, z as zod4 } from "zod";
 // Zod 3 and Zod 4 have COMPLETELY different internals (`_def.typeName` vs
-// `_zod.def.type`), and the docs, the examples, and the repo root all still run
-// Zod 3, so both have to be covered by real packages rather than fixtures.
-// `zod` resolves to 4.x inside this package; the repo root's devDependency is
-// the 3.x build, reached here by explicit path because there is no other way to
-// hold two majors of one package in a single test file.
+// `_zod.def.type`), and the peer range still promises both, so both have to be
+// covered by real packages rather than fixtures. `zod` resolves to 4.x inside
+// this package (and in the examples, since the 4.6.6 advisory fix); the repo
+// root's devDependency is the 3.x build, reached here by explicit path because
+// there is no other way to hold two majors of one package in a single test
+// file.
 import { z as zod3 } from "../../../node_modules/zod/index.js";
 import { fromSchema } from "../src/detect.js";
 import { valibotToJsonSchema, zodToJsonSchema } from "../src/json-schema.js";
@@ -152,6 +153,90 @@ describe("zodToJsonSchema", () => {
     it("returns an empty schema for values that are not Zod schemas", () => {
       expect(zodToJsonSchema(null)).toEqual({});
       expect(zodToJsonSchema({ nope: true })).toEqual({});
+    });
+  });
+
+  // Regression: Zod 4.6 stopped writing its own checks' bounds onto
+  // `_zod.bag`, which was the only place this converter looked. Every
+  // constrained schema was then published as a bare `{ type }`, with no error
+  // anywhere. The `zod 4` block above covers the installed Zod; these pin the
+  // two layouts independently of which 4.x happens to be installed.
+  describe("zod 4 constraint layouts", () => {
+    it("runs against a Zod that no longer fills the bag (4.6+)", () => {
+      const schema = zod4.string().min(2).max(8);
+      expect((schema as unknown as { _zod: { bag: Record<string, unknown> } })._zod.bag).toEqual({});
+      expect(zodToJsonSchema(schema)).toEqual({ type: "string", minLength: 2, maxLength: 8 });
+    });
+
+    it("reads constraints from the checks of a schema whose bag is empty", () => {
+      const json = zodToJsonSchema(
+        zod4.object({
+          email: zod4.email().max(50),
+          slug: zod4.string().startsWith("ab"),
+          exact: zod4.string().length(5),
+          count: zod4.int().min(1).max(10),
+          id32: zod4.int32(),
+          step: zod4.number().multipleOf(5),
+          tags: zod4.array(zod4.string()).min(1).max(3),
+          pair: zod4.array(zod4.number()).length(2),
+        }),
+      );
+
+      expect(json.properties).toEqual({
+        email: { type: "string", format: "email", maxLength: 50 },
+        slug: { type: "string", pattern: "^ab.*" },
+        exact: { type: "string", minLength: 5, maxLength: 5 },
+        count: { type: "integer", minimum: 1, maximum: 10 },
+        id32: { type: "integer", minimum: -2147483648, maximum: 2147483647 },
+        step: { type: "number", multipleOf: 5 },
+        tags: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 3 },
+        pair: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 },
+      });
+    });
+
+    it("keeps exclusive bounds, and the tighter of two bounds", () => {
+      expect(zodToJsonSchema(zod4.number().gt(0).lt(10))).toEqual({
+        type: "number",
+        exclusiveMinimum: 0,
+        exclusiveMaximum: 10,
+      });
+      expect(zodToJsonSchema(zod4.number().positive())).toEqual({ type: "number", exclusiveMinimum: 0 });
+      expect(zodToJsonSchema(zod4.number().gte(1).gt(5))).toEqual({ type: "number", exclusiveMinimum: 5 });
+      expect(zodToJsonSchema(zod4.number().min(5).min(1))).toEqual({ type: "number", minimum: 5 });
+    });
+
+    it("still reads the bag of a Zod 4 that recorded constraints only there", () => {
+      // The shape Zod 4.0 to 4.5 produced, reduced to what the converter reads.
+      // A fixture, because the workspace cannot hold two Zod 4 minors at once.
+      const node = (type: string, bag: Record<string, unknown>) => ({ _zod: { def: { type }, bag } });
+
+      expect(zodToJsonSchema(node("string", { minimum: 2, maximum: 8 }))).toEqual({
+        type: "string",
+        minLength: 2,
+        maxLength: 8,
+      });
+      expect(zodToJsonSchema(node("string", { format: "email", patterns: new Set([/^x$/]) }))).toEqual({
+        type: "string",
+        format: "email",
+      });
+      expect(zodToJsonSchema(node("string", { patterns: new Set([/^ab+$/]) }))).toEqual({
+        type: "string",
+        pattern: "^ab+$",
+      });
+      expect(
+        zodToJsonSchema(
+          node("number", {
+            format: "safeint",
+            minimum: 1,
+            maximum: Number.MAX_SAFE_INTEGER,
+            multipleOf: 5,
+          }),
+        ),
+      ).toEqual({ type: "integer", minimum: 1, multipleOf: 5 });
+      expect(zodToJsonSchema(node("number", { exclusiveMinimum: 0 }))).toEqual({
+        type: "number",
+        exclusiveMinimum: 0,
+      });
     });
   });
 

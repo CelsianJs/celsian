@@ -128,8 +128,9 @@ function literalSchema(values: readonly unknown[]): JsonSchemaObject {
 // Both Zod majors are supported on purpose: the package's peer range is
 // `zod: >=3.0.0` and the branches below exist to honour it. The repository is
 // wired to actually exercise both, and it is easy to undo by accident: the
-// packages dev-depend on Zod 4 while the workspace ROOT stays on Zod 3, which
-// is what `internal/` and the examples resolve. Bumping the root to 4, which
+// packages and the examples depend on Zod 4 while the workspace ROOT keeps a
+// Zod 3 devDependency, which is what `internal/` resolves and what
+// `test/json-schema.test.ts` imports by path. Bumping the root to 4, which
 // Dependabot proposes, would leave every Zod 3 branch here untested while the
 // peer range still promises them. Keep the root on 3 until the peer range drops
 // it.
@@ -249,45 +250,137 @@ const SAFE_INT_MIN = Number.MIN_SAFE_INTEGER;
 const SAFE_INT_MAX = Number.MAX_SAFE_INTEGER;
 
 /**
- * Zod 4 accumulates resolved constraints on `_zod.bag` (`{ minimum, maximum,
- * multipleOf, format, pattern }`), which is far more stable to read than the
- * individual check instances.
+ * The value ranges Zod 4's sized number formats enforce. `safeint` is left out
+ * on purpose: its range is the noise described above.
  */
-function zod4Bag(node: Record<PropertyKey, unknown>): Record<PropertyKey, unknown> {
-  return asRecord(asRecord(node._zod)?.bag) ?? {};
+const ZOD4_NUMBER_FORMAT_RANGES: Record<string, readonly [number, number]> = {
+  int32: [-2147483648, 2147483647],
+  uint32: [0, 4294967295],
+  float32: [-3.4028234663852886e38, 3.4028234663852886e38],
+  float64: [-Number.MAX_VALUE, Number.MAX_VALUE],
+};
+
+/** A numeric or length bound, and whether the bound value itself is excluded. */
+interface Zod4Bound {
+  value: number;
+  exclusive: boolean;
 }
 
-/** True when a Zod 4 numeric check marks its bound exclusive. */
-function zod4HasExclusive(def: Record<PropertyKey, unknown>, checkName: string): boolean {
-  const checks = asArray(def.checks);
-  if (!checks) return false;
-  return checks.some((raw) => {
-    const inner = asRecord(asRecord(asRecord(raw)?._zod)?.def);
-    return inner?.check === checkName && inner.inclusive === false;
-  });
+/** Everything a Zod 4 schema's checks say about it, folded into one record. */
+interface Zod4Constraints {
+  min?: Zod4Bound;
+  max?: Zod4Bound;
+  multipleOf?: number;
+  /** The raw Zod format tag (`email`, `safeint`, `starts_with`, ...). */
+  format?: string;
+  /** The first regex from a check that has no JSON Schema `format` of its own. */
+  pattern?: string;
 }
 
-function zod4String(node: Record<PropertyKey, unknown>, def: Record<PropertyKey, unknown>): JsonSchemaObject {
-  const bag = zod4Bag(node);
-  const json: JsonSchemaObject = { type: "string" };
-  const min = asNumber(bag.minimum);
-  const max = asNumber(bag.maximum);
-  if (min !== undefined) json.minLength = min;
-  if (max !== undefined) json.maxLength = max;
-  const format = asString(bag.format) ?? asString(def.format);
-  const mapped = format !== undefined ? ZOD4_STRING_FORMATS[format] : undefined;
-  if (mapped !== undefined) json.format = mapped;
-  const pattern = zod4Pattern(bag);
-  if (pattern !== undefined && mapped === undefined) json.pattern = pattern;
-  return json;
+/** Keep the tighter of the current lower bound and a new one. */
+function narrowMin(out: Zod4Constraints, value: number | undefined, exclusive: boolean): void {
+  if (value === undefined) return;
+  const current = out.min;
+  if (!current || value > current.value || (value === current.value && exclusive)) out.min = { value, exclusive };
+}
+
+/** Keep the tighter of the current upper bound and a new one. */
+function narrowMax(out: Zod4Constraints, value: number | undefined, exclusive: boolean): void {
+  if (value === undefined) return;
+  const current = out.max;
+  if (!current || value < current.value || (value === current.value && exclusive)) out.max = { value, exclusive };
+}
+
+/** Fold one Zod 4 check definition (`_zod.def` of a check) into `out`. */
+function applyZod4Check(out: Zod4Constraints, check: Record<PropertyKey, unknown>): void {
+  switch (asString(check.check)) {
+    case "greater_than":
+      narrowMin(out, asNumber(check.value), check.inclusive === false);
+      break;
+    case "less_than":
+      narrowMax(out, asNumber(check.value), check.inclusive === false);
+      break;
+    case "min_length":
+      narrowMin(out, asNumber(check.minimum), false);
+      break;
+    case "max_length":
+      narrowMax(out, asNumber(check.maximum), false);
+      break;
+    case "length_equals":
+      narrowMin(out, asNumber(check.length), false);
+      narrowMax(out, asNumber(check.length), false);
+      break;
+    case "multiple_of":
+      out.multipleOf ??= asNumber(check.value);
+      break;
+    case "number_format": {
+      const format = asString(check.format);
+      if (format === undefined) break;
+      out.format = format;
+      const range = ZOD4_NUMBER_FORMAT_RANGES[format];
+      if (range) {
+        narrowMin(out, range[0], false);
+        narrowMax(out, range[1], false);
+      }
+      break;
+    }
+    case "string_format": {
+      const format = asString(check.format);
+      // A format JSON Schema can name wins over one it cannot, whatever the
+      // order: `z.string().email().regex(...)` is still an email.
+      if (format !== undefined && ZOD4_STRING_FORMATS[format] !== undefined) out.format = format;
+      else {
+        out.format ??= format;
+        out.pattern ??= regexSource(check.pattern);
+      }
+      break;
+    }
+  }
 }
 
 /**
- * The regex a Zod 4 string schema enforces. `.regex()` records it in the
- * `patterns` SET rather than as a single `pattern`, so a schema with several
- * regex checks keeps them all; JSON Schema takes one, so the first wins.
+ * The constraints a Zod 4 schema enforces, read from its checks.
+ *
+ * Up to Zod 4.5 every check also wrote its resolved bound onto the schema's
+ * `_zod.bag` (`{ minimum, maximum, format, patterns, ... }`), and this
+ * converter read only that. Zod 4.6 stopped filling the bag for its own checks
+ * (its `toJSONSchema` folds `def.checks` instead), so reading the bag alone
+ * silently published every constrained schema as a bare `{ type }`. The check
+ * definitions have had the same shape across the whole 4.x line, so they are
+ * the source of truth here; the bag is merged afterwards so that what an older
+ * Zod or a third-party check recorded there still counts.
  */
-function zod4Pattern(bag: Record<PropertyKey, unknown>): string | undefined {
+function zod4Constraints(node: Record<PropertyKey, unknown>, def: Record<PropertyKey, unknown>): Zod4Constraints {
+  const out: Zod4Constraints = {};
+
+  // A format schema (`z.email()`, `z.int()`) is its own first check: the check
+  // fields sit on the schema's def next to `type`.
+  if (typeof def.check === "string") applyZod4Check(out, def);
+  for (const raw of asArray(def.checks) ?? []) {
+    const check = asRecord(asRecord(asRecord(raw)?._zod)?.def);
+    if (check) applyZod4Check(out, check);
+  }
+
+  const bag = asRecord(asRecord(node._zod)?.bag);
+  if (bag) {
+    narrowMin(out, asNumber(bag.minimum), false);
+    narrowMin(out, asNumber(bag.exclusiveMinimum), true);
+    narrowMax(out, asNumber(bag.maximum), false);
+    narrowMax(out, asNumber(bag.exclusiveMaximum), true);
+    out.multipleOf ??= asNumber(bag.multipleOf);
+    out.format ??= asString(bag.format);
+    out.pattern ??= zod4BagPattern(bag);
+  }
+  out.format ??= asString(def.format);
+  return out;
+}
+
+/**
+ * The regex an older Zod 4 recorded on the bag. `.regex()` put it in the
+ * `patterns` SET rather than a single `pattern`, so a schema with several regex
+ * checks kept them all; JSON Schema takes one, so the first wins.
+ */
+function zod4BagPattern(bag: Record<PropertyKey, unknown>): string | undefined {
   const single = regexSource(bag.pattern);
   if (single !== undefined) return single;
   const patterns = bag.patterns;
@@ -300,34 +393,44 @@ function zod4Pattern(bag: Record<PropertyKey, unknown>): string | undefined {
   return undefined;
 }
 
-function zod4Number(node: Record<PropertyKey, unknown>, def: Record<PropertyKey, unknown>): JsonSchemaObject {
-  const bag = zod4Bag(node);
-  const format = asString(bag.format) ?? asString(def.format);
-  const isInteger = format !== undefined && /int/i.test(format);
-  const json: JsonSchemaObject = { type: isInteger ? "integer" : "number" };
-  const min = asNumber(bag.minimum);
-  const max = asNumber(bag.maximum);
-  // `z.int()` stamps the JS safe-integer range on every schema. Publishing it
-  // would document a bound the developer never wrote.
-  if (min !== undefined && !(isInteger && min === SAFE_INT_MIN)) {
-    if (zod4HasExclusive(def, "greater_than")) json.exclusiveMinimum = min;
-    else json.minimum = min;
-  }
-  if (max !== undefined && !(isInteger && max === SAFE_INT_MAX)) {
-    if (zod4HasExclusive(def, "less_than")) json.exclusiveMaximum = max;
-    else json.maximum = max;
-  }
-  const multipleOf = asNumber(bag.multipleOf);
-  if (multipleOf !== undefined) json.multipleOf = multipleOf;
+function zod4String(node: Record<PropertyKey, unknown>, def: Record<PropertyKey, unknown>): JsonSchemaObject {
+  const found = zod4Constraints(node, def);
+  const json: JsonSchemaObject = { type: "string" };
+  if (found.min) json.minLength = found.min.value;
+  if (found.max) json.maxLength = found.max.value;
+  const mapped = found.format !== undefined ? ZOD4_STRING_FORMATS[found.format] : undefined;
+  if (mapped !== undefined) json.format = mapped;
+  else if (found.pattern !== undefined) json.pattern = found.pattern;
   return json;
 }
 
-function applyLengthBag(node: Record<PropertyKey, unknown>, json: JsonSchemaObject): void {
-  const bag = zod4Bag(node);
-  const min = asNumber(bag.minimum);
-  const max = asNumber(bag.maximum);
-  if (min !== undefined) json.minItems = min;
-  if (max !== undefined) json.maxItems = max;
+function zod4Number(node: Record<PropertyKey, unknown>, def: Record<PropertyKey, unknown>): JsonSchemaObject {
+  const found = zod4Constraints(node, def);
+  const isInteger = found.format !== undefined && /int/i.test(found.format);
+  const json: JsonSchemaObject = { type: isInteger ? "integer" : "number" };
+  const { min, max } = found;
+  // `z.int()` stamps the JS safe-integer range on every schema. Publishing it
+  // would document a bound the developer never wrote.
+  if (min && !(isInteger && min.value === SAFE_INT_MIN)) {
+    if (min.exclusive) json.exclusiveMinimum = min.value;
+    else json.minimum = min.value;
+  }
+  if (max && !(isInteger && max.value === SAFE_INT_MAX)) {
+    if (max.exclusive) json.exclusiveMaximum = max.value;
+    else json.maximum = max.value;
+  }
+  if (found.multipleOf !== undefined) json.multipleOf = found.multipleOf;
+  return json;
+}
+
+function applyZod4Length(
+  node: Record<PropertyKey, unknown>,
+  def: Record<PropertyKey, unknown>,
+  json: JsonSchemaObject,
+): void {
+  const found = zod4Constraints(node, def);
+  if (found.min) json.minItems = found.min.value;
+  if (found.max) json.maxItems = found.max.value;
 }
 
 function convertZodNode(node: unknown, ctx: ConvertContext): JsonSchemaObject {
@@ -341,9 +444,9 @@ function convertZodNode(node: unknown, ctx: ConvertContext): JsonSchemaObject {
   ctx.seen.add(record);
   ctx.depth += 1;
   try {
-    // Zod 4 keeps its resolved constraints on the schema instance (`_zod.bag`)
-    // rather than on the def, so its converter needs the node itself. Zod 3
-    // puts everything on `_def`.
+    // Zod 4 before 4.6 kept its resolved constraints on the schema instance
+    // (`_zod.bag`) as well as on the def's checks, so its converter takes the
+    // node too. Zod 3 puts everything on `_def`.
     const json = found.version === 4 ? convertZod4(record, found.def, ctx) : convertZod3(found.def, ctx);
     return withDescription(json, record);
   } finally {
@@ -505,7 +608,7 @@ function convertZod4(
       return literalSchema(enumMembers(asRecord(def.entries)));
     case "array": {
       const json: JsonSchemaObject = { type: "array", items: convertZodNode(def.element, ctx) };
-      applyLengthBag(node, json);
+      applyZod4Length(node, def, json);
       return json;
     }
     case "object":
