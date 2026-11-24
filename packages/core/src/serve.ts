@@ -1083,13 +1083,17 @@ function writeOutgoing(res: ServerResponse, out: Outgoing): Promise<void> | unde
   // longer be trusted; take the headers the Response actually carries,
   // which is what inject() and every other runtime report. Still a single
   // writeHead()+end(): only the source of the headers changes.
-  const body = fast.body;
+  let body = fast.body;
   const headers: Record<string, string | string[]> = {};
   const live = peekHeaders(out);
+  let nonAscii = false;
   for (const [key, value] of live) {
-    // Iteration yields each Set-Cookie on its own; they are collected below.
+    // Iteration yields each Set-Cookie on its own (and so checks each one
+    // here); they are collected below.
     if (key !== "set-cookie") headers[key] = value;
+    if (!nonAscii && NON_ASCII.test(value)) nonAscii = true;
   }
+  if (nonAscii && typeof body === "string") body = Buffer.from(body);
   // Always derived from the bytes about to be written, whatever the headers say.
   if (body !== null) headers["content-length"] = contentLengthOf(body);
   const cookies = live.getSetCookie?.() ?? [];
@@ -1104,6 +1108,40 @@ function contentLengthOf(body: string | Uint8Array): string {
   return String(typeof body === "string" ? Buffer.byteLength(body) : body.byteLength);
 }
 
+// ─── Header bytes ───
+//
+// A header value is a byte string: `reply.header("x-name", "café")` means the
+// bytes 63 61 66 E9, which is what `Headers` stores, what inject() reports and
+// what Node writes for a header block sent on its own. But when the first
+// body chunk is a string, Node joins the header block and that chunk into one
+// string and writes it in the BODY's encoding, UTF-8, so the same header goes
+// out as 63 61 66 C3 A9. That is the single write the fast path exists for.
+//
+// So a string body is turned into bytes first whenever a header value holds
+// anything outside ASCII. Node then writes the header block as latin-1 and the
+// body after it, still in one go (the socket is corked across end()). Checking
+// costs one pass over the header values, which Node makes as well to validate
+// them, and nothing is allocated when they are ASCII, which is nearly always.
+
+/** A character that makes a header value's UTF-8 bytes differ from its latin-1 bytes. */
+const NON_ASCII = /[\u0080-\uffff]/;
+
+/** True when a value in `headers` holds a character outside ASCII. */
+function hasNonAsciiValue(headers: Record<string, string>): boolean {
+  for (const key in headers) {
+    if (NON_ASCII.test(headers[key] as string)) return true;
+  }
+  return false;
+}
+
+/** {@link hasNonAsciiValue} for a list of Set-Cookie values. */
+function hasNonAsciiCookie(cookies: readonly string[]): boolean {
+  for (let i = 0; i < cookies.length; i++) {
+    if (NON_ASCII.test(cookies[i] as string)) return true;
+  }
+  return false;
+}
+
 /**
  * Write an already-serialized body with its plain headers in a single
  * `writeHead()+end()`. `headers` is copied, never modified.
@@ -1116,6 +1154,10 @@ function writeFast(
   cookies: readonly string[],
 ): void {
   const headers: Record<string, string | string[]> = { ...plainHeaders };
+  // See "Header bytes" above: a non-ASCII header value needs the body as bytes.
+  if (typeof body === "string" && (hasNonAsciiValue(plainHeaders) || hasNonAsciiCookie(cookies))) {
+    body = Buffer.from(body);
+  }
   // Always derived from the bytes about to be written, whatever the headers say.
   if (body !== null) headers["content-length"] = contentLengthOf(body);
   if (cookies.length > 0) {
