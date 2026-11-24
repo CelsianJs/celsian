@@ -1,6 +1,6 @@
 // @celsian/core, CelsianApp: hook-based server with plugin encapsulation
 
-import { fromSchema, type InferOutput, type StandardSchema } from "@celsian/schema";
+import type { InferOutput, StandardSchema } from "@celsian/schema";
 import { parseBodyIfAny } from "./body-parser.js";
 import { EncapsulationContext, type ScopeRegistry } from "./context.js";
 import { type CronJob, CronScheduler } from "./cron.js";
@@ -34,6 +34,7 @@ import {
 } from "./request.js";
 import { mergeReply } from "./response-merge.js";
 import { resolveResponseSchema } from "./response-schema.js";
+import { ROUTE_VALIDATORS, type RouteWithValidators, responseValidatorFor, validatorFor } from "./route-validators.js";
 import { Router } from "./router.js";
 import { createEnqueue, type TaskDefinition, TaskRegistry, TaskWorker, type TaskWorkerOptions } from "./task.js";
 import {
@@ -1360,7 +1361,7 @@ export class CelsianApp {
   ): Outgoing | Promise<Outgoing> {
     // 5. Schema validation
     if (route.schema) {
-      this.validateRequest(request, route.schema);
+      this.validateRequest(request, route);
     }
 
     // 6. preHandler hooks (skip if empty)
@@ -1520,9 +1521,14 @@ export class CelsianApp {
     return this.finish(response, context.request, context.reply, this.rootScope.onResponse);
   }
 
-  private validateRequest(request: CelsianRequest, schema: NonNullable<InternalRoute["schema"]>): void {
+  private validateRequest(request: CelsianRequest, route: InternalRoute): void {
+    const schema = route.schema;
+    if (!schema) return;
+    // Adapters built when the route was registered, see route-validators.ts.
+    const validators = (route as RouteWithValidators)[ROUTE_VALIDATORS];
+
     if (schema.body) {
-      const bodySchema: StandardSchema = fromSchema(schema.body);
+      const bodySchema: StandardSchema = validatorFor(validators?.body, schema.body);
       const result = bodySchema.validate(request.parsedBody);
       if (!result.success) {
         throw new ValidationError(result.issues ?? []);
@@ -1531,7 +1537,7 @@ export class CelsianApp {
     }
 
     if (schema.querystring) {
-      const querySchema: StandardSchema = fromSchema(schema.querystring);
+      const querySchema: StandardSchema = validatorFor(validators?.querystring, schema.querystring);
       const result = querySchema.validate(request.query);
       if (!result.success) {
         throw new ValidationError(result.issues ?? []);
@@ -1545,7 +1551,7 @@ export class CelsianApp {
     }
 
     if (schema.params) {
-      const paramsSchema: StandardSchema = fromSchema(schema.params);
+      const paramsSchema: StandardSchema = validatorFor(validators?.params, schema.params);
       const result = paramsSchema.validate(request.params);
       if (!result.success) {
         throw new ValidationError(result.issues ?? []);
@@ -1598,7 +1604,9 @@ export class CelsianApp {
       }
     }
 
-    const result = fromSchema(responseSchema).validate(payload);
+    const result = responseValidatorFor((route as RouteWithValidators)[ROUTE_VALIDATORS], responseSchema).validate(
+      payload,
+    );
     if (result.success) return response;
 
     const detail = {
