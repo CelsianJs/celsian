@@ -358,12 +358,23 @@ function contentDisposition(name: string): string {
 // that method is read and then kept, so `reply.json === reply.json` still holds
 // and a request pays for the one or two methods it uses, not for all of them.
 // Assigning to a method (`reply.send = wrapped`) still replaces it on that reply.
+//
+// The closures also meant that a reply's state was not on the object at all,
+// so an object that merely inherits from a reply shared it:
+//
+//   const wrapped = Object.create(reply);   // a plugin's per-request wrapper
+//   wrapped.status(201);                    // sets the reply's status
+//
+// That has to keep working too. So `statusCode` and `sent` are accessors on the
+// prototype over private fields, and every accessor here first finds the reply
+// that `this` is or inherits from (`Reply.of`) and reads, writes and binds
+// there. For a reply itself that is one brand check.
 
 const HEADERS = Symbol("celsian.reply.headers");
 const REQUEST_URL = Symbol("celsian.reply.requestUrl");
 const REQUEST_HEADERS = Symbol("celsian.reply.requestHeaders");
 
-/** What a reply keeps, apart from the public `statusCode` and `sent`. */
+/** What a reply keeps under symbols, with the public `statusCode` and `sent` its accessors expose. */
 interface ReplyState {
   statusCode: number;
   sent: boolean;
@@ -610,8 +621,8 @@ const METHODS = {
 };
 
 class Reply {
-  statusCode = 200;
-  sent = false;
+  #statusCode = 200;
+  #sent = false;
   [HEADERS]: Record<string, string> = {};
   [REPLY_COOKIES]: string[] = [];
   [REQUEST_URL]: string | URL | undefined;
@@ -622,13 +633,59 @@ class Reply {
     this[REQUEST_HEADERS] = requestHeaders;
   }
 
+  /**
+   * The reply that `self` is, or inherits from (`Object.create(reply)`).
+   * `undefined` for anything else, the prototype itself included.
+   */
+  static of(self: object | null): Reply | undefined {
+    let candidate = self;
+    while (candidate !== null) {
+      if (#statusCode in candidate) return candidate;
+      candidate = Object.getPrototypeOf(candidate) as object | null;
+    }
+    return undefined;
+  }
+
+  get statusCode(): number {
+    if (#statusCode in this) return this.#statusCode;
+    const reply = Reply.of(this);
+    // `undefined` only when read off something that is not a reply at all.
+    return (reply === undefined ? undefined : reply.#statusCode) as number;
+  }
+  set statusCode(code: number) {
+    const reply = #statusCode in this ? this : Reply.of(this);
+    if (reply !== undefined) reply.#statusCode = code;
+  }
+
+  get sent(): boolean {
+    if (#sent in this) return this.#sent;
+    const reply = Reply.of(this);
+    return (reply === undefined ? undefined : reply.#sent) as boolean;
+  }
+  set sent(value: boolean) {
+    const reply = #sent in this ? this : Reply.of(this);
+    if (reply !== undefined) reply.#sent = value;
+  }
+
   /** The headers set so far. The object is live: writing to it sets a header. */
   get headers(): Record<string, string> {
     return this[HEADERS];
   }
+
+  /**
+   * What `JSON.stringify(reply)` gave when the reply was a plain object: the
+   * status, the headers and `sent`, then any decoration. Not enumerable.
+   */
+  toJSON(): Record<string, unknown> {
+    const shown: Record<string, unknown> = { statusCode: this.statusCode, headers: this.headers, sent: this.sent };
+    // Own properties: decorations, and any method that was assigned.
+    return Object.assign(shown, this);
+  }
 }
-// `headers` is listed with the reply's other properties, as it was when the reply was a plain object.
-Object.defineProperty(Reply.prototype, "headers", { enumerable: true });
+// Listed with the reply's other properties, as they were when the reply was a plain object.
+for (const name of ["statusCode", "headers", "sent"]) {
+  Object.defineProperty(Reply.prototype, name, { enumerable: true });
+}
 
 type ReplyMethod = (reply: ReplySelf, a?: unknown, b?: unknown, c?: unknown) => unknown;
 
@@ -639,12 +696,17 @@ for (const name of Object.keys(METHODS) as (keyof typeof METHODS)[]) {
   Object.defineProperty(Reply.prototype, name, {
     configurable: true,
     enumerable: true,
-    get(this: ReplySelf & Record<symbol, unknown>) {
-      let bound = this[slot];
+    get(this: object) {
+      // Bound to the reply itself, also when read through an object that
+      // inherits from it, and never to the prototype: a bound copy cached
+      // there would be inherited by every reply.
+      const reply = Reply.of(this) as (ReplySelf & Record<symbol, unknown>) | undefined;
+      if (reply === undefined) return undefined;
+      let bound = reply[slot];
       if (bound === undefined) {
         // No reply method takes more than three arguments.
-        bound = (a?: unknown, b?: unknown, c?: unknown) => method(this, a, b, c);
-        this[slot] = bound;
+        bound = (a?: unknown, b?: unknown, c?: unknown) => method(reply, a, b, c);
+        reply[slot] = bound;
       }
       return bound;
     },

@@ -213,6 +213,171 @@ describe("reply methods detached from the reply", () => {
   });
 });
 
+// A reply's state used to live in closures, not on the object, so an object
+// that merely inherits from a reply shared that state. Plugins build such
+// per-request wrappers (`Object.create(reply)`) to add or override a method.
+describe("an object that inherits from a reply", () => {
+  it("sets the reply's own status and sent through its methods", async () => {
+    const app = createApp();
+    app.get("/wrapped", (_req, reply) => {
+      const wrapped = Object.create(reply) as CelsianReply;
+      wrapped.status(201).header("x-a", "1");
+      wrapped.send("created");
+    });
+
+    const res = await app.inject({ url: "/wrapped" });
+    expect(res.status).toBe(201);
+    expect(res.headers.get("x-a")).toBe("1");
+  });
+
+  it("returns what its methods build", async () => {
+    const app = createApp();
+    app.get("/wrapped", (_req, reply) => {
+      const wrapped = Object.create(reply) as CelsianReply;
+      wrapped.cookie("a", "1", { secure: false });
+      return wrapped.status(202).json({ via: "wrapper" });
+    });
+
+    const res = await app.inject({ url: "/wrapped" });
+    expect(res.status).toBe(202);
+    expect(await res.json()).toEqual({ via: "wrapper" });
+    expect(res.headers.getSetCookie().map((c) => c.split(";")[0])).toEqual(["a=1"]);
+  });
+
+  it("reads and writes statusCode and sent on the reply, in both directions", () => {
+    const reply = createReply();
+    const wrapped = Object.create(reply) as CelsianReply;
+    const twice = Object.create(wrapped) as CelsianReply;
+
+    expect(wrapped.statusCode).toBe(200);
+    expect(wrapped.sent).toBe(false);
+
+    wrapped.statusCode = 404;
+    expect(reply.statusCode).toBe(404);
+    twice.statusCode = 410;
+    expect(reply.statusCode).toBe(410);
+    expect(wrapped.statusCode).toBe(410);
+    reply.statusCode = 201;
+    expect(twice.statusCode).toBe(201);
+
+    wrapped.sent = true;
+    expect(reply.sent).toBe(true);
+    reply.sent = false;
+    expect(twice.sent).toBe(false);
+
+    // Nothing was written onto the wrappers themselves.
+    expect(Reflect.ownKeys(wrapped)).toEqual([]);
+    expect(Reflect.ownKeys(twice)).toEqual([]);
+  });
+
+  it("shares headers and method identity with the reply, and chains back to it", () => {
+    const reply = createReply();
+    const wrapped = Object.create(reply) as CelsianReply;
+
+    // Read through the wrapper first, then through the reply.
+    const viaWrapper = wrapped.json;
+    expect(reply.json).toBe(viaWrapper);
+    expect(wrapped.status(203)).toBe(reply);
+    wrapped.header("x-shared", "yes");
+    expect(reply.headers["x-shared"]).toBe("yes");
+    expect(wrapped.headers).toBe(reply.headers);
+    expect(viaWrapper({}).status).toBe(203);
+    expect(reply.sent).toBe(true);
+  });
+
+  it("keeps a method assigned on the wrapper to the wrapper", async () => {
+    const reply = createReply();
+    const wrapped = Object.create(reply) as CelsianReply;
+    const original = wrapped.json;
+    wrapped.json = (data: unknown) => original({ wrapped: data });
+
+    expect(Object.hasOwn(wrapped, "json")).toBe(true);
+    expect(await wrapped.json({ a: 1 }).json()).toEqual({ wrapped: { a: 1 } });
+    expect(await reply.json({ a: 1 }).json()).toEqual({ a: 1 });
+  });
+});
+
+describe("the reply's shape", () => {
+  it("gives JSON.stringify the status, headers and sent, then decorations", async () => {
+    const reply = createReply();
+    reply.status(201).header("x-a", "1");
+    expect(JSON.parse(JSON.stringify(reply))).toEqual({ statusCode: 201, headers: { "x-a": "1" }, sent: false });
+    expect(Object.keys(JSON.parse(JSON.stringify(reply)))).toEqual(["statusCode", "headers", "sent"]);
+
+    const app = createApp();
+    app.decorateReply("tenant", "acme");
+    let serialized = "";
+    app.get("/x", (_req, reply) => {
+      serialized = JSON.stringify(reply);
+      return reply.json({});
+    });
+    await app.inject({ url: "/x" });
+    expect(JSON.parse(serialized)).toEqual({ statusCode: 200, headers: {}, sent: false, tenant: "acme" });
+
+    // toJSON is not listed with the reply's properties.
+    const listed: string[] = [];
+    for (const key in reply) listed.push(key);
+    expect(listed).not.toContain("toJSON");
+  });
+
+  it("passes a third argument through a detached method", () => {
+    const { redirect } = createReply();
+    const response = redirect("https://checkout.example.com/pay", 303, { allowedHosts: ["checkout.example.com"] });
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("https://checkout.example.com/pay");
+  });
+
+  // The point of the prototype: a request pays for the methods it reads, not
+  // for all of them. Undoing that (binding every method when the reply is
+  // built) changes nothing a handler can see, and used to be caught only by a
+  // GC ceiling with a few percent of margin. This pins it exactly.
+  it("builds no method until it is read, and then only that one", () => {
+    const ownFunctions = (reply: CelsianReply) =>
+      Reflect.ownKeys(reply).filter(
+        (key) => typeof (reply as unknown as Record<PropertyKey, unknown>)[key] === "function",
+      );
+
+    const a = createReply();
+    const b = createReply();
+    expect(ownFunctions(a)).toEqual([]);
+    expect(Object.keys(a)).toEqual([]);
+
+    // One prototype for every reply, with one accessor per method on it.
+    const proto = Object.getPrototypeOf(a) as object;
+    expect(Object.getPrototypeOf(b)).toBe(proto);
+    for (const name of METHODS) {
+      const onA = Object.getOwnPropertyDescriptor(a, name);
+      const shared = Object.getOwnPropertyDescriptor(proto, name);
+      expect(onA, name).toBeUndefined();
+      expect(typeof shared?.get, name).toBe("function");
+    }
+    for (const name of ["statusCode", "sent", "headers"]) {
+      expect(Object.getOwnPropertyDescriptor(a, name), name).toBeUndefined();
+      expect(typeof Object.getOwnPropertyDescriptor(proto, name)?.get, name).toBe("function");
+    }
+
+    void a.json;
+    void a.json;
+    expect(ownFunctions(a)).toHaveLength(1);
+    void a.status;
+    expect(ownFunctions(a)).toHaveLength(2);
+    expect(ownFunctions(b)).toEqual([]);
+    expect(a.json).not.toBe(b.json);
+  });
+
+  it("is not disturbed by reading the accessors off the prototype itself", async () => {
+    const proto = Object.getPrototypeOf(createReply()) as Record<string, unknown>;
+    // Something enumerating the prototype (a debugger, a deep-equality helper).
+    for (const name of [...METHODS, "statusCode", "sent"]) expect(proto[name], name).toBeUndefined();
+    proto.statusCode = 500;
+
+    const reply = createReply();
+    expect(reply.statusCode).toBe(200);
+    expect(await reply.status(201).json({ ok: true }).json()).toEqual({ ok: true });
+    expect(reply.statusCode).toBe(201);
+  });
+});
+
 describe("request.cookies", () => {
   it("parses the Cookie header on first read and returns the same object after", async () => {
     const app = createApp();
