@@ -66,15 +66,20 @@ function resolveSignal(state: FastRequestState): AbortSignal {
 
   // A timeout can still abort this request. Its controller is separate from
   // the transport's, so a timeout never aborts the upstream signal, and the
-  // combined signal keeps following the transport after the handler returns
-  // (a streaming response's producer retains it).
+  // signal keeps following the transport after the handler returns (a
+  // streaming response's producer retains it).
   const controller = timeout === ARMED ? new AbortController() : timeout;
   state[TIMEOUT] = controller;
-  if (typeof AbortSignal.any === "function") {
-    return AbortSignal.any([incoming, controller.signal]);
-  }
-  // Node 20.0 and older edge runtimes predate AbortSignal.any(). Each source
-  // is a request-local signal, so normal completion is garbage-collectable.
+  // The transport is followed with a listener, never with AbortSignal.any().
+  // Node keeps a composite signal that has an "abort" listener in a global set
+  // (gcPersistentSignals) and only lets go of it when the listener is removed.
+  // A handler that leaves a listener on `request.signal` (not `{ once: true }`,
+  // never removed) therefore pinned the composite for the life of the process,
+  // and with it whatever the listener closes over and, once the signal had
+  // aborted, the sources and everything the abort reason's stack reaches: the
+  // IncomingMessage, its socket and its ServerResponse, for every request a
+  // client abandoned. A controller's own signal is in no such set. Everything
+  // here is request-local, so it is collected with the request.
   const abort = () => controller.abort(incoming.reason);
   if (incoming.aborted) abort();
   else {
