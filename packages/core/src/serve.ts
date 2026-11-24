@@ -299,7 +299,98 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
   let baseUrl = `http://${host.includes(":") ? `[${host}]` : host}:${port}`;
   const hasStaticDir = !!options.staticDir;
 
-  const server = http.createServer(async (req: IncomingMessage, res: ServerResponse) => {
+  /**
+   * Serve `req` from `staticDir` when it names a file there. Resolves to true
+   * once the file has been written, false when the app should answer instead.
+   */
+  const serveStatic = async (res: ServerResponse, requestUrl: string | URL): Promise<boolean> => {
+    const url = typeof requestUrl === "string" ? new URL(requestUrl) : requestUrl;
+    const { resolve } = await import("node:path");
+    const staticRoot = resolve(options.staticDir!);
+    // Decode URI and normalize to prevent path traversal (e.g., /../../../etc/passwd).
+    // Malformed percent-encoding (e.g. "/%ZZ") throws URIError, respond 400
+    // rather than letting it crash the async server callback.
+    let decodedPath: string;
+    try {
+      decodedPath = decodeURIComponent(url.pathname);
+    } catch {
+      throw new HttpError(400, "Bad Request");
+    }
+    // `join` first, then confine: a URL path is always absolute ("/app.js"),
+    // and handing that straight to `resolve(root, path)` would let it replace
+    // the root outright, so every request would look like an escape.
+    const filePath = resolve(join(staticRoot, decodedPath));
+    // Containment is delegated to the SAME helper reply.sendFile() uses, so
+    // this second file-serving path cannot drift from it again. It was
+    // lexical-only here (a `startsWith` on the resolved path) while sendFile
+    // had already been hardened with realpath() + O_NOFOLLOW, which meant a
+    // symlink planted inside staticDir served whatever it pointed at:
+    // `GET /avatar.png` returning the contents of `.env` with a 200.
+    //
+    // A rejection falls through to the app handler rather than answering 403,
+    // matching what the lexical check already did for traversal attempts, so
+    // the static layer still never reports on files outside its own root.
+    const file = await readConfinedFile(filePath, { root: staticRoot });
+    if (!file.ok) return false;
+    // Extension comes from the requested path, not the realpath()-resolved
+    // one, so the content-type does not change under the client's feet.
+    const ext = extname(filePath);
+    res.setHeader("content-type", MIME_TYPES[ext] ?? "application/octet-stream");
+    res.setHeader("cache-control", "public, max-age=31536000, immutable");
+    res.end(file.data);
+    return true;
+  };
+
+  /**
+   * Hand `req` to the app and write its answer. Returns `undefined` when the
+   * response was written before this returned, which is every request the app
+   * answers synchronously with a fast response, and a promise otherwise.
+   */
+  const answer = (req: IncomingMessage, res: ServerResponse, requestUrl: string | URL): Promise<void> | undefined => {
+    // Build Web Request with raw path (let the app do fast URL parsing)
+    let webRequest: Request;
+    try {
+      webRequest = nodeToWebRequestFast(req, requestUrl);
+    } catch {
+      throw new HttpError(400, "Bad Request");
+    }
+
+    // The app's internal entry point can answer without a promise, and with a
+    // fast response whose final headers are still beside it, which
+    // writeOutgoing sends as is. An app whose `handle` was replaced or
+    // overridden keeps going through it.
+    const response =
+      app.handle === CelsianApp.prototype.handle ? dispatchRequest(app, webRequest) : app.handle(webRequest);
+    if (response instanceof Promise) return response.then((settled) => writeOutgoing(res, settled));
+    return writeOutgoing(res, response);
+  };
+
+  /** Answer for a request that failed before or while it was written. */
+  const fail = (res: ServerResponse, error: unknown): void => {
+    if (res.destroyed) return;
+    const badRequest = error instanceof HttpError && error.statusCode === 400;
+    if (!badRequest) console.error("[celsian] Unhandled error:", error);
+    if (res.headersSent) res.destroy();
+    else {
+      try {
+        res.statusCode = badRequest ? 400 : 500;
+        res.setHeader("connection", "close");
+        res.end(badRequest ? "Bad Request" : "Internal Server Error");
+      } catch {
+        res.destroy();
+      }
+    }
+  };
+
+  /** Runs once per request, however it ended. */
+  const done = (req: IncomingMessage): void => {
+    requestSignalCleanup.get(req)?.();
+    inFlight--;
+  };
+
+  // Not an async function: a request the app answers synchronously is written
+  // and finished right here, without a promise for the callback itself.
+  const server = http.createServer((req: IncomingMessage, res: ServerResponse) => {
     if (shuttingDown) {
       res.statusCode = 503;
       res.end("Service Unavailable");
@@ -308,83 +399,29 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
 
     inFlight++;
 
+    let pending: Promise<void> | undefined;
     try {
       const requestUrl = nodeRequestUrl(req.url ?? "/", baseUrl);
       // Static files, only parse URL when staticDir is configured
-      if (hasStaticDir) {
-        const url = typeof requestUrl === "string" ? new URL(requestUrl) : requestUrl;
-        const { resolve } = await import("node:path");
-        const staticRoot = resolve(options.staticDir!);
-        // Decode URI and normalize to prevent path traversal (e.g., /../../../etc/passwd).
-        // Malformed percent-encoding (e.g. "/%ZZ") throws URIError, respond 400
-        // rather than letting it crash the async server callback.
-        let decodedPath: string;
-        try {
-          decodedPath = decodeURIComponent(url.pathname);
-        } catch {
-          throw new HttpError(400, "Bad Request");
-        }
-        // `join` first, then confine: a URL path is always absolute ("/app.js"),
-        // and handing that straight to `resolve(root, path)` would let it replace
-        // the root outright, so every request would look like an escape.
-        const filePath = resolve(join(staticRoot, decodedPath));
-        // Containment is delegated to the SAME helper reply.sendFile() uses, so
-        // this second file-serving path cannot drift from it again. It was
-        // lexical-only here (a `startsWith` on the resolved path) while sendFile
-        // had already been hardened with realpath() + O_NOFOLLOW, which meant a
-        // symlink planted inside staticDir served whatever it pointed at:
-        // `GET /avatar.png` returning the contents of `.env` with a 200.
-        //
-        // A rejection falls through to the app handler rather than answering 403,
-        // matching what the lexical check already did for traversal attempts, so
-        // the static layer still never reports on files outside its own root.
-        const file = await readConfinedFile(filePath, { root: staticRoot });
-        if (file.ok) {
-          // Extension comes from the requested path, not the realpath()-resolved
-          // one, so the content-type does not change under the client's feet.
-          const ext = extname(filePath);
-          res.setHeader("content-type", MIME_TYPES[ext] ?? "application/octet-stream");
-          res.setHeader("cache-control", "public, max-age=31536000, immutable");
-          res.end(file.data);
-          return;
-        }
-      }
-
-      // Build Web Request with raw path (let app.handle() do fast URL parsing)
-      let webRequest: Request;
-      try {
-        webRequest = nodeToWebRequestFast(req, requestUrl);
-      } catch {
-        throw new HttpError(400, "Bad Request");
-      }
-
-      // The app's internal entry point can answer with a fast response whose
-      // final headers are still beside it, which writeOutgoing sends as is.
-      // An app whose `handle` was replaced or overridden keeps going through it.
-      const response =
-        app.handle === CelsianApp.prototype.handle
-          ? await dispatchRequest(app, webRequest)
-          : await app.handle(webRequest);
-      await writeOutgoing(res, response);
+      pending = hasStaticDir
+        ? serveStatic(res, requestUrl).then((served) => (served ? undefined : answer(req, res, requestUrl)))
+        : answer(req, res, requestUrl);
     } catch (error) {
-      if (!res.destroyed) {
-        const badRequest = error instanceof HttpError && error.statusCode === 400;
-        if (!badRequest) console.error("[celsian] Unhandled error:", error);
-        if (res.headersSent) res.destroy();
-        else {
-          try {
-            res.statusCode = badRequest ? 400 : 500;
-            res.setHeader("connection", "close");
-            res.end(badRequest ? "Bad Request" : "Internal Server Error");
-          } catch {
-            res.destroy();
-          }
-        }
-      }
-    } finally {
-      requestSignalCleanup.get(req)?.();
-      inFlight--;
+      fail(res, error);
+      done(req);
+      return;
     }
+    if (pending === undefined) {
+      done(req);
+      return;
+    }
+    pending.then(
+      () => done(req),
+      (error) => {
+        fail(res, error);
+        done(req);
+      },
+    );
   });
 
   server.on("connection", (socket: Socket) => {
@@ -895,90 +932,94 @@ function nodeToWebRequestFast(req: IncomingMessage, url: string | URL): Request 
 
 /** Write a Web Standard Response back to a Node.js ServerResponse, preserving Set-Cookie headers. */
 export async function writeWebResponse(res: ServerResponse, response: Response): Promise<void> {
-  return writeOutgoing(res, response);
-}
-
-/** {@link writeWebResponse} for what the app's internal entry point returns. */
-async function writeOutgoing(res: ServerResponse, out: Outgoing): Promise<void> {
   try {
-    if (out instanceof WireResponse) writeWire(res, out);
-    else await writeNodeResponse(res, out);
+    await writeOutgoing(res, response);
   } finally {
     requestSignalCleanup.get(res.req)?.();
   }
 }
 
 /**
- * Write a fast response whose final headers were kept beside it: the body is
- * already serialized, so this is the same single `writeHead()+end()` an
- * untouched fast response gets.
+ * {@link writeWebResponse} for what the app's internal entry point returns.
+ * Returns `undefined` when the response was written in full before this
+ * returned (any fast response), a promise while a body stream is being drained.
  */
-function writeWire(res: ServerResponse, wire: WireResponse): void {
+function writeOutgoing(res: ServerResponse, out: Outgoing): Promise<void> | undefined {
+  if (out instanceof WireResponse) {
+    if (res.destroyed) {
+      void out.source.body?.cancel().catch(() => {});
+      return undefined;
+    }
+    writeFast(res, out.status, out.body, out.headers, out.cookies);
+    return undefined;
+  }
   if (res.destroyed) {
-    void wire.source.body?.cancel().catch(() => {});
-    return;
-  }
-  const body = wire.body;
-  const headers: Record<string, string | string[]> = { ...wire.headers };
-  if (body !== null) {
-    headers["content-length"] = String(typeof body === "string" ? Buffer.byteLength(body) : body.byteLength);
-  }
-  if (wire.cookies.length > 0) {
-    const fromHeader = headers["set-cookie"];
-    headers["set-cookie"] = typeof fromHeader === "string" ? [fromHeader, ...wire.cookies] : (wire.cookies as string[]);
-  }
-  res.writeHead(wire.status, headers);
-  if (body === null) res.end();
-  else res.end(body);
-}
-
-async function writeNodeResponse(res: ServerResponse, response: Response): Promise<void> {
-  if (res.destroyed) {
-    void response.body?.cancel().catch(() => {});
-    return;
+    void out.body?.cancel().catch(() => {});
+    return undefined;
   }
   // Fast path: responses built by reply.json()/send()/html() or the auto-serializer
   // carry their already-serialized body + plain headers. Write them in a single
   // writeHead()+end(), no ReadableStream reader, no async drain, no second socket
   // write, and with an explicit Content-Length (avoids chunked encoding).
-  const fast = getFastPayload(response);
-  if (fast !== undefined) {
-    const body = fast.body;
-    // Always derived from the bytes about to be written, whatever the headers say.
-    const contentLength =
-      body === null ? undefined : String(typeof body === "string" ? Buffer.byteLength(body) : body.byteLength);
-    let headers: Record<string, string | string[]>;
-    if (fast.headersExposed) {
-      // Something read `response.headers` after the Response was built, so it
-      // may have added, replaced or removed a header. The snapshot can no
-      // longer be trusted; take the headers the Response actually carries,
-      // which is what inject() and every other runtime report. Still a single
-      // writeHead()+end(): only the source of the headers changes.
-      headers = {};
-      const live = peekHeaders(response);
-      for (const [key, value] of live) {
-        // Iteration yields each Set-Cookie on its own; they are collected below.
-        if (key !== "set-cookie") headers[key] = value;
-      }
-      if (contentLength !== undefined) headers["content-length"] = contentLength;
-      const cookies = live.getSetCookie?.() ?? [];
-      if (cookies.length > 0) headers["set-cookie"] = cookies;
-    } else {
-      headers = { ...fast.headers };
-      if (contentLength !== undefined) headers["content-length"] = contentLength;
-      if (fast.cookies.length > 0) {
-        // A Set-Cookie put in the plain headers by `reply.header()` is a cookie
-        // too; it goes out alongside the `reply.cookie()` ones, not instead.
-        const fromHeader = headers["set-cookie"];
-        headers["set-cookie"] = typeof fromHeader === "string" ? [fromHeader, ...fast.cookies] : fast.cookies;
-      }
-    }
-    res.writeHead(fast.status, headers);
-    if (body === null) res.end();
-    else res.end(body);
-    return;
+  const fast = getFastPayload(out);
+  if (fast === undefined) return drainResponse(res, out);
+  if (!fast.headersExposed) {
+    writeFast(res, fast.status, fast.body, fast.headers, fast.cookies);
+    return undefined;
   }
+  // Something read `response.headers` after the Response was built, so it
+  // may have added, replaced or removed a header. The snapshot can no
+  // longer be trusted; take the headers the Response actually carries,
+  // which is what inject() and every other runtime report. Still a single
+  // writeHead()+end(): only the source of the headers changes.
+  const body = fast.body;
+  const headers: Record<string, string | string[]> = {};
+  const live = peekHeaders(out);
+  for (const [key, value] of live) {
+    // Iteration yields each Set-Cookie on its own; they are collected below.
+    if (key !== "set-cookie") headers[key] = value;
+  }
+  // Always derived from the bytes about to be written, whatever the headers say.
+  if (body !== null) headers["content-length"] = contentLengthOf(body);
+  const cookies = live.getSetCookie?.() ?? [];
+  if (cookies.length > 0) headers["set-cookie"] = cookies;
+  res.writeHead(fast.status, headers);
+  if (body === null) res.end();
+  else res.end(body);
+  return undefined;
+}
 
+function contentLengthOf(body: string | Uint8Array): string {
+  return String(typeof body === "string" ? Buffer.byteLength(body) : body.byteLength);
+}
+
+/**
+ * Write an already-serialized body with its plain headers in a single
+ * `writeHead()+end()`. `headers` is copied, never modified.
+ */
+function writeFast(
+  res: ServerResponse,
+  status: number,
+  body: string | Uint8Array | null,
+  plainHeaders: Record<string, string>,
+  cookies: readonly string[],
+): void {
+  const headers: Record<string, string | string[]> = { ...plainHeaders };
+  // Always derived from the bytes about to be written, whatever the headers say.
+  if (body !== null) headers["content-length"] = contentLengthOf(body);
+  if (cookies.length > 0) {
+    // A Set-Cookie put in the plain headers by `reply.header()` is a cookie
+    // too; it goes out alongside the `reply.cookie()` ones, not instead.
+    const fromHeader = headers["set-cookie"];
+    headers["set-cookie"] = typeof fromHeader === "string" ? [fromHeader, ...cookies] : (cookies as string[]);
+  }
+  res.writeHead(status, headers);
+  if (body === null) res.end();
+  else res.end(body);
+}
+
+/** Write a Response that has no fast payload: its headers, then its body stream chunk by chunk. */
+async function drainResponse(res: ServerResponse, response: Response): Promise<void> {
   res.statusCode = response.status;
 
   for (const [key, value] of response.headers.entries()) {

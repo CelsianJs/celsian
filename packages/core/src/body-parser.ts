@@ -163,6 +163,9 @@ async function capRequestBody(request: CelsianRequest, bodyLimit: number): Promi
   });
 }
 
+/** A parser registered with `app.addContentTypeParser()`. */
+type ContentTypeParser = (request: Request) => Promise<unknown>;
+
 /**
  * Parse the request body based on Content-Type header.
  * Supports JSON, form-urlencoded, multipart, and plain text.
@@ -171,13 +174,28 @@ async function capRequestBody(request: CelsianRequest, bodyLimit: number): Promi
 export async function parseBody(
   request: CelsianRequest,
   bodyLimit: number,
-  contentTypeParsers: Map<string, (request: Request) => Promise<unknown>>,
+  contentTypeParsers: Map<string, ContentTypeParser>,
 ): Promise<void> {
-  const contentType = request.headers.get("content-type") ?? "";
+  await parseBodyIfAny(request, bodyLimit, contentTypeParsers);
+}
 
-  if (request.method === "GET" || request.method === "HEAD") {
-    return;
-  }
+/**
+ * {@link parseBody} that stays synchronous when there is nothing to parse.
+ *
+ * Returns `undefined`, without creating a promise, for GET and HEAD and for a
+ * content type no parser handles (a missing one included). That is every
+ * request that has no body to read, so a lifecycle with no other asynchronous
+ * step can answer in the same tick. Otherwise returns the parse in progress.
+ */
+export function parseBodyIfAny(
+  request: CelsianRequest,
+  bodyLimit: number,
+  contentTypeParsers: Map<string, ContentTypeParser>,
+): Promise<void> | undefined {
+  const method = request.method;
+  if (method === "GET" || method === "HEAD") return undefined;
+
+  const contentType = request.headers.get("content-type") ?? "";
 
   // Check custom content-type parsers (exact match then prefix match).
   // bodyLimit is enforced for custom parsers too: the body is pre-read through
@@ -186,12 +204,35 @@ export async function parseBody(
   if (contentTypeParsers.size > 0) {
     for (const [registeredType, parser] of contentTypeParsers) {
       if (contentType === registeredType || contentType.startsWith(registeredType)) {
-        request.parsedBody = await parser(await capRequestBody(request, bodyLimit));
-        return;
+        return parseWithCustomParser(request, bodyLimit, parser);
       }
     }
   }
 
+  if (
+    contentType.includes("application/json") ||
+    contentType.includes("application/x-www-form-urlencoded") ||
+    contentType.includes("multipart/form-data") ||
+    contentType.includes("text/")
+  ) {
+    return parseBuiltIn(request, bodyLimit, contentType);
+  }
+
+  // No Content-Type header, or one nothing here parses: skip parsing.
+  // Callers must set Content-Type to get automatic body parsing.
+  return undefined;
+}
+
+async function parseWithCustomParser(
+  request: CelsianRequest,
+  bodyLimit: number,
+  parser: ContentTypeParser,
+): Promise<void> {
+  request.parsedBody = await parser(await capRequestBody(request, bodyLimit));
+}
+
+/** Parse a JSON, form, multipart or text body. `contentType` is known to be one of them. */
+async function parseBuiltIn(request: CelsianRequest, bodyLimit: number, contentType: string): Promise<void> {
   try {
     if (contentType.includes("application/json")) {
       try {
@@ -210,12 +251,9 @@ export async function parseBody(
       contentType.includes("multipart/form-data")
     ) {
       request.parsedBody = await parseFormData(request, bodyLimit);
-    } else if (contentType.includes("text/")) {
+    } else {
+      // text/*
       request.parsedBody = await readBodyText(request, bodyLimit);
-    } else if (!contentType) {
-      // No Content-Type header, skip parsing.
-      // Callers must set Content-Type to get automatic body parsing.
-      return;
     }
   } catch (e) {
     if (e instanceof HttpError) throw e;

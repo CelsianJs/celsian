@@ -1,6 +1,7 @@
 // @celsian/core -- Default error handling and response building
 
 import { HttpError, ValidationError } from "./errors.js";
+import { isThenable, toPromise } from "./hooks.js";
 import type { Logger } from "./logger.js";
 import type { CelsianReply, CelsianRequest, OnErrorHandler } from "./types.js";
 
@@ -44,6 +45,8 @@ function reportServerError(
   console.error(`[celsian] ${describeRequest(request)} failed with ${status}:`, error);
 }
 
+type CustomErrorHandler = (error: Error, request: CelsianRequest, reply: CelsianReply) => Response | Promise<Response>;
+
 /**
  * Process an error through custom handlers, onError hooks, and default formatting.
  * Returns a well-formed JSON Response with appropriate status code.
@@ -52,30 +55,82 @@ export async function handleError(
   error: Error,
   request: CelsianRequest,
   reply: CelsianReply,
-  customHandler: ((error: Error, request: CelsianRequest, reply: CelsianReply) => Response | Promise<Response>) | null,
+  customHandler: CustomErrorHandler | null,
   onErrorHooks: OnErrorHandler[],
   logger?: Logger | null,
 ): Promise<Response> {
+  return handleErrorNow(error, request, reply, customHandler, onErrorHooks, logger);
+}
+
+/**
+ * {@link handleError} that only becomes asynchronous if the custom handler or
+ * an onError hook does. With neither registered, the default response comes
+ * back directly.
+ */
+export function handleErrorNow(
+  error: Error,
+  request: CelsianRequest,
+  reply: CelsianReply,
+  customHandler: CustomErrorHandler | null,
+  onErrorHooks: OnErrorHandler[],
+  logger?: Logger | null,
+): Response | Promise<Response> {
   if (customHandler) {
+    let result: unknown;
     try {
-      const result = await customHandler(error, request, reply);
-      if (result instanceof Response) return result;
+      result = customHandler(error, request, reply);
     } catch (handlerError) {
       logHandlerError(logger, "custom error handler failed", handlerError);
     }
+    if (isThenable(result)) {
+      return toPromise(result).then(
+        (settled) =>
+          settled instanceof Response ? settled : runOnErrorHooks(error, request, reply, onErrorHooks, 0, logger),
+        (handlerError) => {
+          logHandlerError(logger, "custom error handler failed", handlerError);
+          return runOnErrorHooks(error, request, reply, onErrorHooks, 0, logger);
+        },
+      );
+    }
+    if (result instanceof Response) return result;
   }
+  return runOnErrorHooks(error, request, reply, onErrorHooks, 0, logger);
+}
 
-  for (const handler of onErrorHooks) {
+/** Run the onError hooks from index `from`; the first Response one returns is the answer. */
+function runOnErrorHooks(
+  error: Error,
+  request: CelsianRequest,
+  reply: CelsianReply,
+  onErrorHooks: OnErrorHandler[],
+  from: number,
+  logger: Logger | null | undefined,
+): Response | Promise<Response> {
+  for (let i = from; i < onErrorHooks.length; i++) {
+    let result: unknown;
     try {
-      const result = await handler(error, request, reply);
-      if (result instanceof Response) {
-        return result;
-      }
+      result = (onErrorHooks[i] as OnErrorHandler)(error, request, reply);
     } catch (hookError) {
       logHandlerError(logger, "onError hook failed", hookError);
+      continue;
     }
+    if (isThenable(result)) {
+      return toPromise(result).then(
+        (settled) =>
+          settled instanceof Response ? settled : runOnErrorHooks(error, request, reply, onErrorHooks, i + 1, logger),
+        (hookError) => {
+          logHandlerError(logger, "onError hook failed", hookError);
+          return runOnErrorHooks(error, request, reply, onErrorHooks, i + 1, logger);
+        },
+      );
+    }
+    if (result instanceof Response) return result;
   }
+  return defaultErrorResponse(error, request, logger);
+}
 
+/** The JSON response for an error nothing else answered. */
+function defaultErrorResponse(error: Error, request: CelsianRequest, logger: Logger | null | undefined): Response {
   if (error instanceof ValidationError) {
     return new Response(JSON.stringify(error.toJSON()), {
       status: 400,
