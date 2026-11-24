@@ -384,7 +384,7 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
 
   /** Runs once per request, however it ended. */
   const done = (req: IncomingMessage): void => {
-    requestSignalCleanup.get(req)?.();
+    endTransportSignal(req);
     inFlight--;
   };
 
@@ -860,6 +860,83 @@ function nodeRequestSignal(req: IncomingMessage): AbortSignal {
   return controller.signal;
 }
 
+// ─── The transport signal of a request core's own server builds ───
+//
+// `request.signal` has to abort when the client goes away. Wiring that up
+// costs a controller, two listeners and their closures, and handing the signal
+// to `new Request()` costs considerably more: the Request builds a second
+// controller to follow the first, with a WeakRef, a FinalizationRegistry entry
+// and (in Node 22) an error object thrown and caught while it sizes the
+// listener list. Most handlers never read `request.signal`.
+//
+// So the Request is built without a signal, and reading `signal` on it builds
+// the transport signal then. A signal read while the request is in flight is
+// the one `nodeRequestSignal` has always produced. One first read after the
+// request was answered gets a signal in the state the eager one would be in by
+// then: aborted if the request was aborted before it was answered, otherwise
+// not aborted and never going to be.
+
+/** The transport signal of a Node request, once something has read it. On the IncomingMessage, so a clone shares it. */
+const TRANSPORT_SIGNAL = Symbol("celsian.transportSignal");
+/** Set on an IncomingMessage once its request was answered: whether it had been aborted by then. */
+const ABORTED_WHEN_ANSWERED = Symbol("celsian.abortedWhenAnswered");
+/** The IncomingMessage a {@link NodeRequest} was built from. */
+const INCOMING = Symbol("celsian.incomingMessage");
+
+interface TrackedIncoming extends IncomingMessage {
+  [TRANSPORT_SIGNAL]?: AbortSignal;
+  [ABORTED_WHEN_ANSWERED]?: boolean;
+}
+
+function transportSignal(req: TrackedIncoming): AbortSignal {
+  let signal = req[TRANSPORT_SIGNAL];
+  if (signal === undefined) {
+    const abortedWhenAnswered = req[ABORTED_WHEN_ANSWERED];
+    if (abortedWhenAnswered === undefined) {
+      signal = nodeRequestSignal(req);
+    } else {
+      const controller = new AbortController();
+      if (abortedWhenAnswered) controller.abort();
+      signal = controller.signal;
+    }
+    req[TRANSPORT_SIGNAL] = signal;
+  }
+  return signal;
+}
+
+/** The request was answered: stop following the socket, and remember how it stood for a late first read. */
+function endTransportSignal(req: TrackedIncoming): void {
+  requestSignalCleanup.get(req)?.();
+  req[ABORTED_WHEN_ANSWERED] = req.aborted || req.socket.destroyed;
+}
+
+/** The `Request` this module loaded with, which {@link NodeRequest} extends. */
+const BaseRequest = Request;
+
+/** A Request built from a Node request. Identical to a plain one except that `signal` is built on first read. */
+class NodeRequest extends BaseRequest {
+  declare [INCOMING]: TrackedIncoming;
+
+  /** A clone follows the same connection, so it keeps the same transport signal. */
+  override clone(): Request {
+    const copy = super.clone() as NodeRequest;
+    Object.setPrototypeOf(copy, NodeRequest.prototype);
+    copy[INCOMING] = this[INCOMING];
+    return copy;
+  }
+}
+
+// On the prototype, so building a NodeRequest costs nothing extra. Defined
+// here rather than in the class body because `Request` declares `signal` as a
+// property, which a class may not override with an accessor.
+Object.defineProperty(NodeRequest.prototype, "signal", {
+  configurable: true,
+  enumerable: true,
+  get(this: NodeRequest): AbortSignal {
+    return transportSignal(this[INCOMING]);
+  },
+});
+
 /** Convert a Node.js IncomingMessage to a Web Standard Request. */
 export function nodeToWebRequest(req: IncomingMessage, url: URL): Request {
   const headers = new Headers();
@@ -920,13 +997,20 @@ function nodeToWebRequestFast(req: IncomingMessage, url: string | URL): Request 
   const hasBody = method !== "GET" && method !== "HEAD";
 
   // Origin-form's full URL was built by concatenation, without a URL allocation.
-  const request = new Request(url, {
-    method,
-    headers,
-    body: hasBody ? (req as unknown as ReadableStream) : undefined,
-    duplex: hasBody ? "half" : undefined,
-    signal: nodeRequestSignal(req),
-  });
+  const body = hasBody ? (req as unknown as ReadableStream) : undefined;
+  const duplex = hasBody ? "half" : undefined;
+  let request: Request;
+  if (Request === BaseRequest) {
+    // No `signal` is passed: NodeRequest builds it when it is first read.
+    const lazy = new NodeRequest(url, { method, headers, body, duplex });
+    lazy[INCOMING] = req;
+    request = lazy;
+  } else {
+    // The global Request has been replaced since this module loaded (a
+    // polyfill, an instrumentation wrapper). NodeRequest extends the original,
+    // so build the request the replacement's own way, signal included.
+    request = new Request(url, { method, headers, body, duplex, signal: nodeRequestSignal(req) });
+  }
   return setRemoteAddress(request, req.socket?.remoteAddress);
 }
 

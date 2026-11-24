@@ -6,35 +6,35 @@
     "json": {
       "promises": 3,
       "timers": 1,
-      "AbortController": 2,
+      "AbortController": 1,
       "Request": 1,
       "Response": 1,
       "Headers": 0,
       "ReadableStream": 1,
       "URL": 1,
-      "minorGCs": 553
+      "minorGCs": 432
     },
     "body": {
       "promises": 45,
       "timers": 2,
-      "AbortController": 2,
+      "AbortController": 1,
       "Request": 1,
       "Response": 1,
       "Headers": 0,
       "ReadableStream": 3,
       "URL": 1,
-      "minorGCs": 1110
+      "minorGCs": 1006
     },
     "params": {
       "promises": 3,
       "timers": 1,
-      "AbortController": 2,
+      "AbortController": 1,
       "Request": 1,
       "Response": 1,
       "Headers": 0,
       "ReadableStream": 1,
       "URL": 1,
-      "minorGCs": 571
+      "minorGCs": 445
     },
     "notFound": {
       "promises": 3,
@@ -45,40 +45,40 @@
       "Headers": 0,
       "ReadableStream": 1,
       "URL": 2,
-      "minorGCs": 664
+      "minorGCs": 597
     },
     "error": {
       "promises": 3,
       "timers": 1,
-      "AbortController": 2,
+      "AbortController": 1,
       "Request": 1,
       "Response": 1,
       "Headers": 0,
       "ReadableStream": 1,
       "URL": 1,
-      "minorGCs": 827
+      "minorGCs": 703
     },
     "headers": {
       "promises": 3,
       "timers": 1,
-      "AbortController": 2,
+      "AbortController": 1,
       "Request": 1,
       "Response": 1,
       "Headers": 0,
       "ReadableStream": 1,
       "URL": 1,
-      "minorGCs": 664
+      "minorGCs": 537
     },
     "validated": {
       "promises": 45,
       "timers": 2,
-      "AbortController": 2,
+      "AbortController": 1,
       "Request": 1,
       "Response": 1,
       "Headers": 0,
       "ReadableStream": 3,
       "URL": 1,
-      "minorGCs": 1232
+      "minorGCs": 1109
     }
   }
 }
