@@ -121,6 +121,118 @@ describe("request timeout: one timer", () => {
   });
 });
 
+// The timer is only set when the lifecycle first goes asynchronous, but the
+// deadline is the one a timer set at the start of the request would have had.
+describe("request timeout: counted from the start of the request", () => {
+  /** Keep the thread busy, as a handler doing synchronous work does. */
+  const block = (ms: number) => {
+    const end = performance.now() + ms;
+    while (performance.now() < end);
+  };
+
+  it("counts synchronous work in the handler before its first await", async () => {
+    const app = createApp({ requestTimeout: 400 });
+    let finished = false;
+    app.get("/work", async () => {
+      block(300);
+      await sleep(250);
+      finished = true;
+      return { done: true };
+    });
+
+    const started = performance.now();
+    const response = await app.handle(new Request("http://localhost/work"));
+    const took = performance.now() - started;
+
+    // 300 ms of work and a 250 ms wait under a 400 ms timeout: out of time
+    // during the wait, about 400 ms in, not 550 ms in with a 200. (No upper
+    // bound on the time: a busy machine may run the timer late, never early.)
+    expect(response.status).toBe(504);
+    expect(finished).toBe(false);
+    expect(took).toBeGreaterThanOrEqual(395);
+  });
+
+  it("counts synchronous work in hooks that ran before an asynchronous handler", async () => {
+    const app = createApp({ requestTimeout: 300 });
+    app.addHook("onRequest", () => block(120));
+    app.addHook("preHandler", () => block(120));
+    app.get("/work", async () => {
+      await sleep(200);
+      return { done: true };
+    });
+
+    const response = await app.handle(new Request("http://localhost/work"));
+    expect(response.status).toBe(504);
+  });
+
+  it("answers normally when the work and the wait together fit inside the timeout", async () => {
+    const app = createApp({ requestTimeout: 2000 });
+    app.get("/work", async () => {
+      block(100);
+      await sleep(50);
+      return { done: true };
+    });
+
+    const response = await app.handle(new Request("http://localhost/work"));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ done: true });
+  });
+
+  it("still answers when synchronous work overran the timeout but nothing is waited on afterwards", async () => {
+    // A timer cannot interrupt synchronous work. One set at the start of the
+    // request would be overdue here, and the answer, which needs no further
+    // turn of the event loop, would still arrive before it fired.
+    const app = createApp({ requestTimeout: 50 });
+    app.get("/work", async () => {
+      block(120);
+      await Promise.resolve();
+      return { done: true };
+    });
+
+    const response = await app.handle(new Request("http://localhost/work"));
+    expect(response.status).toBe(200);
+  });
+
+  it("times out a wait that starts after the deadline has already passed", async () => {
+    const app = createApp({ requestTimeout: 50 });
+    let finished = false;
+    app.get("/work", async () => {
+      block(120);
+      await sleep(100);
+      finished = true;
+      return { done: true };
+    });
+
+    const response = await app.handle(new Request("http://localhost/work"));
+    expect(response.status).toBe(504);
+    expect(finished).toBe(false);
+  });
+
+  it("gives a request that went asynchronous at once the configured duration exactly", async () => {
+    vi.useFakeTimers();
+    const app = createApp({ requestTimeout: 1000 });
+    app.get("/pending", async () => {
+      await new Promise(() => {});
+    });
+
+    const spy = vi.spyOn(globalThis, "setTimeout");
+    const pending = app.handle(new Request("http://localhost/pending"));
+    await vi.advanceTimersByTimeAsync(0);
+    // The duration itself, not 999.97: Node keeps timers of one duration in one list.
+    expect(spy.mock.calls.map((call) => call[1])).toEqual([1000]);
+
+    await vi.advanceTimersByTimeAsync(999);
+    let settled = false;
+    void pending.then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect((await pending).status).toBe(504);
+  });
+});
+
 describe("request.signal is built when it is read", () => {
   it("aborts a signal the handler is listening on, before the 504 is returned", async () => {
     const app = createApp({ requestTimeout: 20 });

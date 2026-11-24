@@ -1228,7 +1228,9 @@ export class CelsianApp {
    *
    * The timer is only set once the lifecycle has actually become asynchronous.
    * A lifecycle that returns its answer synchronously cannot be interrupted by
-   * a timer anyway, so it never pays for one.
+   * a timer anyway, so it never pays for one. The deadline is still counted
+   * from the start of the request: whatever the synchronous part took comes
+   * off the timer.
    */
   private runWithTimeout(
     request: CelsianRequest,
@@ -1243,6 +1245,7 @@ export class CelsianApp {
     // From here until the lifecycle settles, the timeout may abort
     // `request.signal`. The signal itself is only built if something reads it.
     armRequestTimeout(request);
+    const started = performance.now();
     let lifecycle: Outgoing | Promise<Outgoing>;
     try {
       lifecycle = this.runLifecycle(request, reply, route, scope);
@@ -1255,6 +1258,15 @@ export class CelsianApp {
       return lifecycle;
     }
     const pending = lifecycle;
+    // Hooks and a handler that worked synchronously before the first
+    // asynchronous step have used part of the timeout already. Usually that is
+    // nothing, and then the timer gets the configured duration itself: Node
+    // keeps timers of one duration in one list, so a server's request timeouts
+    // all share it. Past the deadline already, the timer is due at once, and
+    // as with a timer set at the start, a lifecycle that settles without
+    // waiting on anything still answers first.
+    const elapsed = performance.now() - started;
+    const remaining = elapsed < 1 ? timeout : Math.max(1, Math.ceil(timeout - elapsed));
     // One timer, cleared by whichever way the lifecycle settles. When the timer
     // wins, the lifecycle keeps running and its eventual result is dropped.
     return new Promise<Outgoing>((resolve, reject) => {
@@ -1262,7 +1274,7 @@ export class CelsianApp {
         // Aborted (in addition to rejecting with 504) so in-flight work can stop promptly.
         fireRequestTimeout(request, new HttpError(504, "Gateway Timeout"));
         reject(new HttpError(504, "Gateway Timeout"));
-      }, timeout);
+      }, remaining);
       pending.then(
         (response) => {
           clearTimeout(timer);
