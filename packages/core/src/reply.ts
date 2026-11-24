@@ -365,12 +365,23 @@ function contentDisposition(name: string): string {
 //   const wrapped = Object.create(reply);   // a plugin's per-request wrapper
 //   wrapped.status(201);                    // sets the reply's status
 //
-// That has to keep working too. So `statusCode` and `sent` are accessors on the
-// prototype over private fields, and every accessor here first finds the reply
-// that `this` is or inherits from (`Reply.of`) and reads, writes and binds
-// there. For a reply itself that is one brand check.
+// That has to keep working too, and so does a transparent proxy:
+//
+//   const traced = new Proxy(reply, {});    // or with get/set traps that forward
+//   traced.status(206);                     // sets the reply's status
+//
+// So `statusCode` and `sent` are accessors on the prototype over private
+// fields, and every accessor here first finds the reply that `this` stands for
+// (`Reply.of`) and reads, writes and binds there. A reply holds itself in a
+// symbol-keyed slot (`SELF`), and the accessors read that slot through `this`:
+// an object made with `Object.create(reply)` inherits it, and a proxy forwards
+// the read to its target, so both lead back to the reply. A private field
+// alone could not: a proxy has none of its target's private fields, and its
+// prototype chain skips the target.
 
 const HEADERS = Symbol("celsian.reply.headers");
+/** Where a reply holds itself, for objects that stand for it (see above). */
+const SELF = Symbol("celsian.reply.self");
 const REQUEST_URL = Symbol("celsian.reply.requestUrl");
 const REQUEST_HEADERS = Symbol("celsian.reply.requestHeaders");
 
@@ -623,6 +634,7 @@ const METHODS = {
 class Reply {
   #statusCode = 200;
   #sent = false;
+  [SELF]: Reply = this;
   [HEADERS]: Record<string, string> = {};
   [REPLY_COOKIES]: string[] = [];
   [REQUEST_URL]: string | URL | undefined;
@@ -634,16 +646,13 @@ class Reply {
   }
 
   /**
-   * The reply that `self` is, or inherits from (`Object.create(reply)`).
+   * The reply that `self` stands for: the reply itself, an object that
+   * inherits from it (`Object.create(reply)`), or a proxy of either.
    * `undefined` for anything else, the prototype itself included.
    */
-  static of(self: object | null): Reply | undefined {
-    let candidate = self;
-    while (candidate !== null) {
-      if (#statusCode in candidate) return candidate;
-      candidate = Object.getPrototypeOf(candidate) as object | null;
-    }
-    return undefined;
+  static of(self: object): Reply | undefined {
+    const reply = (self as { [SELF]?: unknown })[SELF];
+    return typeof reply === "object" && reply !== null && #statusCode in reply ? (reply as Reply) : undefined;
   }
 
   get statusCode(): number {

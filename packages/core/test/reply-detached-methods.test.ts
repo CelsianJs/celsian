@@ -297,6 +297,84 @@ describe("an object that inherits from a reply", () => {
   });
 });
 
+// A plugin or a tracing helper may hand a handler a stand-in for the reply
+// rather than the reply: an object that inherits from it, or a proxy. Either
+// must act on the reply. A proxy has none of the reply's private fields and its
+// prototype chain skips the reply, so a check for a private field, or a walk up
+// the prototype chain, finds no reply behind it (statusCode, sent and every
+// method read as undefined, and the route answered 500).
+const STAND_INS: [string, (reply: CelsianReply) => CelsianReply][] = [
+  ["Object.create(reply)", (reply) => Object.create(reply) as CelsianReply],
+  ["Object.create(Object.create(reply))", (reply) => Object.create(Object.create(reply)) as CelsianReply],
+  ["new Proxy(reply, {})", (reply) => new Proxy(reply, {})],
+  [
+    "a proxy whose get and set traps forward with the receiver",
+    (reply) =>
+      new Proxy(reply, {
+        get: (target, key, receiver) => Reflect.get(target, key, receiver),
+        set: (target, key, value, receiver) => Reflect.set(target, key, value, receiver),
+      }),
+  ],
+  [
+    "a proxy whose get and set traps forward without the receiver",
+    (reply) =>
+      new Proxy(reply, {
+        get: (target, key) => Reflect.get(target, key),
+        set: (target, key, value) => Reflect.set(target, key, value),
+      }),
+  ],
+  ["a proxy of Object.create(reply)", (reply) => new Proxy(Object.create(reply) as CelsianReply, {})],
+  ["Object.create() of a proxy", (reply) => Object.create(new Proxy(reply, {})) as CelsianReply],
+];
+
+describe("a stand-in for the reply, on a real route", () => {
+  it.each(STAND_INS)("%s: methods, status and headers reach the reply", async (_name, standIn) => {
+    const app = createApp();
+    let seen: Record<string, unknown> = {};
+    app.get("/partial", (_req, reply) => {
+      const wrapped = standIn(reply);
+      seen = {
+        statusCode: wrapped.statusCode,
+        sent: wrapped.sent,
+        sameJson: wrapped.json === reply.json,
+        sameHeaders: wrapped.headers === reply.headers,
+      };
+      wrapped.header("x-app", "kept");
+      return wrapped.status(206).send("partial");
+    });
+
+    const res = await app.inject({ url: "/partial" });
+    expect(seen).toEqual({ statusCode: 200, sent: false, sameJson: true, sameHeaders: true });
+    expect(res.status).toBe(206);
+    expect(res.headers.get("x-app")).toBe("kept");
+    expect(await res.text()).toBe("partial");
+  });
+
+  it.each(STAND_INS)("%s: assigned status and a send with no return answer as the reply", async (_name, standIn) => {
+    const app = createApp();
+    let after: Record<string, unknown> = {};
+    app.get("/created", (_req, reply) => {
+      const wrapped = standIn(reply);
+      wrapped.statusCode = 201;
+      wrapped.cookie("a", "1", { secure: false });
+      wrapped.send("created");
+      after = { reply: reply.statusCode, wrapped: wrapped.statusCode, sent: reply.sent, wrappedSent: wrapped.sent };
+    });
+
+    const res = await app.inject({ url: "/created" });
+    expect(after).toEqual({ reply: 201, wrapped: 201, sent: true, wrappedSent: true });
+    expect(res.status).toBe(201);
+    expect(res.headers.getSetCookie().map((c) => c.split(";")[0])).toEqual(["a=1"]);
+  });
+
+  it("finds no reply behind an object that only claims to be one", () => {
+    const proto = Object.getPrototypeOf(createReply()) as object;
+    const impostor = Object.create(proto) as CelsianReply;
+    expect(impostor.statusCode).toBeUndefined();
+    expect(impostor.json).toBeUndefined();
+  });
+});
+
 describe("the reply's shape", () => {
   it("gives JSON.stringify the status, headers and sent, then decorations", async () => {
     const reply = createReply();
