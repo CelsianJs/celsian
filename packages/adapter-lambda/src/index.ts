@@ -236,7 +236,15 @@ async function convertResponse(response: Response): Promise<ConvertedResponse> {
     contentType.includes("application/x-www-form-urlencoded") ||
     contentType.includes("+json") ||
     contentType.includes("+xml");
-  const isBinary = contentType !== "" && !isText;
+  // A response with a Content-Encoding is compressed bytes whatever its
+  // Content-Type says. The type describes the payload BEFORE encoding, so
+  // `application/json` + `content-encoding: gzip` (what @celsian/compress
+  // produces) used to be classified as text, read with `response.text()` and
+  // returned with `isBase64Encoded: false`. Decoding gzip as UTF-8 replaces
+  // every invalid byte sequence with U+FFFD, so the client received a body
+  // labelled gzip that no longer gunzips. Encoded bodies always go out base64.
+  const isEncoded = (response.headers.get("content-encoding") ?? "").trim() !== "";
+  const isBinary = isEncoded || (contentType !== "" && !isText);
 
   let body: string | undefined;
   let isBase64Encoded = false;
