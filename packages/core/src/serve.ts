@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Socket } from "node:net";
 import type { CelsianApp } from "./app.js";
 import { HttpError } from "./errors.js";
-import { getFastPayload } from "./fast-response.js";
+import { getFastPayload, peekHeaders } from "./fast-response.js";
 import { readConfinedFile } from "./reply.js";
 import { setRemoteAddress } from "./request.js";
 import { authorizeWSUpgrade, type WSAllowedOrigins, WSConnectionLimiter } from "./websocket.js";
@@ -908,15 +908,34 @@ async function writeNodeResponse(res: ServerResponse, response: Response): Promi
   const fast = getFastPayload(response);
   if (fast !== undefined) {
     const body = fast.body;
-    const headers: Record<string, string | string[]> = { ...fast.headers };
-    if (body !== null) {
-      headers["content-length"] = String(typeof body === "string" ? Buffer.byteLength(body) : body.byteLength);
-    }
-    if (fast.cookies.length > 0) {
-      // A Set-Cookie put in the plain headers by `reply.header()` is a cookie
-      // too; it goes out alongside the `reply.cookie()` ones, not instead.
-      const fromHeader = headers["set-cookie"];
-      headers["set-cookie"] = typeof fromHeader === "string" ? [fromHeader, ...fast.cookies] : fast.cookies;
+    // Always derived from the bytes about to be written, whatever the headers say.
+    const contentLength =
+      body === null ? undefined : String(typeof body === "string" ? Buffer.byteLength(body) : body.byteLength);
+    let headers: Record<string, string | string[]>;
+    if (fast.headersExposed) {
+      // Something read `response.headers` after the Response was built, so it
+      // may have added, replaced or removed a header. The snapshot can no
+      // longer be trusted; take the headers the Response actually carries,
+      // which is what inject() and every other runtime report. Still a single
+      // writeHead()+end(): only the source of the headers changes.
+      headers = {};
+      const live = peekHeaders(response);
+      for (const [key, value] of live) {
+        // Iteration yields each Set-Cookie on its own; they are collected below.
+        if (key !== "set-cookie") headers[key] = value;
+      }
+      if (contentLength !== undefined) headers["content-length"] = contentLength;
+      const cookies = live.getSetCookie?.() ?? [];
+      if (cookies.length > 0) headers["set-cookie"] = cookies;
+    } else {
+      headers = { ...fast.headers };
+      if (contentLength !== undefined) headers["content-length"] = contentLength;
+      if (fast.cookies.length > 0) {
+        // A Set-Cookie put in the plain headers by `reply.header()` is a cookie
+        // too; it goes out alongside the `reply.cookie()` ones, not instead.
+        const fromHeader = headers["set-cookie"];
+        headers["set-cookie"] = typeof fromHeader === "string" ? [fromHeader, ...fast.cookies] : fast.cookies;
+      }
     }
     res.writeHead(fast.status, headers);
     if (body === null) res.end();

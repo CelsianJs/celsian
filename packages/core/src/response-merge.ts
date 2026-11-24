@@ -1,5 +1,6 @@
 // @celsian/core -- Carry the reply's headers and cookies onto a finished Response
 
+import { peekHeaders } from "./fast-response.js";
 import { replyCookies } from "./reply.js";
 import type { CelsianReply } from "./types.js";
 
@@ -52,25 +53,28 @@ export function mergeReplyIntoResponse(
 ): Response {
   const replyHeaders = reply.headers;
   let merged: Headers | null = null;
+  // The Response's own headers are only ever READ below (a change is always
+  // made on a copy), so they are peeked at: these lookups must not mark a fast
+  // response's headers as handed out and push it off the Node fast write.
 
   for (const key in replyHeaders) {
     const value = replyHeaders[key];
     if (typeof value !== "string") continue;
     const name = key.toLowerCase();
     if (name === "set-cookie") continue;
-    const current = (merged ?? response.headers).get(name);
+    const current = (merged ?? peekHeaders(response)).get(name);
     if (current === value) continue;
     if (current === null) {
-      merged ??= new Headers(response.headers);
+      merged ??= new Headers(peekHeaders(response));
       merged.set(name, value);
     } else if (name === "vary") {
       const union = unionVary(current, value);
       if (union !== current) {
-        merged ??= new Headers(response.headers);
+        merged ??= new Headers(peekHeaders(response));
         merged.set(name, union);
       }
     } else if (shown !== null && shown[key] === current) {
-      merged ??= new Headers(response.headers);
+      merged ??= new Headers(peekHeaders(response));
       merged.set(name, value);
     }
   }
@@ -78,12 +82,12 @@ export function mergeReplyIntoResponse(
   const headerCookie = replyHeaders["set-cookie"];
   const cookies = replyCookies(reply);
   if (typeof headerCookie === "string" || cookies.length > 0) {
-    const present = setCookiesOf(merged ?? response.headers);
+    const present = setCookiesOf(merged ?? peekHeaders(response));
     const pending = typeof headerCookie === "string" ? [headerCookie, ...cookies] : cookies;
     for (const cookie of pending) {
       if (present.includes(cookie)) continue;
       present.push(cookie);
-      merged ??= new Headers(response.headers);
+      merged ??= new Headers(peekHeaders(response));
       merged.append("set-cookie", cookie);
     }
   }
