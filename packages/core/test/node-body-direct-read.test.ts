@@ -303,6 +303,34 @@ describe("with no body limit", () => {
     expect(stream.readableDidRead).toBe(false);
   });
 
+  it("does not hold a declared length against a limit of 0", async () => {
+    const declared = () =>
+      new Request("http://localhost/x", {
+        method: "POST",
+        headers: { "content-type": "text/plain", "content-length": "5" },
+        body: "hello",
+      });
+    expect(await readBodyText(declared(), 0)).toBe("hello");
+    await expect(readBodyText(declared(), 4)).rejects.toMatchObject({ statusCode: 413 });
+
+    const app = createApp({ bodyLimit: 0 });
+    app.post("/echo", (req) => ({ got: req.parsedBody }));
+    for (const [contentType, payload, got] of [
+      ["application/json", '{"a":1}', { a: 1 }],
+      ["text/plain", "hello", "hello"],
+    ] as const) {
+      const res = await app.handle(
+        new Request("http://localhost/echo", {
+          method: "POST",
+          headers: { "content-type": contentType, "content-length": String(payload.length) },
+          body: payload,
+        }),
+      );
+      expect(res.status, contentType).toBe(200);
+      expect(await res.json()).toEqual({ got });
+    }
+  });
+
   describe("over a real socket", () => {
     let server: ServeResult | undefined;
     let port = 0;
@@ -359,6 +387,33 @@ describe("with no body limit", () => {
       });
       expect(await post("application/x-custom", "raw")).toEqual({ status: 200, body: { got: "custom:raw" } });
       // Past the default 1 MB limit, which is not in force.
+      const large = await post("application/json", JSON.stringify({ big }));
+      expect(large.status).toBe(200);
+      expect((large.body.got as { big: string }).big.length).toBe(big.length);
+    });
+
+    it("accepts bodies that declare their length, as nearly every client does", async () => {
+      const app = createApp({ bodyLimit: 0 });
+      app.post("/echo", (req, reply) => {
+        const body = req.parsedBody;
+        return reply.json({ got: body instanceof FormData ? Object.fromEntries(body.entries()) : body });
+      });
+      const base = await listen(app);
+      const post = async (contentType: string, body: string) => {
+        const res = await fetch(`${base}/echo`, { method: "POST", headers: { "content-type": contentType }, body });
+        return { status: res.status, body: (await res.json()) as { got: unknown } };
+      };
+
+      expect(await post("application/json", JSON.stringify({ a: 1 }))).toEqual({
+        status: 200,
+        body: { got: { a: 1 } },
+      });
+      expect(await post("text/plain", "hello")).toEqual({ status: 200, body: { got: "hello" } });
+      expect(await post("application/x-www-form-urlencoded", "a=1&b=2")).toEqual({
+        status: 200,
+        body: { got: { a: "1", b: "2" } },
+      });
+      const big = "x".repeat(2 * 1024 * 1024);
       const large = await post("application/json", JSON.stringify({ big }));
       expect(large.status).toBe(200);
       expect((large.body.got as { big: string }).big.length).toBe(big.length);

@@ -123,9 +123,14 @@ function readNodeBody<T>(
  * Rejects with 413 if the body exceeds the limit before reading completes.
  */
 export async function readBodyText(request: Request, limit: number): Promise<string> {
-  const contentLength = request.headers.get("content-length");
-  if (contentLength && parseInt(contentLength, 10) > limit) {
-    throw payloadTooLarge(limit, parseInt(contentLength, 10));
+  // A limit of 0 means no limit, so a declared length is only held against a
+  // real one. Checked unconditionally, `bodyLimit: 0` refused every body that
+  // declared its length, which is nearly every body, with a 413.
+  if (limit > 0) {
+    const contentLength = request.headers.get("content-length");
+    if (contentLength && parseInt(contentLength, 10) > limit) {
+      throw payloadTooLarge(limit, parseInt(contentLength, 10));
+    }
   }
 
   // On core's Node server, read the Node stream itself rather than the web
