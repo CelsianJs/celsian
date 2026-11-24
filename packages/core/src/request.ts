@@ -47,6 +47,56 @@ interface FastRequestState {
   [TIMEOUT]: typeof ARMED | AbortController | TimedOut | undefined;
 }
 
+type AbortListenerAdder = (signal: AbortSignal, listener: () => void) => unknown;
+
+/**
+ * An `addAbortListener` that listens for an abort in a way no other listener
+ * can stop, where the runtime has one: Node's `events.addAbortListener`, and
+ * Bun's. An ordinary listener can be stopped: one added to the same signal
+ * before it that calls `event.stopImmediatePropagation()` keeps it from ever
+ * running. Taken through `process.getBuiltinModule`, so this module loads where
+ * there is no `node:events`, and tried once here, because one runtime's
+ * `addAbortListener` (Deno's) is an ordinary listener.
+ */
+const addAbortListener: AbortListenerAdder | undefined = (() => {
+  const getBuiltinModule = (globalThis as { process?: { getBuiltinModule?: unknown } }).process?.getBuiltinModule;
+  if (typeof getBuiltinModule !== "function") return undefined;
+  try {
+    const events = getBuiltinModule("node:events") as { addAbortListener?: unknown } | undefined;
+    const add = events?.addAbortListener;
+    if (typeof add !== "function") return undefined;
+    const probe = new AbortController();
+    probe.signal.addEventListener("abort", (event) => event.stopImmediatePropagation());
+    let heard = false;
+    add(probe.signal, () => {
+      heard = true;
+    });
+    probe.abort();
+    return heard ? (add as AbortListenerAdder) : undefined;
+  } catch {
+    return undefined;
+  }
+})();
+
+/**
+ * `AbortSignal.any`, off Node, for a runtime with no unstoppable listener
+ * (Deno, workerd): there it is what followed the transport before, and nothing
+ * can stop it either. Never on Node, where a composite signal with a listener
+ * is kept for the life of the process (see resolveSignal); Node without an
+ * unstoppable listener (before 20.16) keeps the ordinary one.
+ */
+const anyOffNode: ((signals: AbortSignal[]) => AbortSignal) | undefined = (() => {
+  if (typeof AbortSignal.any !== "function") return undefined;
+  const proc = (globalThis as { process?: { versions?: Record<string, unknown> } }).process;
+  const userAgent = (globalThis as { navigator?: { userAgent?: unknown } }).navigator?.userAgent;
+  // Node 21 and later name themselves here; Node 20 has no navigator.
+  const node =
+    typeof userAgent === "string"
+      ? userAgent.startsWith("Node.js/")
+      : typeof proc?.versions?.node === "string" && proc.versions.bun === undefined && !("Deno" in globalThis);
+  return node ? undefined : (signals) => AbortSignal.any(signals);
+})();
+
 /**
  * The signal a handler sees: the transport's own, which a request timeout can
  * also abort. Built on first read. Most handlers never read it, and the
@@ -80,10 +130,21 @@ function resolveSignal(state: FastRequestState): AbortSignal {
   // IncomingMessage, its socket and its ServerResponse, for every request a
   // client abandoned. A controller's own signal is in no such set. Everything
   // here is request-local, so it is collected with the request.
+  //
+  // The listener goes on the transport's signal after any the application put
+  // there, so it is one that cannot be stopped: a transport abort that an
+  // earlier listener answered with `stopImmediatePropagation()` must still
+  // reach `request.signal`, as it did when this was AbortSignal.any().
+  // `removeEventListener` takes it off again either way. A runtime with no
+  // such listener, other than Node, follows the transport with
+  // AbortSignal.any() as before.
   const abort = () => controller.abort(incoming.reason);
   if (incoming.aborted) abort();
-  else {
-    incoming.addEventListener("abort", abort, { once: true });
+  else if (addAbortListener === undefined && anyOffNode !== undefined) {
+    return anyOffNode([incoming, controller.signal]);
+  } else {
+    if (addAbortListener !== undefined) addAbortListener(incoming, abort);
+    else incoming.addEventListener("abort", abort, { once: true });
     controller.signal.addEventListener("abort", () => incoming.removeEventListener("abort", abort), { once: true });
   }
   return controller.signal;

@@ -459,6 +459,133 @@ describe.each([0, 30_000])("request.signal on core's Node server, requestTimeout
   });
 });
 
+// request.signal follows the transport with a listener on the transport's
+// signal. That listener is added after any the application put there first,
+// and an ordinary listener does not run when an earlier one calls
+// `event.stopImmediatePropagation()`. With AbortSignal.any(), as on ef8953c,
+// nothing an application listener did could keep the abort from arriving, and
+// it still cannot.
+describe.each([0, 30_000])(
+  "request.signal after another listener stopped the transport's abort event, requestTimeout %i",
+  (requestTimeout) => {
+    /** A listener that keeps every later listener on the same signal from running. */
+    const stopper = (event: Event) => event.stopImmediatePropagation();
+
+    it("aborts with the transport's reason when the abort comes during the handler", async () => {
+      const transport = new AbortController();
+      const input = new Request("http://localhost/x", { signal: transport.signal });
+      input.signal.addEventListener("abort", stopper);
+      const app = createApp({ requestTimeout });
+      const heard: unknown[] = [];
+      app.get("/x", (req, reply) => {
+        const { signal } = req;
+        signal.addEventListener("abort", () => heard.push(signal.reason));
+        transport.abort("cancelled");
+        return reply.json({ aborted: signal.aborted, reason: signal.reason });
+      });
+
+      const res = await app.handle(input);
+      expect(await res.json()).toEqual({ aborted: true, reason: "cancelled" });
+      // With no timeout, request.signal is the transport's signal itself, and
+      // a listener put on it before the handler's stops the handler's, as on
+      // any signal. With one, it is a signal of its own and hears the abort.
+      expect(heard).toEqual(requestTimeout > 0 ? ["cancelled"] : []);
+    });
+
+    it("aborts when the abort comes while an asynchronous handler waits", async () => {
+      const transport = new AbortController();
+      const input = new Request("http://localhost/x", { signal: transport.signal });
+      input.signal.addEventListener("abort", stopper);
+      const app = createApp({ requestTimeout });
+      const entered = gate();
+      const release = gate();
+      let signal: AbortSignal | undefined;
+      app.get("/x", async (req, reply) => {
+        signal = req.signal;
+        entered.open();
+        await release.opened;
+        return reply.json({ reason: signal.reason });
+      });
+
+      const pending = app.handle(input);
+      await entered.opened;
+      transport.abort("gone");
+      expect(signal?.aborted).toBe(true);
+      release.open();
+      expect(await (await pending).json()).toEqual({ reason: "gone" });
+    });
+
+    it("aborts over a real socket when a replaced app.handle stopped the event on the transport's signal", async () => {
+      const app = createApp({ requestTimeout });
+      const entered = gate();
+      const release = gate();
+      let signal: AbortSignal | undefined;
+      app.get("/pending", async (req) => {
+        signal = req.signal;
+        entered.open();
+        await release.opened;
+        return new Response("done");
+      });
+      const handle = app.handle.bind(app);
+      app.handle = (request: Request) => {
+        request.signal.addEventListener("abort", stopper);
+        return handle(request);
+      };
+      const port = await listen(app);
+
+      const client = httpRequest(`http://127.0.0.1:${port}/pending`);
+      client.on("error", () => {});
+      client.end();
+      try {
+        await entered.opened;
+        expect(signal?.aborted).toBe(false);
+        client.destroy();
+        await expect.poll(() => signal?.aborted, { timeout: 1000 }).toBe(true);
+      } finally {
+        release.open();
+        client.destroy();
+      }
+    });
+  },
+);
+
+// Deno has an events.addAbortListener, but it is an ordinary listener, which a
+// stopped event blocks. core tries the one it finds when it loads and, off
+// Node, falls back to AbortSignal.any() when it does not hold, as before.
+describe("request.signal on a runtime whose addAbortListener can be stopped", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it("still aborts after an earlier listener stopped the transport's abort event", async () => {
+    const proc = process as unknown as { getBuiltinModule: (id: string) => unknown };
+    const real = proc.getBuiltinModule;
+    const ordinary = (signal: AbortSignal, listener: () => void) =>
+      signal.addEventListener("abort", listener, { once: true });
+    vi.stubGlobal("navigator", { userAgent: "Deno/2.9.8" });
+    proc.getBuiltinModule = (id: string) => (id === "node:events" ? { addAbortListener: ordinary } : real(id));
+    vi.resetModules();
+    try {
+      const { createApp: createAppOffNode } = await import("../src/app.js");
+      const transport = new AbortController();
+      const input = new Request("http://localhost/x", { signal: transport.signal });
+      input.signal.addEventListener("abort", (event) => event.stopImmediatePropagation());
+      const app = createAppOffNode({ requestTimeout: 30_000 });
+      app.get("/x", (req, reply) => {
+        const { signal } = req;
+        transport.abort("cancelled");
+        return reply.json({ aborted: signal.aborted, reason: signal.reason });
+      });
+
+      const res = await app.handle(input);
+      expect(await res.json()).toEqual({ aborted: true, reason: "cancelled" });
+    } finally {
+      proc.getBuiltinModule = real;
+    }
+  });
+});
+
 describe("a global Request replaced after core loaded", () => {
   it("is still what requests are built with, signal included", async () => {
     const app = createApp();
