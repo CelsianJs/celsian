@@ -84,6 +84,26 @@ function prefixCoversPath(prefix: string, pathname: string): boolean {
   return pathname === base || pathname.startsWith(`${base}/`);
 }
 
+/**
+ * Run `callback` before any timer, I/O or immediate callback can run, and, on
+ * Node, only once the microtask queue has drained: after every promise
+ * reaction already queued, and every one those queue in turn. `undefined`
+ * where the runtime has no `process.nextTick`.
+ *
+ * A `process.nextTick` runs before the event loop moves on, on every runtime
+ * that has one. On Node, one queued from inside a microtask runs only when
+ * Node has drained V8's microtask queue. Bun runs it at the same point except
+ * after a top-level await, and other runtimes may run it as a microtask, so
+ * there it can come before the last microtask: never later than a timer would.
+ * Captured at load, so a test that fakes timers does not reach it.
+ */
+const afterMicrotasks: ((callback: () => void) => void) | undefined = (() => {
+  const nextTick = (globalThis as { process?: { nextTick?: unknown } }).process?.nextTick;
+  if (typeof nextTick !== "function" || typeof queueMicrotask !== "function") return undefined;
+  const queue = queueMicrotask;
+  return (callback) => queue(() => (nextTick as (callback: () => void) => void)(callback));
+})();
+
 /** What request logging needs to report a request's outcome. Only built when a logger is set. */
 interface RequestTrace {
   method: string;
@@ -1115,23 +1135,41 @@ export class CelsianApp {
     // asynchronous step have used part of the timeout already. Usually that is
     // nothing, and then the timer gets the configured duration itself: Node
     // keeps timers of one duration in one list, so a server's request timeouts
-    // all share it. Past the deadline already, the timer is due at once, and
-    // as with a timer set at the start, a lifecycle that settles without
-    // waiting on anything still answers first.
+    // all share it. Otherwise it gets what is left, rounded up so that it never
+    // fires before the deadline.
+    //
+    // Past the deadline already, no timer can be early enough. A timer set at
+    // the start of the request, as it used to be, would be due by now and
+    // would fire before any timer the handler set on its way here, so a
+    // handler that awaits one got the 504. A timer set now would be due after
+    // those. So the 504 comes once the microtask queue has drained instead
+    // (`remaining` 0, see settleWithin): a lifecycle that settles without
+    // waiting on anything still answers first, as it did before a timer set at
+    // the start could fire, and one that waits on anything is answered 504
+    // before what it waits on can run. (Off Node, a lifecycle that would have
+    // settled on microtasks alone may get the 504 as well: it is past its
+    // deadline either way. Without process.nextTick, a 1 ms timer as before.)
     const elapsed = performance.now() - started;
-    const remaining = elapsed < 1 ? timeout : Math.max(1, Math.ceil(timeout - elapsed));
+    const remaining =
+      elapsed < 1
+        ? timeout
+        : elapsed >= timeout && afterMicrotasks !== undefined
+          ? 0
+          : Math.max(1, Math.ceil(timeout - elapsed));
     return this.settleWithin(out, remaining, request, reply, scope, isHead, trace);
   }
 
   /**
    * The answer to a lifecycle that went asynchronous, with `remaining` ms of
    * the request timeout left: the lifecycle's own if it settles in time, a 504
-   * through the error path if not.
+   * through the error path if not. `remaining` 0 means the deadline has
+   * passed already: the 504 comes once the microtask queue has drained, unless
+   * the lifecycle settled by then (see respond).
    *
    * One timer, cleared by whichever way the lifecycle settles, and one
    * promise. The lifecycle is watched once, and that same callback finishes
    * the response (`complete`, or `recover` for a throw) instead of handing it
-   * through a second promise to do so. When the timer wins, the lifecycle
+   * through a second promise to do so. When the timeout wins, the lifecycle
    * keeps running and its eventual result, or rejection, is dropped.
    */
   private settleWithin(
@@ -1144,8 +1182,11 @@ export class CelsianApp {
     trace: RequestTrace | null,
   ): Promise<Outgoing> {
     return new Promise<Outgoing>((resolve, reject) => {
+      // Whichever comes first, the lifecycle or the timeout, ends the other's say.
       let timedOut = false;
-      const timer = setTimeout(() => {
+      let settled = false;
+      const onTimeout = () => {
+        if (settled) return;
         timedOut = true;
         try {
           // Aborted (in addition to answering 504) so in-flight work can stop promptly.
@@ -1154,21 +1195,26 @@ export class CelsianApp {
         } catch (failure) {
           reject(failure);
         }
-      }, remaining);
+      };
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      if (remaining > 0) timer = setTimeout(onTimeout, remaining);
+      else (afterMicrotasks as (callback: () => void) => void)(onTimeout);
       pending.then(
-        (settled) => {
+        (outgoing) => {
           if (timedOut) return;
-          clearTimeout(timer);
+          settled = true;
+          if (timer !== undefined) clearTimeout(timer);
           disarmRequestTimeout(request);
           try {
-            resolve(this.complete(settled, request, reply, scope, isHead, trace));
+            resolve(this.complete(outgoing, request, reply, scope, isHead, trace));
           } catch (failure) {
             reject(failure);
           }
         },
         (thrown) => {
           if (timedOut) return;
-          clearTimeout(timer);
+          settled = true;
+          if (timer !== undefined) clearTimeout(timer);
           disarmRequestTimeout(request);
           try {
             resolve(this.recover(thrown, request, reply, scope, isHead, trace));

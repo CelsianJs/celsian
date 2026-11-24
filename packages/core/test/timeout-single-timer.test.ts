@@ -8,6 +8,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
+import { serve } from "../src/serve.js";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -323,6 +324,134 @@ describe("request timeout: counted from the start of the request", () => {
     const response = await app.handle(new Request("http://localhost/work"));
     expect(response.status).toBe(504);
     expect(finished).toBe(false);
+  });
+
+  // The deadline has passed by the time the lifecycle first waits, and the
+  // handler set its own timer before that. A timer for the request timeout set
+  // only now would be due after the handler's and lose to it; one set at the
+  // start of the request, as on ef8953c, would already be due and win. None of
+  // this depends on how busy the machine is: the work takes at least 60 ms
+  // whatever the load, so the 25 ms deadline has always passed, and the order
+  // of what runs next is fixed.
+  it("answers 504 when the deadline passed before the first wait, though the handler set its own timer first", async () => {
+    const app = createApp({ requestTimeout: 25 });
+    const resumed: string[] = [];
+    app.get("/work", async (req) => {
+      block(60);
+      await sleep(1);
+      // The timeout came first, so the handler resumes with its signal aborted.
+      resumed.push(`${req.signal.aborted}:${(req.signal.reason as { statusCode?: number } | undefined)?.statusCode}`);
+      return "ok";
+    });
+
+    for (let i = 0; i < 4; i++) {
+      const response = await app.handle(new Request("http://localhost/work"));
+      expect(response.status, `request ${i}`).toBe(504);
+    }
+    await sleep(5);
+    expect(resumed).toEqual(["true:504", "true:504", "true:504", "true:504"]);
+  });
+
+  it("answers 504 when hooks used up the time before an asynchronous handler set its timer", async () => {
+    const app = createApp({ requestTimeout: 25 });
+    app.addHook("onRequest", () => block(60));
+    app.get("/work", async () => {
+      await sleep(1);
+      return "ok";
+    });
+
+    expect((await app.handle(new Request("http://localhost/work"))).status).toBe(504);
+  });
+
+  it("answers 504 over a real socket when the deadline passed before the first wait", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const app = createApp({ requestTimeout: 25 });
+    app.get("/work", async () => {
+      block(60);
+      await sleep(1);
+      return "ok";
+    });
+    let port = 0;
+    const server = await serve(app, {
+      port: 0,
+      host: "127.0.0.1",
+      handleFatalErrors: false,
+      shutdownTimeout: 200,
+      onReady: (info) => {
+        port = info.port;
+      },
+    });
+    try {
+      for (let i = 0; i < 3; i++) {
+        const response = await fetch(`http://127.0.0.1:${port}/work`);
+        expect(response.status, `request ${i}`).toBe(504);
+        await response.arrayBuffer();
+      }
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("still answers when the work overran and the rest is a long chain of microtasks", async () => {
+    // Past the deadline, the 504 waits for the microtask queue to drain, so a
+    // lifecycle that never waits on a timer or on I/O answers first, however
+    // many steps it takes.
+    const app = createApp({ requestTimeout: 25 });
+    app.addHook("preHandler", async () => {
+      await Promise.resolve();
+    });
+    app.addHook("onSend", async () => {
+      for (let i = 0; i < 20; i++) await Promise.resolve();
+    });
+    app.get("/work", async () => {
+      block(60);
+      for (let i = 0; i < 50; i++) await Promise.resolve();
+      return { done: true };
+    });
+
+    const response = await app.handle(new Request("http://localhost/work"));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ done: true });
+  });
+
+  it("sets no timer when the deadline has already passed at the first wait", async () => {
+    const app = createApp({ requestTimeout: 25 });
+    app.get("/work", async () => {
+      block(60);
+      await new Promise(() => {});
+    });
+    const set = vi.spyOn(globalThis, "setTimeout");
+    const response = await app.handle(new Request("http://localhost/work"));
+    expect(response.status).toBe(504);
+    expect(set).not.toHaveBeenCalled();
+  });
+
+  it("rounds what is left of the timeout up, so the timer never fires before the deadline", async () => {
+    vi.useFakeTimers();
+    let now = 5000;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const app = createApp({ requestTimeout: 1000 });
+    app.get("/pending", async () => {
+      // 1.5 ms of synchronous work before the first wait: 998.5 ms are left.
+      now += 1.5;
+      await new Promise(() => {});
+    });
+
+    const spy = vi.spyOn(globalThis, "setTimeout");
+    const pending = app.handle(new Request("http://localhost/pending"));
+    let settled = false;
+    void pending.then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(spy.mock.calls.map((call) => call[1])).toEqual([999]);
+
+    // 998.5 ms after the start of the request, the request still has time.
+    await vi.advanceTimersByTimeAsync(998);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect((await pending).status).toBe(504);
   });
 
   it("gives a request that went asynchronous at once the configured duration exactly", async () => {
