@@ -220,3 +220,100 @@ describe("a header value outside ASCII on a fast response", () => {
     expect(wire.header("content-length")).toBe(String(Buffer.byteLength(`{"word":"${CAFE}"}`)));
   });
 });
+
+// A fast response can have no body at all: reply.send(null), reply.send()
+// under a 204. The writer used to fix the header block with writeHead() before
+// Node knew the response was empty, so a 200 went out chunked, with a
+// zero-length chunk for a body.
+describe("a fast response with no body", () => {
+  const empty = (app: CelsianApp) => {
+    app.get("/empty", (_request, reply) => reply.status(200).send(null));
+    app.get("/created", (_request, reply) => reply.status(201).header("location", "/things/1").send(undefined));
+    app.get("/no-content", (_request, reply) => reply.status(204).send(null));
+    app.get("/not-modified", (_request, reply) => reply.status(304).header("etag", '"v1"').send("ignored"));
+    app.get("/cookie", (_request, reply) => reply.cookie("a", "1", { secure: false }).send(null));
+  };
+
+  it.each([
+    ["no hook", false],
+    ["an onSend hook that adds a header", true],
+  ])("is sent with Content-Length: 0 and not chunked, with %s", async (_label, withHook) => {
+    const app = createApp();
+    if (withHook) {
+      app.addHook("onSend", (_request, reply) => {
+        reply.header("x-hook", "1");
+      });
+    }
+    empty(app);
+    const port = await listen(app);
+
+    for (const [path, status] of [
+      ["/empty", 200],
+      ["/created", 201],
+      ["/cookie", 200],
+    ] as const) {
+      const wire = await raw(port, path);
+      expect(wire.status, path).toBe(status);
+      expect(wire.header("content-length"), path).toBe("0");
+      expect(wire.header("transfer-encoding"), path).toBeUndefined();
+      expect(wire.body.byteLength, path).toBe(0);
+      if (withHook) expect(wire.header("x-hook"), path).toBe("1");
+    }
+    expect((await raw(port, "/created")).header("location")).toBe("/things/1");
+    expect((await raw(port, "/cookie")).header("set-cookie")?.startsWith("a=1")).toBe(true);
+  });
+
+  it.each([
+    ["no hook", false],
+    ["an onSend hook that adds a header", true],
+  ])("is sent with no length and no body under 204 and 304, with %s", async (_label, withHook) => {
+    const app = createApp();
+    if (withHook) {
+      app.addHook("onSend", (_request, reply) => {
+        reply.header("x-hook", "1");
+      });
+    }
+    empty(app);
+    const port = await listen(app);
+
+    for (const [path, status] of [
+      ["/no-content", 204],
+      ["/not-modified", 304],
+    ] as const) {
+      const wire = await raw(port, path);
+      expect(wire.status, path).toBe(status);
+      expect(wire.header("content-length"), path).toBeUndefined();
+      expect(wire.header("transfer-encoding"), path).toBeUndefined();
+      expect(wire.body.byteLength, path).toBe(0);
+      if (withHook) expect(wire.header("x-hook"), path).toBe("1");
+    }
+    expect((await raw(port, "/not-modified")).header("etag")).toBe('"v1"');
+  });
+
+  it("leaves a keep-alive connection usable for the next request", async () => {
+    const app = createApp();
+    app.addHook("onSend", (_request, reply) => {
+      reply.header("x-hook", "1");
+    });
+    empty(app);
+    app.get("/after", (_request, reply) => reply.json({ after: true }));
+    const port = await listen(app);
+
+    // Two requests written back to back on one connection.
+    const answer = await new Promise<string>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      const socket = connect({ port, host: "127.0.0.1" }, () => {
+        socket.write(
+          "GET /empty HTTP/1.1\r\nHost: x\r\n\r\nGET /after HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
+        );
+      });
+      socket.on("data", (chunk: Buffer) => chunks.push(chunk));
+      socket.on("error", reject);
+      socket.on("close", () => resolve(Buffer.concat(chunks).toString("latin1")));
+    });
+    const statuses = [...answer.matchAll(/HTTP\/1\.1 (\d{3})/g)].map((match) => match[1]);
+    expect(statuses).toEqual(["200", "200"]);
+    expect(answer.endsWith('{"after":true}')).toBe(true);
+    expect(answer).not.toContain("chunked");
+  });
+});

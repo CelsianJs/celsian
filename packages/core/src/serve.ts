@@ -1098,10 +1098,34 @@ function writeOutgoing(res: ServerResponse, out: Outgoing): Promise<void> | unde
   if (body !== null) headers["content-length"] = contentLengthOf(body);
   const cookies = live.getSetCookie?.() ?? [];
   if (cookies.length > 0) headers["set-cookie"] = cookies;
-  res.writeHead(fast.status, headers);
-  if (body === null) res.end();
-  else res.end(body);
+  sendWhole(res, fast.status, headers, body);
   return undefined;
+}
+
+/**
+ * Send a status, its final headers and an already-serialized body in one go.
+ *
+ * With a body that is `writeHead()+end(body)`, `content-length` already among
+ * the headers. Without one the framing is left to Node: `writeHead()` fixes
+ * the header block before Node knows the response is empty, so a 200 with no
+ * body went out as `Transfer-Encoding: chunked` and a zero-length chunk.
+ * Headers set one by one and then `end()` give `Content-Length: 0` instead,
+ * and nothing at all where no body is allowed (204, 304, a HEAD request).
+ */
+function sendWhole(
+  res: ServerResponse,
+  status: number,
+  headers: Record<string, string | string[]>,
+  body: string | Uint8Array | null,
+): void {
+  if (body === null) {
+    res.statusCode = status;
+    for (const key in headers) res.setHeader(key, headers[key] as string | string[]);
+    res.end();
+    return;
+  }
+  res.writeHead(status, headers);
+  res.end(body);
 }
 
 function contentLengthOf(body: string | Uint8Array): string {
@@ -1143,8 +1167,8 @@ function hasNonAsciiCookie(cookies: readonly string[]): boolean {
 }
 
 /**
- * Write an already-serialized body with its plain headers in a single
- * `writeHead()+end()`. `headers` is copied, never modified.
+ * Write an already-serialized body with its plain headers in one go (see
+ * {@link sendWhole}). `headers` is copied, never modified.
  */
 function writeFast(
   res: ServerResponse,
@@ -1166,9 +1190,7 @@ function writeFast(
     const fromHeader = headers["set-cookie"];
     headers["set-cookie"] = typeof fromHeader === "string" ? [fromHeader, ...cookies] : (cookies as string[]);
   }
-  res.writeHead(status, headers);
-  if (body === null) res.end();
-  else res.end(body);
+  sendWhole(res, status, headers, body);
 }
 
 /** Write a Response that has no fast payload: its headers, then its body stream chunk by chunk. */
