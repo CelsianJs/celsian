@@ -1,5 +1,6 @@
 // @celsian/core -- Request builder
 
+import { parseCookies } from "./cookie.js";
 import type { CelsianRequest, ClientIpOptions } from "./types.js";
 
 // Shared empty query object for requests with no query string
@@ -13,6 +14,9 @@ const SRC = Symbol("celsian.srcRequest");
 
 // Symbol holding the request's resolved `signal`, once something has read it.
 const SIGNAL = Symbol("celsian.signal");
+
+// Symbol holding the request's parsed cookies, once something has read them.
+const COOKIES = Symbol("celsian.cookies");
 
 // Symbol holding the request timeout's state: undefined when no timeout can
 // abort this request, ARMED while one can, the AbortController it will abort
@@ -33,6 +37,7 @@ class TimedOut {
 interface FastRequestState {
   [SRC]: Request;
   [SIGNAL]: AbortSignal | undefined;
+  [COOKIES]: Record<string, string> | undefined;
   [TIMEOUT]: typeof ARMED | AbortController | TimedOut | undefined;
 }
 
@@ -110,6 +115,18 @@ const REQUEST_PROTO = {
   },
   set signal(value: AbortSignal) {
     (this as unknown as FastRequestState)[SIGNAL] = value;
+  },
+  // Parsed from the Cookie header the first time they are read. This used to
+  // be a getter defined on every request with Object.defineProperty, which
+  // cost more than building the rest of the wrapper.
+  get cookies(): Record<string, string> {
+    const state = this as unknown as FastRequestState;
+    let cookies = state[COOKIES];
+    if (cookies === undefined) {
+      cookies = parseCookies(state[SRC].headers.get("cookie") ?? "");
+      state[COOKIES] = cookies;
+    }
+    return cookies;
   },
   get body() {
     return (this as Record<symbol, Request>)[SRC].body;
@@ -417,6 +434,7 @@ export function buildRequestFast(
   const req = celsianRequest as unknown as Record<string | symbol, unknown>;
   req[SRC] = request;
   req[SIGNAL] = undefined;
+  req[COOKIES] = undefined;
   req[TIMEOUT] = undefined;
   req.headers = request.headers;
   req.method = request.method;

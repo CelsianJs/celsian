@@ -3,7 +3,6 @@
 import { fromSchema, type InferOutput, type StandardSchema } from "@celsian/schema";
 import { parseBody } from "./body-parser.js";
 import { EncapsulationContext, type ScopeRegistry } from "./context.js";
-import { parseCookies } from "./cookie.js";
 import { type CronJob, CronScheduler } from "./cron.js";
 import { handleError as handleErrorFn } from "./error-handler.js";
 import { assertPlugin, CelsianError, HttpError, ValidationError, wrapNonError } from "./errors.js";
@@ -980,19 +979,6 @@ export class CelsianApp {
         }
       }
     }
-
-    // Lazy cookie parsing
-    let parsedCookies: Record<string, string> | null = null;
-    Object.defineProperty(celsianRequest, "cookies", {
-      get: () => {
-        if (!parsedCookies) {
-          parsedCookies = parseCookies(request.headers.get("cookie") ?? "");
-        }
-        return parsedCookies;
-      },
-      configurable: true,
-      enumerable: true,
-    });
 
     // Only generate requestId and child logger when logging is enabled
     if (this.hasLogger) {

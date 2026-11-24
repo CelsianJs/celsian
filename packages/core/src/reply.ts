@@ -189,12 +189,12 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 /** JSON error body for a file that is missing (404) or outside the root (403). */
-function fileErrorResponse(status: 403 | 404, buildHeaders: (extra?: Record<string, string>) => Headers): Response {
+function fileErrorResponse(status: 403 | 404, reply: ReplyState): Response {
   const error = status === 403 ? "Forbidden" : "Not Found";
   const code = status === 403 ? "FORBIDDEN" : "NOT_FOUND";
   return new Response(JSON.stringify({ error, statusCode: status, code }), {
     status,
-    headers: buildHeaders({ "content-type": "application/json; charset=utf-8" }),
+    headers: buildHeaders(reply, { "content-type": "application/json; charset=utf-8" }),
   });
 }
 
@@ -340,6 +340,321 @@ function contentDisposition(name: string): string {
   return `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}`;
 }
 
+// ─── The reply object ───
+//
+// A reply used to be an object literal built per request: some 27 closures over
+// the request's state, one per method, whether or not the handler called any of
+// them. It is now an instance whose methods are defined once, as accessors on
+// the prototype.
+//
+// Accessors rather than plain prototype methods, because a reply's methods
+// have always worked detached from it:
+//
+//   const { json } = reply;          // destructured in a handler
+//   const original = reply.send;     // kept by a plugin that wraps it
+//
+// A plain prototype method would lose `this` there. Each accessor instead hands
+// out a function bound to the reply it was read from, created the first time
+// that method is read and then kept, so `reply.json === reply.json` still holds
+// and a request pays for the one or two methods it uses, not for all of them.
+// Assigning to a method (`reply.send = wrapped`) still replaces it on that reply.
+
+const HEADERS = Symbol("celsian.reply.headers");
+const REQUEST_URL = Symbol("celsian.reply.requestUrl");
+const REQUEST_HEADERS = Symbol("celsian.reply.requestHeaders");
+
+/** What a reply keeps, apart from the public `statusCode` and `sent`. */
+interface ReplyState {
+  statusCode: number;
+  sent: boolean;
+  [HEADERS]: Record<string, string>;
+  [REPLY_COOKIES]: string[];
+  [REQUEST_URL]: string | URL | undefined;
+  [REQUEST_HEADERS]: Headers | undefined;
+}
+
+type ReplySelf = ReplyState & CelsianReply;
+
+/** The `Headers` for a non-fast response: `extra` plus every queued cookie. */
+function buildHeaders(reply: ReplyState, extra: Record<string, string>): Headers {
+  const h = new Headers(extra);
+  for (const cookie of reply[REPLY_COOKIES]) {
+    h.append("set-cookie", cookie);
+  }
+  return h;
+}
+
+function errorResponse(
+  reply: ReplySelf,
+  status: number,
+  code: string,
+  message: string,
+  sanitizeInProd = false,
+): Response {
+  const safeMessage =
+    sanitizeInProd && process.env.NODE_ENV === "production"
+      ? status === 500
+        ? "Internal Server Error"
+        : "Service Unavailable"
+      : message;
+  // Through the reply's own `status` and `json`, so a plugin that wrapped them still sees this response.
+  return reply.status(status).json({ error: safeMessage, statusCode: status, code });
+}
+
+/**
+ * The reply's methods. Each takes the reply as its first argument; the
+ * accessors installed below bind that argument on first read.
+ */
+const METHODS = {
+  status(reply: ReplySelf, code: number): CelsianReply {
+    reply.statusCode = code;
+    return reply;
+  },
+
+  header(reply: ReplySelf, key: string, value: string): CelsianReply {
+    // Prevent CRLF header injection by stripping \r and \n
+    reply[HEADERS][key.toLowerCase()] = value.replace(/[\r\n]/g, "");
+    return reply;
+  },
+
+  send(reply: ReplySelf, data: unknown): Response {
+    reply.sent = true;
+    if (data instanceof Response) {
+      return data;
+    }
+    const statusCode = reply.statusCode;
+    const headers = reply[HEADERS];
+    const setCookies = reply[REPLY_COOKIES];
+    // No-body status codes (204, 304) or empty data, no content-type added
+    if (statusCode === 204 || statusCode === 304 || data === null || data === undefined) {
+      return fastResponse(null, statusCode, { ...headers }, setCookies);
+    }
+    if (typeof data === "string") {
+      return fastResponse(data, statusCode, { "content-type": "text/plain; charset=utf-8", ...headers }, setCookies);
+    }
+    // Binary payloads (Uint8Array covers Node Buffer), send raw bytes, never
+    // JSON.stringify (which would produce {"0":137,...}). Default content-type
+    // is application/octet-stream; an explicitly set content-type header wins.
+    if (data instanceof Uint8Array) {
+      return fastResponse(data, statusCode, { "content-type": "application/octet-stream", ...headers }, setCookies);
+    }
+    if (data instanceof ArrayBuffer) {
+      return fastResponse(
+        new Uint8Array(data),
+        statusCode,
+        { "content-type": "application/octet-stream", ...headers },
+        setCookies,
+      );
+    }
+    return fastResponse(
+      JSON.stringify(data),
+      statusCode,
+      { "content-type": "application/json; charset=utf-8", ...headers },
+      setCookies,
+    );
+  },
+
+  html(reply: ReplySelf, content: string): Response {
+    reply.sent = true;
+    return fastResponse(
+      content,
+      reply.statusCode,
+      { "content-type": "text/html; charset=utf-8", ...reply[HEADERS] },
+      reply[REPLY_COOKIES],
+    );
+  },
+
+  json(reply: ReplySelf, data: unknown): Response {
+    reply.sent = true;
+    return fastResponse(
+      JSON.stringify(data),
+      reply.statusCode,
+      { "content-type": "application/json; charset=utf-8", ...reply[HEADERS] },
+      reply[REPLY_COOKIES],
+    );
+  },
+
+  stream(reply: ReplySelf, readable: ReadableStream): Response {
+    reply.sent = true;
+    return new Response(readable, {
+      status: reply.statusCode,
+      headers: buildHeaders(reply, {
+        "content-type": "application/octet-stream",
+        ...reply[HEADERS],
+      }),
+    });
+  },
+
+  redirect(reply: ReplySelf, url: string, code = 302, options?: RedirectOptions): Response {
+    const location = safeRedirectLocation(url, options?.allowedHosts);
+    reply.sent = true;
+    return new Response(null, {
+      status: code,
+      headers: buildHeaders(reply, { location, ...reply[HEADERS] }),
+    });
+  },
+
+  cookie(reply: ReplySelf, name: string, value: string, options?: CookieOptions): CelsianReply {
+    reply[REPLY_COOKIES].push(
+      serializeCookie(name, value, options, { url: reply[REQUEST_URL], headers: reply[REQUEST_HEADERS] }),
+    );
+    return reply;
+  },
+
+  clearCookie(reply: ReplySelf, name: string, options?: CookieOptions): CelsianReply {
+    // The clearing cookie must match the original's attributes, `Secure`
+    // included, or the browser treats it as a different cookie and the
+    // original survives. Same context in, same flag out.
+    reply[REPLY_COOKIES].push(
+      serializeCookie(
+        name,
+        "",
+        { ...options, maxAge: 0 },
+        { url: reply[REQUEST_URL], headers: reply[REQUEST_HEADERS] },
+      ),
+    );
+    return reply;
+  },
+
+  async sendFile(reply: ReplySelf, filePath: string, options?: SendFileOptions): Promise<Response> {
+    reply.sent = true;
+    try {
+      // Lazy import, keeps reply.ts edge-compatible when sendFile isn't used
+      const { extname } = await import("node:path");
+
+      const file = await readConfinedFile(filePath, options);
+      if (!file.ok) return fileErrorResponse(file.status, reply);
+
+      const data = file.data;
+      const ext = extname(file.path).toLowerCase();
+      const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
+      return new Response(data, {
+        status: reply.statusCode,
+        headers: buildHeaders(reply, { "content-type": contentType, ...reply[HEADERS] }),
+      });
+    } catch {
+      return fileErrorResponse(404, reply);
+    }
+  },
+
+  async download(reply: ReplySelf, filePath: string, filenameOrOptions?: string | DownloadOptions): Promise<Response> {
+    reply.sent = true;
+
+    const opts: DownloadOptions =
+      typeof filenameOrOptions === "string" ? { filename: filenameOrOptions } : (filenameOrOptions ?? {});
+
+    // Only the filesystem work is guarded. Wrapping the response construction
+    // too is how a real fault (a filename `new Response()` refuses, a bug in
+    // header building) got reported as "404 Not Found" for a file that had
+    // already been read successfully, which is a lie the caller cannot debug.
+    let pathModule: typeof import("node:path");
+    let file: ConfinedRead;
+    try {
+      // Lazy import, keeps reply.ts edge-compatible when download isn't used
+      pathModule = await import("node:path");
+      // Confined exactly like sendFile: without a root, downloads are limited
+      // to the process CWD. Serving outside it requires an explicit root.
+      file = await readConfinedFile(filePath, opts);
+    } catch {
+      return fileErrorResponse(404, reply);
+    }
+    if (!file.ok) return fileErrorResponse(file.status, reply);
+
+    const { extname, basename } = pathModule;
+    const ext = extname(file.path).toLowerCase();
+    const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
+    // `basename` applies to the caller-supplied name too: it is frequently a
+    // value from the request, and `filename="../../x"` is exactly what
+    // Content-Disposition's filename parameter is not allowed to carry.
+    const downloadName = basename(opts.filename ?? basename(file.path));
+
+    return new Response(file.data, {
+      status: reply.statusCode,
+      headers: buildHeaders(reply, {
+        "content-type": contentType,
+        "content-disposition": contentDisposition(downloadName),
+        ...reply[HEADERS],
+      }),
+    });
+  },
+
+  // ─── Status Code Helpers ───
+
+  notFound(reply: ReplySelf, message = "Not Found"): Response {
+    return errorResponse(reply, 404, "NOT_FOUND", message);
+  },
+  badRequest(reply: ReplySelf, message = "Bad Request"): Response {
+    return errorResponse(reply, 400, "BAD_REQUEST", message);
+  },
+  unauthorized(reply: ReplySelf, message = "Unauthorized"): Response {
+    return errorResponse(reply, 401, "UNAUTHORIZED", message);
+  },
+  forbidden(reply: ReplySelf, message = "Forbidden"): Response {
+    return errorResponse(reply, 403, "FORBIDDEN", message);
+  },
+  conflict(reply: ReplySelf, message = "Conflict"): Response {
+    return errorResponse(reply, 409, "CONFLICT", message);
+  },
+  gone(reply: ReplySelf, message = "Gone"): Response {
+    return errorResponse(reply, 410, "GONE", message);
+  },
+  tooManyRequests(reply: ReplySelf, message = "Too Many Requests"): Response {
+    return errorResponse(reply, 429, "TOO_MANY_REQUESTS", message);
+  },
+  internalServerError(reply: ReplySelf, message?: string): Response {
+    return errorResponse(reply, 500, "INTERNAL_SERVER_ERROR", message ?? "Internal Server Error", true);
+  },
+  serviceUnavailable(reply: ReplySelf, message?: string): Response {
+    return errorResponse(reply, 503, "SERVICE_UNAVAILABLE", message ?? "Service Unavailable", true);
+  },
+};
+
+class Reply {
+  statusCode = 200;
+  sent = false;
+  [HEADERS]: Record<string, string> = {};
+  [REPLY_COOKIES]: string[] = [];
+  [REQUEST_URL]: string | URL | undefined;
+  [REQUEST_HEADERS]: Headers | undefined;
+
+  constructor(requestUrl: string | URL | undefined, requestHeaders: Headers | undefined) {
+    this[REQUEST_URL] = requestUrl;
+    this[REQUEST_HEADERS] = requestHeaders;
+  }
+
+  /** The headers set so far. The object is live: writing to it sets a header. */
+  get headers(): Record<string, string> {
+    return this[HEADERS];
+  }
+}
+// `headers` is listed with the reply's other properties, as it was when the reply was a plain object.
+Object.defineProperty(Reply.prototype, "headers", { enumerable: true });
+
+type ReplyMethod = (reply: ReplySelf, a?: unknown, b?: unknown, c?: unknown) => unknown;
+
+for (const name of Object.keys(METHODS) as (keyof typeof METHODS)[]) {
+  const method = METHODS[name] as ReplyMethod;
+  // Where a reply keeps its bound copy of this method once it has been read.
+  const slot = Symbol(`celsian.reply.${name}`);
+  Object.defineProperty(Reply.prototype, name, {
+    configurable: true,
+    enumerable: true,
+    get(this: ReplySelf & Record<symbol, unknown>) {
+      let bound = this[slot];
+      if (bound === undefined) {
+        // No reply method takes more than three arguments.
+        bound = (a?: unknown, b?: unknown, c?: unknown) => method(this, a, b, c);
+        this[slot] = bound;
+      }
+      return bound;
+    },
+    set(this: object, value: unknown) {
+      // An assigned method becomes that reply's own property, as it always was.
+      Object.defineProperty(this, name, { value, writable: true, enumerable: true, configurable: true });
+    },
+  });
+}
+
 /**
  * Create a new reply builder. Provides chainable methods for setting status, headers,
  * cookies, and sending JSON/HTML/stream/file responses plus structured error helpers.
@@ -355,243 +670,5 @@ function contentDisposition(name: string): string {
  * server bound to.
  */
 export function createReply(requestUrl?: string | URL, requestHeaders?: Headers): CelsianReply {
-  let statusCode = 200;
-  const headers: Record<string, string> = {};
-  const setCookies: string[] = [];
-  let sent = false;
-
-  const reply: CelsianReply = {
-    [REPLY_COOKIES]: setCookies,
-
-    get statusCode() {
-      return statusCode;
-    },
-    set statusCode(code: number) {
-      statusCode = code;
-    },
-
-    get headers() {
-      return headers;
-    },
-
-    get sent() {
-      return sent;
-    },
-    set sent(value: boolean) {
-      sent = value;
-    },
-
-    status(code: number) {
-      statusCode = code;
-      return reply;
-    },
-
-    header(key: string, value: string) {
-      // Prevent CRLF header injection by stripping \r and \n
-      headers[key.toLowerCase()] = value.replace(/[\r\n]/g, "");
-      return reply;
-    },
-
-    send(data: unknown): Response {
-      sent = true;
-      if (data instanceof Response) {
-        return data;
-      }
-      // No-body status codes (204, 304) or empty data, no content-type added
-      if (statusCode === 204 || statusCode === 304 || data === null || data === undefined) {
-        return fastResponse(null, statusCode, { ...headers }, setCookies);
-      }
-      if (typeof data === "string") {
-        return fastResponse(data, statusCode, { "content-type": "text/plain; charset=utf-8", ...headers }, setCookies);
-      }
-      // Binary payloads (Uint8Array covers Node Buffer), send raw bytes, never
-      // JSON.stringify (which would produce {"0":137,...}). Default content-type
-      // is application/octet-stream; an explicitly set content-type header wins.
-      if (data instanceof Uint8Array) {
-        return fastResponse(data, statusCode, { "content-type": "application/octet-stream", ...headers }, setCookies);
-      }
-      if (data instanceof ArrayBuffer) {
-        return fastResponse(
-          new Uint8Array(data),
-          statusCode,
-          { "content-type": "application/octet-stream", ...headers },
-          setCookies,
-        );
-      }
-      return fastResponse(
-        JSON.stringify(data),
-        statusCode,
-        { "content-type": "application/json; charset=utf-8", ...headers },
-        setCookies,
-      );
-    },
-
-    html(content: string): Response {
-      sent = true;
-      return fastResponse(content, statusCode, { "content-type": "text/html; charset=utf-8", ...headers }, setCookies);
-    },
-
-    json(data: unknown): Response {
-      sent = true;
-      return fastResponse(
-        JSON.stringify(data),
-        statusCode,
-        { "content-type": "application/json; charset=utf-8", ...headers },
-        setCookies,
-      );
-    },
-
-    stream(readable: ReadableStream): Response {
-      sent = true;
-      return new Response(readable, {
-        status: statusCode,
-        headers: buildHeaders({
-          "content-type": "application/octet-stream",
-          ...headers,
-        }),
-      });
-    },
-
-    redirect(url: string, code = 302, options?: RedirectOptions): Response {
-      const location = safeRedirectLocation(url, options?.allowedHosts);
-      sent = true;
-      return new Response(null, {
-        status: code,
-        headers: buildHeaders({ location, ...headers }),
-      });
-    },
-
-    cookie(name: string, value: string, options?: CookieOptions) {
-      setCookies.push(serializeCookie(name, value, options, { url: requestUrl, headers: requestHeaders }));
-      return reply;
-    },
-
-    clearCookie(name: string, options?: CookieOptions) {
-      // The clearing cookie must match the original's attributes, `Secure`
-      // included, or the browser treats it as a different cookie and the
-      // original survives. Same context in, same flag out.
-      setCookies.push(
-        serializeCookie(name, "", { ...options, maxAge: 0 }, { url: requestUrl, headers: requestHeaders }),
-      );
-      return reply;
-    },
-
-    async sendFile(filePath: string, options?: SendFileOptions): Promise<Response> {
-      sent = true;
-      try {
-        // Lazy import, keeps reply.ts edge-compatible when sendFile isn't used
-        const { extname } = await import("node:path");
-
-        const file = await readConfinedFile(filePath, options);
-        if (!file.ok) return fileErrorResponse(file.status, buildHeaders);
-
-        const data = file.data;
-        const ext = extname(file.path).toLowerCase();
-        const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
-        return new Response(data, {
-          status: statusCode,
-          headers: buildHeaders({ "content-type": contentType, ...headers }),
-        });
-      } catch {
-        return fileErrorResponse(404, buildHeaders);
-      }
-    },
-
-    async download(filePath: string, filenameOrOptions?: string | DownloadOptions): Promise<Response> {
-      sent = true;
-
-      const opts: DownloadOptions =
-        typeof filenameOrOptions === "string" ? { filename: filenameOrOptions } : (filenameOrOptions ?? {});
-
-      // Only the filesystem work is guarded. Wrapping the response construction
-      // too is how a real fault (a filename `new Response()` refuses, a bug in
-      // header building) got reported as "404 Not Found" for a file that had
-      // already been read successfully, which is a lie the caller cannot debug.
-      let pathModule: typeof import("node:path");
-      let file: ConfinedRead;
-      try {
-        // Lazy import, keeps reply.ts edge-compatible when download isn't used
-        pathModule = await import("node:path");
-        // Confined exactly like sendFile: without a root, downloads are limited
-        // to the process CWD. Serving outside it requires an explicit root.
-        file = await readConfinedFile(filePath, opts);
-      } catch {
-        return fileErrorResponse(404, buildHeaders);
-      }
-      if (!file.ok) return fileErrorResponse(file.status, buildHeaders);
-
-      const { extname, basename } = pathModule;
-      const ext = extname(file.path).toLowerCase();
-      const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
-      // `basename` applies to the caller-supplied name too: it is frequently a
-      // value from the request, and `filename="../../x"` is exactly what
-      // Content-Disposition's filename parameter is not allowed to carry.
-      const downloadName = basename(opts.filename ?? basename(file.path));
-
-      return new Response(file.data, {
-        status: statusCode,
-        headers: buildHeaders({
-          "content-type": contentType,
-          "content-disposition": contentDisposition(downloadName),
-          ...headers,
-        }),
-      });
-    },
-
-    // ─── Status Code Helpers ───
-
-    notFound(message = "Not Found") {
-      return errorResponse(reply, 404, "NOT_FOUND", message);
-    },
-    badRequest(message = "Bad Request") {
-      return errorResponse(reply, 400, "BAD_REQUEST", message);
-    },
-    unauthorized(message = "Unauthorized") {
-      return errorResponse(reply, 401, "UNAUTHORIZED", message);
-    },
-    forbidden(message = "Forbidden") {
-      return errorResponse(reply, 403, "FORBIDDEN", message);
-    },
-    conflict(message = "Conflict") {
-      return errorResponse(reply, 409, "CONFLICT", message);
-    },
-    gone(message = "Gone") {
-      return errorResponse(reply, 410, "GONE", message);
-    },
-    tooManyRequests(message = "Too Many Requests") {
-      return errorResponse(reply, 429, "TOO_MANY_REQUESTS", message);
-    },
-    internalServerError(message?: string) {
-      return errorResponse(reply, 500, "INTERNAL_SERVER_ERROR", message ?? "Internal Server Error", true);
-    },
-    serviceUnavailable(message?: string) {
-      return errorResponse(reply, 503, "SERVICE_UNAVAILABLE", message ?? "Service Unavailable", true);
-    },
-  };
-
-  function errorResponse(
-    r: CelsianReply,
-    status: number,
-    code: string,
-    message: string,
-    sanitizeInProd = false,
-  ): Response {
-    const safeMessage =
-      sanitizeInProd && process.env.NODE_ENV === "production"
-        ? status === 500
-          ? "Internal Server Error"
-          : "Service Unavailable"
-        : message;
-    return r.status(status).json({ error: safeMessage, statusCode: status, code });
-  }
-
-  function buildHeaders(extra: Record<string, string> = {}): Headers {
-    const h = new Headers(extra);
-    for (const cookie of setCookies) {
-      h.append("set-cookie", cookie);
-    }
-    return h;
-  }
-
-  return reply;
+  return new Reply(requestUrl, requestHeaders) as unknown as CelsianReply;
 }
