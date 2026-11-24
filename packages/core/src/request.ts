@@ -33,9 +33,15 @@ class TimedOut {
   ) {}
 }
 
+// Symbol recording that the request's body was read straight from the Node
+// stream under it: true until the web stream wrapped around that same stream
+// has been told, false afterwards. See `takeNodeBody`.
+const BODY_READ_DIRECTLY = Symbol("celsian.bodyReadDirectly");
+
 /** The fields the fast request wrapper keeps under symbols. */
 interface FastRequestState {
   [SRC]: Request;
+  [BODY_READ_DIRECTLY]: boolean | undefined;
   [SIGNAL]: AbortSignal | undefined;
   [COOKIES]: Record<string, string> | undefined;
   [TIMEOUT]: typeof ARMED | AbortController | TimedOut | undefined;
@@ -99,6 +105,86 @@ export function disarmRequestTimeout(request: CelsianRequest): void {
   if (state[TIMEOUT] === ARMED) state[TIMEOUT] = undefined;
 }
 
+// ─── Reading a Node request's body without the web stream ───
+//
+// On core's Node server a request body is a Node stream, which the Request
+// wraps in a web ReadableStream (two of them, in fact). Reading a JSON body
+// through that wrapping costs some thirty promises in Node's stream plumbing.
+// The body parser therefore reads the Node stream itself when it can.
+//
+// The Request must not notice the difference. Afterwards its own stream is
+// still unread, though the bytes under it are gone. So the first time anything
+// asks the request about its body (`bodyUsed`, `body`, `text()`, `clone()`...)
+// that stream is cancelled, which marks it used. From then on the Request
+// answers exactly as it does after a body has been read through it: `bodyUsed`
+// is true, `text()` rejects with the platform's own "body already read" error,
+// `clone()` throws. A request whose body nobody asks about again never pays
+// for the cancel.
+
+/**
+ * Where a server records, on the Web Request it built, the Node stream that
+ * request's body comes from. `Symbol.for` so separately bundled copies agree.
+ */
+const NODE_BODY = Symbol.for("celsian.nodeBody");
+
+/** The part of Node's `IncomingMessage` the body parser reads from. */
+export interface NodeBodyStream {
+  readonly readableEnded: boolean;
+  readonly readableDidRead: boolean;
+  readonly destroyed: boolean;
+  // biome-ignore lint/suspicious/noExplicitAny: the listener type Node's own EventEmitter declares
+  on(event: string, listener: (...args: any[]) => void): unknown;
+  // biome-ignore lint/suspicious/noExplicitAny: the listener type Node's own EventEmitter declares
+  off(event: string, listener: (...args: any[]) => void): unknown;
+  pause(): unknown;
+}
+
+/** Record that `request`'s body is `stream`, so the body parser can read it without the web stream. */
+export function setNodeBody(request: Request, stream: NodeBodyStream): void {
+  (request as unknown as Record<symbol, NodeBodyStream | undefined>)[NODE_BODY] = stream;
+}
+
+/** Stop offering `request`'s Node stream to the body parser (the request was cloned, say). */
+export function clearNodeBody(request: Request): void {
+  (request as unknown as Record<symbol, NodeBodyStream | undefined>)[NODE_BODY] = undefined;
+}
+
+/**
+ * The Node stream to read `request`'s body from, or `undefined` when it must be
+ * read through the request as usual.
+ *
+ * Offered once, and only while nothing else can be reading the same bytes: the
+ * request's own stream is neither locked nor read, and nothing has read from
+ * the Node stream. Whoever takes it must read it to the end or fail.
+ */
+export function takeNodeBody(request: CelsianRequest | Request): NodeBodyStream | undefined {
+  const state = request as unknown as Partial<FastRequestState>;
+  const source = state[SRC];
+  // Only the fast wrapper has a source Request to ask.
+  if (source === undefined || state[BODY_READ_DIRECTLY] !== undefined) return undefined;
+  const stream = (source as unknown as Record<symbol, NodeBodyStream | undefined>)[NODE_BODY];
+  if (stream === undefined || stream.readableDidRead) return undefined;
+  const body = source.body;
+  if (body === null || body.locked || source.bodyUsed) return undefined;
+  state[BODY_READ_DIRECTLY] = true;
+  return stream;
+}
+
+/**
+ * Bring the source Request up to date before it is asked about its body: if
+ * the body was read from the Node stream, mark the Request's own stream used.
+ */
+function settleBody(state: FastRequestState): Request {
+  const source = state[SRC];
+  if (state[BODY_READ_DIRECTLY] === true) {
+    state[BODY_READ_DIRECTLY] = false;
+    // Cancelling is how a stream is marked used without being read. The Node
+    // stream under it has ended, so there is nothing left for it to release.
+    void source.body?.cancel().catch(() => {});
+  }
+  return source;
+}
+
 // Shared prototype for fast request wrappers: body-consuming methods and the
 // live body/bodyUsed accessors delegate to the source Request via `this[SRC]`.
 // Using a prototype avoids per-request `.bind()` (×6) and `Object.defineProperty`
@@ -129,28 +215,28 @@ const REQUEST_PROTO = {
     return cookies;
   },
   get body() {
-    return (this as Record<symbol, Request>)[SRC].body;
+    return settleBody(this as unknown as FastRequestState).body;
   },
   get bodyUsed() {
-    return (this as Record<symbol, Request>)[SRC].bodyUsed;
+    return settleBody(this as unknown as FastRequestState).bodyUsed;
   },
   json() {
-    return (this as Record<symbol, Request>)[SRC].json();
+    return settleBody(this as unknown as FastRequestState).json();
   },
   text() {
-    return (this as Record<symbol, Request>)[SRC].text();
+    return settleBody(this as unknown as FastRequestState).text();
   },
   formData() {
-    return (this as Record<symbol, Request>)[SRC].formData();
+    return settleBody(this as unknown as FastRequestState).formData();
   },
   arrayBuffer() {
-    return (this as Record<symbol, Request>)[SRC].arrayBuffer();
+    return settleBody(this as unknown as FastRequestState).arrayBuffer();
   },
   blob() {
-    return (this as Record<symbol, Request>)[SRC].blob();
+    return settleBody(this as unknown as FastRequestState).blob();
   },
   clone() {
-    return (this as Record<symbol, Request>)[SRC].clone();
+    return settleBody(this as unknown as FastRequestState).clone();
   },
 };
 
@@ -433,6 +519,7 @@ export function buildRequestFast(
   const celsianRequest = Object.create(REQUEST_PROTO) as CelsianRequest;
   const req = celsianRequest as unknown as Record<string | symbol, unknown>;
   req[SRC] = request;
+  req[BODY_READ_DIRECTLY] = undefined;
   req[SIGNAL] = undefined;
   req[COOKIES] = undefined;
   req[TIMEOUT] = undefined;

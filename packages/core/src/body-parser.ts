@@ -1,6 +1,7 @@
 // @celsian/core -- Body parsing with content-type detection and streaming size limits
 
 import { HttpError } from "./errors.js";
+import { type NodeBodyStream, takeNodeBody } from "./request.js";
 import type { CelsianRequest } from "./types.js";
 
 /**
@@ -39,6 +40,67 @@ function scrubPrototypePollution(value: unknown): unknown {
   return value;
 }
 
+/** Decodes a body that arrived in one piece. Never used with `stream: true`, so it holds no state between calls. */
+const WHOLE_BODY_DECODER = new TextDecoder();
+
+/**
+ * Read a Node request stream to its end, enforcing `limit` as the bytes arrive.
+ * Resolves with the chunks in order; rejects with a 413 as soon as the limit is
+ * passed, and with the stream's own error if the client goes away first.
+ *
+ * This is the same contract as the reader loops below, on the stream the bytes
+ * actually come from: one promise for the whole body instead of several per
+ * chunk in the web stream wrapped around it.
+ */
+function readNodeBody(stream: NodeBodyStream, limit: number): Promise<Uint8Array[]> {
+  return new Promise((resolve, reject) => {
+    if (stream.readableEnded) {
+      resolve([]);
+      return;
+    }
+    if (stream.destroyed) {
+      reject(new Error("aborted"));
+      return;
+    }
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+    const stop = () => {
+      stream.off("data", onData);
+      stream.off("end", onEnd);
+      stream.off("error", onError);
+      stream.off("close", onClose);
+    };
+    const onData = (chunk: Uint8Array) => {
+      totalBytes += chunk.byteLength;
+      if (totalBytes > limit) {
+        // Stop reading, as the web reader did when it released its lock mid-stream.
+        stop();
+        stream.pause();
+        reject(payloadTooLarge(limit, totalBytes));
+        return;
+      }
+      chunks.push(chunk);
+    };
+    const onEnd = () => {
+      stop();
+      resolve(chunks);
+    };
+    const onError = (error: Error) => {
+      stop();
+      reject(error);
+    };
+    // 'close' without 'end': the client went away mid-body.
+    const onClose = () => {
+      stop();
+      reject(new Error("aborted"));
+    };
+    stream.on("data", onData);
+    stream.on("end", onEnd);
+    stream.on("error", onError);
+    stream.on("close", onClose);
+  });
+}
+
 /**
  * Read the request body as text, enforcing a byte limit during streaming.
  * Rejects with 413 if the body exceeds the limit before reading completes.
@@ -47,6 +109,19 @@ export async function readBodyText(request: Request, limit: number): Promise<str
   const contentLength = request.headers.get("content-length");
   if (contentLength && parseInt(contentLength, 10) > limit) {
     throw payloadTooLarge(limit, parseInt(contentLength, 10));
+  }
+
+  // On core's Node server, read the Node stream itself rather than the web
+  // stream wrapped around it. Same bytes, same limit, same decoding.
+  const nodeBody = limit > 0 ? takeNodeBody(request) : undefined;
+  if (nodeBody !== undefined) {
+    const chunks = await readNodeBody(nodeBody, limit);
+    if (chunks.length === 0) return "";
+    if (chunks.length === 1) return WHOLE_BODY_DECODER.decode(chunks[0]);
+    const decoder = new TextDecoder();
+    let text = "";
+    for (const chunk of chunks) text += decoder.decode(chunk, { stream: true });
+    return text + decoder.decode();
   }
 
   if (!request.body || limit <= 0) {
@@ -87,6 +162,10 @@ async function readBodyBytes(request: Request, limit: number): Promise<Uint8Arra
     throw payloadTooLarge(limit, parseInt(contentLength, 10));
   }
 
+  // See readBodyText: the Node stream itself, when core's Node server offers it.
+  const nodeBody = takeNodeBody(request);
+  if (nodeBody !== undefined) return joinChunks(await readNodeBody(nodeBody, limit));
+
   if (!request.body) {
     const buf = await request.arrayBuffer();
     if (buf.byteLength > limit) {
@@ -113,6 +192,14 @@ async function readBodyBytes(request: Request, limit: number): Promise<Uint8Arra
     reader.releaseLock();
   }
 
+  return joinChunks(chunks, totalBytes);
+}
+
+/** Copy `chunks` into one array of their combined length. */
+function joinChunks(
+  chunks: Uint8Array[],
+  totalBytes = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0),
+): Uint8Array {
   const out = new Uint8Array(totalBytes);
   let offset = 0;
   for (const chunk of chunks) {

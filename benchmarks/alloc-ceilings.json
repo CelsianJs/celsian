@@ -15,7 +15,7 @@
       "minorGCs": 432
     },
     "body": {
-      "promises": 45,
+      "promises": 22,
       "timers": 2,
       "AbortController": 1,
       "Request": 1,
@@ -23,7 +23,7 @@
       "Headers": 0,
       "ReadableStream": 3,
       "URL": 1,
-      "minorGCs": 1006
+      "minorGCs": 749
     },
     "params": {
       "promises": 3,
@@ -34,7 +34,7 @@
       "Headers": 0,
       "ReadableStream": 1,
       "URL": 1,
-      "minorGCs": 445
+      "minorGCs": 444
     },
     "notFound": {
       "promises": 3,
@@ -45,7 +45,7 @@
       "Headers": 0,
       "ReadableStream": 1,
       "URL": 2,
-      "minorGCs": 597
+      "minorGCs": 600
     },
     "error": {
       "promises": 3,
@@ -56,7 +56,7 @@
       "Headers": 0,
       "ReadableStream": 1,
       "URL": 1,
-      "minorGCs": 703
+      "minorGCs": 697
     },
     "headers": {
       "promises": 3,
@@ -67,10 +67,10 @@
       "Headers": 0,
       "ReadableStream": 1,
       "URL": 1,
-      "minorGCs": 537
+      "minorGCs": 531
     },
     "validated": {
-      "promises": 45,
+      "promises": 22,
       "timers": 2,
       "AbortController": 1,
       "Request": 1,
@@ -78,7 +78,7 @@
       "Headers": 0,
       "ReadableStream": 3,
       "URL": 1,
-      "minorGCs": 1109
+      "minorGCs": 861
     }
   }
 }

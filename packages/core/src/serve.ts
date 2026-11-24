@@ -6,7 +6,7 @@ import { CelsianApp, dispatchRequest } from "./app.js";
 import { HttpError } from "./errors.js";
 import { getFastPayload, type Outgoing, peekHeaders, WireResponse } from "./fast-response.js";
 import { readConfinedFile } from "./reply.js";
-import { setRemoteAddress } from "./request.js";
+import { clearNodeBody, setNodeBody, setRemoteAddress } from "./request.js";
 import { authorizeWSUpgrade, type WSAllowedOrigins, WSConnectionLimiter } from "./websocket.js";
 
 /** Options for `serve()` -- port, host, static files, graceful shutdown. */
@@ -919,6 +919,9 @@ class NodeRequest extends BaseRequest {
 
   /** A clone follows the same connection, so it keeps the same transport signal. */
   override clone(): Request {
+    // Cloning tees the body stream, and both halves read from the Node stream
+    // through it. The body parser must then do the same.
+    clearNodeBody(this);
     const copy = super.clone() as NodeRequest;
     Object.setPrototypeOf(copy, NodeRequest.prototype);
     copy[INCOMING] = this[INCOMING];
@@ -1004,6 +1007,8 @@ function nodeToWebRequestFast(req: IncomingMessage, url: string | URL): Request 
     // No `signal` is passed: NodeRequest builds it when it is first read.
     const lazy = new NodeRequest(url, { method, headers, body, duplex });
     lazy[INCOMING] = req;
+    // Lets the body parser read `req` itself instead of the web stream around it.
+    if (hasBody) setNodeBody(lazy, req);
     request = lazy;
   } else {
     // The global Request has been replaced since this module loaded (a
