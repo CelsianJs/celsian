@@ -70,7 +70,7 @@ packages/
 
 ### Per-request allocation gate
 
-`pnpm test:alloc` (after `pnpm build`) counts what one request costs CelsianJS on Node: promises, timers, the web objects it builds, and young-generation GCs, for seven kinds of request. CI fails when a count is above its ceiling in `benchmarks/alloc-ceilings.json`. These are counts, not timings, so they are the same on a busy laptop and on a CI runner.
+`pnpm test:alloc` (after `pnpm build`) counts what one request costs CelsianJS on Node: promises, timers, the web objects it builds, and young-generation GCs, for seven kinds of request. CI fails when a count is above its ceiling in `benchmarks/alloc-ceilings.json`. These are counts, not timings, so they are the same on a busy laptop and on a CI runner. They do not depend on where the repository is checked out either: the one scenario that could, the thrown error, runs with `NODE_ENV=production`, so its body carries no stack and with it no absolute path.
 
 - A failure names the scenario and the counter. `ALLOC_SCENARIOS=json ALLOC_TRACE=PROMISE node benchmarks/alloc-gate.mjs` prints the stack of every place that kind of object is created.
 - `node benchmarks/alloc-gate.mjs --compare` counts Express, Fastify and Hono beside it.

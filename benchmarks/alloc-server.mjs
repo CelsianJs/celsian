@@ -215,8 +215,9 @@ async function start() {
 
 // The error scenario makes every request log a stack to stderr. Writing 20,000
 // of them costs allocations that belong to the console, not the framework, and
-// buries the report.
+// buries the report. serve() also notes a loopback bind in production.
 console.error = () => {};
+console.warn = () => {};
 console.log = () => {};
 
 const port = await start();

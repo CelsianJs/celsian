@@ -8,9 +8,16 @@
 //
 // Needs `pnpm build` first: the CelsianJS server is the built `@celsian/core`.
 //
-// Environment: ALLOC_SCENARIOS=json,body limits the run to those scenarios,
-// ALLOC_TRACE=PROMISE (or Timeout, AbortController, Request, Response, Headers,
-// ReadableStream, URL) prints the stack of every place one is created.
+// Environment: ALLOC_SCENARIOS=json,body limits the run to those scenarios
+// (with --update, only their ceilings are rewritten), ALLOC_TRACE=PROMISE (or
+// Timeout, AbortController, Request, Response, Headers, ReadableStream, URL)
+// prints the stack of every place one is created.
+//
+// Nothing here depends on where the repository is checked out. The one
+// scenario that could, the thrown error, runs with NODE_ENV=production: in
+// development CelsianJS puts the stack in the body, the stack holds absolute
+// paths, and its young-generation GC total then grew by 0.84 per character of
+// checkout path (613 on CI, over 720 in a deep directory).
 //
 // What is gated: promises, timers and web objects per request are exact, and
 // the same on every Node version from 20 up (Node 24 creates fewer, never
@@ -47,18 +54,23 @@ const asJson = args.has("--json");
 
 const BODY = JSON.stringify({ name: "test", value: 42, nested: { a: 1, b: [1, 2, 3] } });
 
-/** scenario -> [method, path, body, server variant, expected status, CelsianJS only?] */
+/**
+ * scenario -> the request to send and the answer to expect.
+ * `variant` is the server variant (default "plain"), `env` the server's
+ * NODE_ENV (default "development"), `celsianOnly` keeps it out of --compare.
+ */
 const SCENARIOS = {
-  json: ["GET", "/json", undefined, "plain", 200],
-  body: ["POST", "/echo", BODY, "plain", 200],
-  params: ["GET", "/user/42", undefined, "plain", 200],
-  notFound: ["GET", "/nope", undefined, "plain", 404],
-  error: ["GET", "/error", undefined, "plain", 500],
+  json: { method: "GET", path: "/json", status: 200 },
+  body: { method: "POST", path: "/echo", body: BODY, status: 200 },
+  params: { method: "GET", path: "/user/42", status: 200 },
+  notFound: { method: "GET", path: "/nope", status: 404 },
+  // In production, so the body holds no stack and with it no checkout path.
+  error: { method: "GET", path: "/error", status: 500, env: "production" },
   // The plain GET again, with cors() and security() registered.
-  headers: ["GET", "/json", undefined, "headers", 200],
+  headers: { method: "GET", path: "/json", variant: "headers", status: 200 },
   // The POST again, with its body validated against a schema. Not compared:
   // each framework validates with a different library, which is what would be measured.
-  validated: ["POST", "/validated", BODY, "plain", 200, true],
+  validated: { method: "POST", path: "/validated", body: BODY, status: 200, celsianOnly: true },
 };
 
 /** Per-request counters that are gated, in report order. */
@@ -98,12 +110,12 @@ function request(port, method, path, body) {
 }
 
 async function measure(framework, scenario) {
-  const [method, path, body, variant, expected] = SCENARIOS[scenario];
+  const { method, path, body, variant = "plain", status: expected, env = "development" } = SCENARIOS[scenario];
   const child = fork(`${HERE}alloc-server.mjs`, [`${framework}:${variant}`], {
     execArgv: ["--min-semi-space-size=1", "--max-semi-space-size=1"],
-    // An explicit NODE_ENV so the error scenario measures the same branch
-    // everywhere: outside production the default error body carries the stack.
-    env: { ...process.env, NODE_ENV: process.env.ALLOC_NODE_ENV ?? "development" },
+    // An explicit NODE_ENV, the scenario's own, so every run measures the same
+    // branch whatever the caller's environment says.
+    env: { ...process.env, NODE_ENV: env },
     stdio: ["ignore", "inherit", "inherit", "ipc"],
   });
   const next = (predicate) =>
@@ -197,7 +209,7 @@ for (const scenario of selected) {
   if (!(scenario in SCENARIOS)) throw new Error(`unknown scenario: ${scenario}`);
   const rows = [];
   for (const framework of frameworks) {
-    if (framework !== "celsian" && SCENARIOS[scenario][5] === true) continue;
+    if (framework !== "celsian" && SCENARIOS[scenario].celsianOnly === true) continue;
     const counts = await measure(framework, scenario);
     rows.push([framework, counts]);
     if (framework !== "celsian") continue;
@@ -218,7 +230,10 @@ for (const scenario of selected) {
       failures.push(`${scenario}: ${counts.minorGCs} young-generation GCs per ${N} requests, ceiling ${ceiling.minorGCs}`);
     }
   }
-  if (!asJson) printTable(`== ${scenario}: ${SCENARIOS[scenario][0]} ${SCENARIOS[scenario][1]} ==`, rows);
+  if (!asJson) {
+    const { method, path, env = "development" } = SCENARIOS[scenario];
+    printTable(`== ${scenario}: ${method} ${path} (NODE_ENV=${env}) ==`, rows);
+  }
 }
 
 if (asJson) console.log(JSON.stringify(measured, null, 2));
@@ -247,7 +262,12 @@ if (update) {
       "only compared on the Node major in 'node'. Regenerate with: pnpm build && node benchmarks/alloc-gate.mjs --update",
     node: process.version,
     requests: N,
-    scenarios: { ...previous, ...scenarios },
+    // In the order the scenarios are declared, whichever of them this run measured.
+    scenarios: Object.fromEntries(
+      Object.keys(SCENARIOS)
+        .map((name) => [name, scenarios[name] ?? previous[name]])
+        .filter(([, entry]) => entry !== undefined),
+    ),
   };
   writeFileSync(CEILINGS_FILE, `${JSON.stringify(file, null, 2)}\n`);
   console.log(`\nWrote ${CEILINGS_FILE}`);

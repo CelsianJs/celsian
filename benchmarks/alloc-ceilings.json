@@ -56,7 +56,7 @@
       "Headers": 0,
       "ReadableStream": 1,
       "URL": 1,
-      "minorGCs": 697
+      "minorGCs": 479
     },
     "headers": {
       "promises": 3,
