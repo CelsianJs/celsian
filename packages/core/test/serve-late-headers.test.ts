@@ -192,10 +192,14 @@ describe("a Response nobody touched still takes the snapshot write", () => {
     }
 
     for (const url of ["/json", "/auto", "/text"]) {
-      // onSend added a header the response did not carry, so core rebuilt it:
-      // that is a plain Response with no snapshot at all, as before this fix.
+      // onSend added a header the response did not carry. What handle() returns
+      // is a new Response over the same body, and it carries a snapshot that
+      // includes the added header, so the Node writer keeps its single write.
       const res = await app.handle(new Request(`http://localhost${url}`));
-      expect(getFastPayload(res), url).toBeUndefined();
+      const fast = getFastPayload(res);
+      expect(fast, url).toBeDefined();
+      expect(fast?.headersExposed, url).toBe(false);
+      expect(fast?.headers["x-from-hook"], url).toBe("1");
     }
   });
 

@@ -7,7 +7,15 @@ import { parseCookies } from "./cookie.js";
 import { type CronJob, CronScheduler } from "./cron.js";
 import { handleError as handleErrorFn } from "./error-handler.js";
 import { assertPlugin, CelsianError, HttpError, ValidationError, wrapNonError } from "./errors.js";
-import { fastResponse, getFastPayload, peekHeaders } from "./fast-response.js";
+import {
+  fastResponse,
+  getFastPayload,
+  type Outgoing,
+  peekHeaders,
+  toResponse,
+  WireResponse,
+  wireHeaders,
+} from "./fast-response.js";
 import { runHooks, runHooksFireAndForget, runOnSendHooks } from "./hooks.js";
 import { createInject, type InjectOptions } from "./inject.js";
 import { createLogger, generateRequestId, type Logger } from "./logger.js";
@@ -22,7 +30,7 @@ import {
   resolveClientIp,
   setRemoteAddress,
 } from "./request.js";
-import { mergeReplyIntoResponse } from "./response-merge.js";
+import { mergeReply } from "./response-merge.js";
 import { resolveResponseSchema } from "./response-schema.js";
 import { Router } from "./router.js";
 import { createEnqueue, type TaskDefinition, TaskRegistry, TaskWorker, type TaskWorkerOptions } from "./task.js";
@@ -55,6 +63,14 @@ import { type WSHandler, WSRegistry } from "./websocket.js";
 /** Shared decoder for response bodies that were serialized as bytes. */
 const RESPONSE_DECODER = new TextDecoder();
 
+/** The bodiless answer to a HEAD request: the status and headers `out` would have been sent with. */
+function headOf(out: Outgoing): Response {
+  return new Response(null, {
+    status: out.status,
+    headers: out instanceof WireResponse ? wireHeaders(out) : out.headers,
+  });
+}
+
 /**
  * True when `prefix` scopes `pathname`: an exact match, or a path-segment
  * prefix. `/api` covers `/api` and `/api/chat`, but not `/apix`.
@@ -63,6 +79,19 @@ function prefixCoversPath(prefix: string, pathname: string): boolean {
   if (prefix === "" || prefix === "/") return true;
   const base = prefix.endsWith("/") ? prefix.slice(0, -1) : prefix;
   return pathname === base || pathname.startsWith(`${base}/`);
+}
+
+/** Reaches `CelsianApp`'s private request entry point; set by the class's static initializer. */
+let dispatch: (app: CelsianApp, request: Request) => Promise<Outgoing>;
+
+/**
+ * `app.handle()` for core's own Node server. The answer may be a fast response
+ * with its final headers still beside it (see `WireResponse`), which that
+ * server writes directly; `handle()` turns it into a Response for everyone
+ * else. Internal to core: not exported from the package.
+ */
+export function dispatchRequest(app: CelsianApp, request: Request): Promise<Outgoing> {
+  return dispatch(app, request);
 }
 
 /**
@@ -91,6 +120,10 @@ export class CelsianApp {
   private static readonly JSON_CONTENT_TYPE: Record<string, string> = {
     "content-type": "application/json; charset=utf-8",
   };
+
+  static {
+    dispatch = (app, request) => app.dispatch(request);
+  }
 
   private router = new Router();
   private rootContext: EncapsulationContext;
@@ -731,6 +764,11 @@ export class CelsianApp {
 
   /** Handle an incoming Web Standard Request and return a Response. */
   async handle(request: Request): Promise<Response> {
+    return toResponse(await this.dispatch(request));
+  }
+
+  /** The request lifecycle behind `handle()` and {@link dispatchRequest}. */
+  private async dispatch(request: Request): Promise<Outgoing> {
     // Ensure all registered plugins are loaded before handling
     // Skip the async call entirely when no pending plugins and no active ready promise
     if (this.pendingPlugins.length > 0 || this.readyPromise !== null) {
@@ -866,8 +904,7 @@ export class CelsianApp {
       const missHooks =
         allowed.length > 0 ? this.routeScopeHooks(pathname, allowed) : this.onRequestHooksForPath(pathname);
       const earlyResponse = await runHooks(missHooks, missContext.request, missContext.reply);
-      if (earlyResponse)
-        return this.finishMiss(mergeReplyIntoResponse(earlyResponse, missContext.reply, null), missContext);
+      if (earlyResponse) return this.finishMiss(mergeReply(earlyResponse, missContext.reply, null), missContext);
 
       if (isMethodMismatch) {
         const r405 = new Response(CelsianApp.METHOD_NOT_ALLOWED_BODY, {
@@ -892,7 +929,7 @@ export class CelsianApp {
             );
           }
           const empty = new Response(null, { status: missContext.reply.sent ? missContext.reply.statusCode : 404 });
-          return this.finishMiss(mergeReplyIntoResponse(empty, missContext.reply, null), missContext);
+          return this.finishMiss(mergeReply(empty, missContext.reply, null), missContext);
         } catch (error) {
           if (this.hasLogger) {
             this.log.error("notFound handler error", {
@@ -986,15 +1023,19 @@ export class CelsianApp {
 
       try {
         let response = await this.runWithTimeout(celsianRequest, reply, match.route, scope, timeout);
-        if (isHead) response = new Response(null, { status: response.status, headers: response.headers });
+        if (isHead) response = headOf(response);
         const duration = Math.round(performance.now() - start);
         this.log.info("request completed", { method, url: pathname, statusCode: response.status, duration, requestId });
         return this.finish(response, celsianRequest, reply, scope.onResponse);
       } catch (thrown) {
         const error = wrapNonError(thrown);
-        let response = await this.handleError(error, celsianRequest, reply, scope);
-        response = await this.applyOnSend(response, celsianRequest, reply, scope.onSend);
-        if (isHead) response = new Response(null, { status: response.status, headers: response.headers });
+        let response = await this.applyOnSend(
+          await this.handleError(error, celsianRequest, reply, scope),
+          celsianRequest,
+          reply,
+          scope.onSend,
+        );
+        if (isHead) response = headOf(response);
         const duration = Math.round(performance.now() - start);
         this.log.error("request error", {
           method,
@@ -1010,12 +1051,16 @@ export class CelsianApp {
 
     try {
       let response = await this.runWithTimeout(celsianRequest, reply, match.route, scope, timeout);
-      if (isHead) response = new Response(null, { status: response.status, headers: response.headers });
+      if (isHead) response = headOf(response);
       return this.finish(response, celsianRequest, reply, scope.onResponse);
     } catch (thrown) {
-      let response = await this.handleError(wrapNonError(thrown), celsianRequest, reply, scope);
-      response = await this.applyOnSend(response, celsianRequest, reply, scope.onSend);
-      if (isHead) response = new Response(null, { status: response.status, headers: response.headers });
+      let response = await this.applyOnSend(
+        await this.handleError(wrapNonError(thrown), celsianRequest, reply, scope),
+        celsianRequest,
+        reply,
+        scope.onSend,
+      );
+      if (isHead) response = headOf(response);
       return this.finish(response, celsianRequest, reply, scope.onResponse);
     }
   }
@@ -1071,7 +1116,7 @@ export class CelsianApp {
     route: InternalRoute,
     scope: ResolvedScope,
     timeout: number,
-  ): Promise<Response> {
+  ): Promise<Outgoing> {
     if (timeout <= 0) {
       return this.runLifecycle(request, reply, route, scope);
     }
@@ -1100,7 +1145,7 @@ export class CelsianApp {
     let timer: ReturnType<typeof setTimeout>;
     return Promise.race([
       this.runLifecycle(request, reply, route, scope).finally(() => clearTimeout(timer)),
-      new Promise<Response>((_, reject) => {
+      new Promise<Outgoing>((_, reject) => {
         timer = setTimeout(() => {
           controller.abort(new HttpError(504, "Gateway Timeout"));
           reject(new HttpError(504, "Gateway Timeout"));
@@ -1114,19 +1159,19 @@ export class CelsianApp {
     reply: CelsianReply,
     route: InternalRoute,
     scope: ResolvedScope,
-  ): Promise<Response> {
+  ): Promise<Outgoing> {
     let earlyResponse: Response | null;
 
     // 1. onRequest hooks (skip if empty)
     if (scope.onRequest.length > 0) {
       earlyResponse = await runHooks(scope.onRequest, request, reply);
-      if (earlyResponse) return mergeReplyIntoResponse(earlyResponse, reply, null);
+      if (earlyResponse) return mergeReply(earlyResponse, reply, null);
     }
 
     // 2. preParsing hooks (skip if empty)
     if (scope.preParsing.length > 0) {
       earlyResponse = await runHooks(scope.preParsing, request, reply);
-      if (earlyResponse) return mergeReplyIntoResponse(earlyResponse, reply, null);
+      if (earlyResponse) return mergeReply(earlyResponse, reply, null);
     }
 
     // 3. Body parsing
@@ -1135,7 +1180,7 @@ export class CelsianApp {
     // 4. preValidation hooks (skip if empty)
     if (scope.preValidation.length > 0) {
       earlyResponse = await runHooks(scope.preValidation, request, reply);
-      if (earlyResponse) return mergeReplyIntoResponse(earlyResponse, reply, null);
+      if (earlyResponse) return mergeReply(earlyResponse, reply, null);
     }
 
     // 5. Schema validation
@@ -1146,12 +1191,12 @@ export class CelsianApp {
     // 6. preHandler hooks (skip if empty)
     if (scope.preHandler.length > 0) {
       earlyResponse = await runHooks(scope.preHandler, request, reply);
-      if (earlyResponse) return mergeReplyIntoResponse(earlyResponse, reply, null);
+      if (earlyResponse) return mergeReply(earlyResponse, reply, null);
     }
 
     // 7. Handler
     const handlerResult = await route.handler(request, reply);
-    let response: Response;
+    let response: Outgoing;
 
     if (handlerResult instanceof Response) {
       response = handlerResult;
@@ -1181,7 +1226,7 @@ export class CelsianApp {
     // Headers and cookies set on the reply belong on the response however the
     // handler finished. The reply helpers and the serializer above already
     // wrote them, so this only changes a Response the handler built itself.
-    response = mergeReplyIntoResponse(response, reply, null);
+    response = mergeReply(response, reply, null);
 
     // 8. Response schema validation (only for routes that declare schema.response)
     if (route.schema?.response && this.responseValidationEnabled) {
@@ -1204,7 +1249,7 @@ export class CelsianApp {
         this.log.error("onSend hook error", { error: err instanceof Error ? err.message : String(err) });
         return response;
       }
-      response = mergeReplyIntoResponse(response, reply, shown);
+      response = mergeReply(response, reply, shown);
     }
 
     // onResponse runs in `handle()`, once the final response is known, so it
@@ -1230,12 +1275,12 @@ export class CelsianApp {
 
   /** Run an already-resolved onSend chain against a response built outside the normal lifecycle. */
   private async applyOnSend(
-    response: Response,
+    response: Outgoing,
     request: CelsianRequest,
     reply: CelsianReply,
     hooks: HookHandler[],
-  ): Promise<Response> {
-    let merged = mergeReplyIntoResponse(response, reply, null);
+  ): Promise<Outgoing> {
+    let merged = mergeReply(response, reply, null);
     reply.statusCode = merged.status;
     if (hooks.length === 0) return merged;
     const shown = { ...reply.headers };
@@ -1245,7 +1290,7 @@ export class CelsianApp {
       this.log.error("onSend hook error", { error: err instanceof Error ? err.message : String(err) });
       return merged;
     }
-    merged = mergeReplyIntoResponse(merged, reply, shown);
+    merged = mergeReply(merged, reply, shown);
     return merged;
   }
 
@@ -1254,14 +1299,14 @@ export class CelsianApp {
    * status actually sent first: a Response built by a handler, an error handler
    * or an early-returning hook never went through `reply.status()`.
    */
-  private finish(response: Response, request: CelsianRequest, reply: CelsianReply, hooks: HookHandler[]): Response {
+  private finish(response: Outgoing, request: CelsianRequest, reply: CelsianReply, hooks: HookHandler[]): Outgoing {
     reply.statusCode = response.status;
     if (hooks.length > 0) runHooksFireAndForget(hooks, request, reply, this.log);
     return response;
   }
 
   /** {@link finish} for a request that matched no route, which runs the root scope's hooks. */
-  private finishMiss(response: Response, context: { request: CelsianRequest; reply: CelsianReply }): Response {
+  private finishMiss(response: Outgoing, context: { request: CelsianRequest; reply: CelsianReply }): Outgoing {
     return this.finish(response, context.request, context.reply, this.rootScope.onResponse);
   }
 
@@ -1307,7 +1352,7 @@ export class CelsianApp {
    * and the offending payload is only ever written to the server-side log.
    * Disable with `createApp({ validateResponses: false })`.
    */
-  private async validateResponse(response: Response, handlerResult: unknown, route: InternalRoute): Promise<Response> {
+  private async validateResponse(response: Outgoing, handlerResult: unknown, route: InternalRoute): Promise<Outgoing> {
     const schemas = route.schema?.response;
     if (!schemas) return response;
 
@@ -1322,7 +1367,9 @@ export class CelsianApp {
       payload = handlerResult;
     } else {
       // The handler built its own Response (reply.json(...), reply.send(...)).
-      if (!(peekHeaders(response).get("content-type") ?? "").includes("json")) return response;
+      const wire = response instanceof WireResponse ? response : null;
+      const contentType = wire ? wire.headers["content-type"] : peekHeaders(response as Response).get("content-type");
+      if (!(contentType ?? "").includes("json")) return response;
 
       // Only a body that was already serialized in memory may be read here.
       // `response.clone().json()` looks harmless but it TEES the body stream and
@@ -1331,10 +1378,10 @@ export class CelsianApp {
       // byte, and an endless stream hung until the request timeout fired a 504.
       // A response carrying a fast payload was built from a string or a byte
       // array, so parsing that payload reads no stream at all.
-      const fast = getFastPayload(response);
-      if (fast === undefined || fast.body === null) return response;
+      const body = wire ? wire.body : getFastPayload(response as Response)?.body;
+      if (body === undefined || body === null) return response;
       try {
-        payload = JSON.parse(typeof fast.body === "string" ? fast.body : RESPONSE_DECODER.decode(fast.body));
+        payload = JSON.parse(typeof body === "string" ? body : RESPONSE_DECODER.decode(body));
       } catch {
         // Body is not JSON after all, nothing to check.
         return response;

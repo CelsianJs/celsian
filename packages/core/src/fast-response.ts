@@ -104,3 +104,69 @@ export function fastResponse(
 export function getFastPayload(res: Response): FastPayload | undefined {
   return (res as unknown as Record<symbol, FastPayload | undefined>)[FAST];
 }
+
+/**
+ * A fast response together with the headers it will actually be sent with.
+ *
+ * Headers a hook or a plugin sets on the reply (`cors()`, `security()`, any
+ * `onSend`) arrive after the handler has built its Response. Putting them on
+ * that Response means building a second one around the first one's body
+ * stream, which used to cost the Node writer its single `writeHead()+end()`:
+ * the copy carried no payload, so the body was drained from a stream instead.
+ *
+ * Inside core the merged headers are therefore kept beside the Response as
+ * plain data. The Node writer sends the already-serialized body with them
+ * directly; everything else gets a real Response from {@link toResponse}. The
+ * source Response is never modified, so one that a handler holds on to (or
+ * returns again for a later request) is not affected by this request's hooks.
+ */
+export class WireResponse {
+  constructor(
+    /** The Response these headers were merged onto. Read for its body stream, never written. */
+    readonly source: Response,
+    readonly body: string | Uint8Array | null,
+    readonly status: number,
+    /** Every header to send except Set-Cookie values queued by `reply.cookie()`. Lower-case names. */
+    readonly headers: Record<string, string>,
+    readonly cookies: readonly string[],
+  ) {}
+}
+
+/** What the request lifecycle hands to a writer: a Response, or a fast response with its final headers. */
+export type Outgoing = Response | WireResponse;
+
+/** The headers of a {@link WireResponse} in a form `new Response()` accepts, Set-Cookie values included. */
+export function wireHeaders(wire: WireResponse): Record<string, string> | Headers {
+  if (wire.cookies.length === 0) return wire.headers;
+  const headers = new Headers(wire.headers);
+  for (const cookie of wire.cookies) headers.append("set-cookie", cookie);
+  return headers;
+}
+
+/**
+ * The Response a caller outside core receives for `out`.
+ *
+ * A {@link WireResponse} becomes a new Response over the source's body, as a
+ * merge always produced, and keeps the fast payload so a Node writer that is
+ * handed it (`@celsian/adapter-node`) still writes it in one go.
+ */
+export function toResponse(out: Outgoing): Response {
+  if (!(out instanceof WireResponse)) return out;
+  const source = out.source;
+  const res = new FastResponse(source.body, {
+    status: source.status,
+    statusText: source.statusText,
+    headers: wireHeaders(out),
+  });
+  Object.defineProperty(res, FAST, {
+    value: {
+      body: out.body,
+      headers: out.headers,
+      status: out.status,
+      cookies: out.cookies as string[],
+      headersExposed: false,
+    } satisfies FastPayload,
+    enumerable: false,
+  });
+  return res;
+}

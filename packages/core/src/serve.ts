@@ -2,9 +2,9 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Socket } from "node:net";
-import type { CelsianApp } from "./app.js";
+import { CelsianApp, dispatchRequest } from "./app.js";
 import { HttpError } from "./errors.js";
-import { getFastPayload, peekHeaders } from "./fast-response.js";
+import { getFastPayload, type Outgoing, peekHeaders, WireResponse } from "./fast-response.js";
 import { readConfinedFile } from "./reply.js";
 import { setRemoteAddress } from "./request.js";
 import { authorizeWSUpgrade, type WSAllowedOrigins, WSConnectionLimiter } from "./websocket.js";
@@ -358,8 +358,14 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
         throw new HttpError(400, "Bad Request");
       }
 
-      const response = await app.handle(webRequest);
-      await writeWebResponse(res, response);
+      // The app's internal entry point can answer with a fast response whose
+      // final headers are still beside it, which writeOutgoing sends as is.
+      // An app whose `handle` was replaced or overridden keeps going through it.
+      const response =
+        app.handle === CelsianApp.prototype.handle
+          ? await dispatchRequest(app, webRequest)
+          : await app.handle(webRequest);
+      await writeOutgoing(res, response);
     } catch (error) {
       if (!res.destroyed) {
         const badRequest = error instanceof HttpError && error.statusCode === 400;
@@ -889,11 +895,41 @@ function nodeToWebRequestFast(req: IncomingMessage, url: string | URL): Request 
 
 /** Write a Web Standard Response back to a Node.js ServerResponse, preserving Set-Cookie headers. */
 export async function writeWebResponse(res: ServerResponse, response: Response): Promise<void> {
+  return writeOutgoing(res, response);
+}
+
+/** {@link writeWebResponse} for what the app's internal entry point returns. */
+async function writeOutgoing(res: ServerResponse, out: Outgoing): Promise<void> {
   try {
-    await writeNodeResponse(res, response);
+    if (out instanceof WireResponse) writeWire(res, out);
+    else await writeNodeResponse(res, out);
   } finally {
     requestSignalCleanup.get(res.req)?.();
   }
+}
+
+/**
+ * Write a fast response whose final headers were kept beside it: the body is
+ * already serialized, so this is the same single `writeHead()+end()` an
+ * untouched fast response gets.
+ */
+function writeWire(res: ServerResponse, wire: WireResponse): void {
+  if (res.destroyed) {
+    void wire.source.body?.cancel().catch(() => {});
+    return;
+  }
+  const body = wire.body;
+  const headers: Record<string, string | string[]> = { ...wire.headers };
+  if (body !== null) {
+    headers["content-length"] = String(typeof body === "string" ? Buffer.byteLength(body) : body.byteLength);
+  }
+  if (wire.cookies.length > 0) {
+    const fromHeader = headers["set-cookie"];
+    headers["set-cookie"] = typeof fromHeader === "string" ? [fromHeader, ...wire.cookies] : (wire.cookies as string[]);
+  }
+  res.writeHead(wire.status, headers);
+  if (body === null) res.end();
+  else res.end(body);
 }
 
 async function writeNodeResponse(res: ServerResponse, response: Response): Promise<void> {
