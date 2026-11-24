@@ -23,9 +23,12 @@ import { MemoryQueue, type QueueBackend } from "./queue.js";
 import { createReply, replyCookies } from "./reply.js";
 import {
   applyForwardedAuthority,
+  armRequestTimeout,
   buildRequest,
   buildRequestFast,
+  disarmRequestTimeout,
   type ForwardedTrustOptions,
+  fireRequestTimeout,
   remoteAddressFromServeContext,
   resolveClientIp,
   setRemoteAddress,
@@ -1120,38 +1123,31 @@ export class CelsianApp {
     if (timeout <= 0) {
       return this.runLifecycle(request, reply, route, scope);
     }
-    // Per-request AbortController: exposed as request.signal so handlers can
-    // observe cancellation, and aborted when the timeout fires (in addition to
-    // rejecting with 504) so in-flight work can stop promptly.
-    const controller = new AbortController();
-    const incomingSignal = request.signal;
-    // The timeout must not replace transport cancellation, including after a
-    // handler returns a streaming response whose producer retains this signal.
-    if (typeof AbortSignal.any === "function") {
-      (request as Record<string, unknown>).signal = AbortSignal.any([incomingSignal, controller.signal]);
-    } else {
-      // Node 20.0 and older edge runtimes predate AbortSignal.any(). Each source
-      // is a request-local signal, so normal completion is garbage-collectable.
-      const abort = () => controller.abort(incomingSignal.reason);
-      if (incomingSignal.aborted) abort();
-      else {
-        incomingSignal.addEventListener("abort", abort, { once: true });
-        controller.signal.addEventListener("abort", () => incomingSignal.removeEventListener("abort", abort), {
-          once: true,
-        });
-      }
-      (request as Record<string, unknown>).signal = controller.signal;
-    }
-    let timer: ReturnType<typeof setTimeout>;
-    return Promise.race([
-      this.runLifecycle(request, reply, route, scope).finally(() => clearTimeout(timer)),
-      new Promise<Outgoing>((_, reject) => {
-        timer = setTimeout(() => {
-          controller.abort(new HttpError(504, "Gateway Timeout"));
-          reject(new HttpError(504, "Gateway Timeout"));
-        }, timeout);
-      }),
-    ]);
+    // From here until the lifecycle settles, the timeout may abort
+    // `request.signal`. The signal itself is only built if something reads it.
+    armRequestTimeout(request);
+    const lifecycle = this.runLifecycle(request, reply, route, scope);
+    // One timer, cleared by whichever way the lifecycle settles. When the timer
+    // wins, the lifecycle keeps running and its eventual result is dropped.
+    return new Promise<Outgoing>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        // Aborted (in addition to rejecting with 504) so in-flight work can stop promptly.
+        fireRequestTimeout(request, new HttpError(504, "Gateway Timeout"));
+        reject(new HttpError(504, "Gateway Timeout"));
+      }, timeout);
+      lifecycle.then(
+        (response) => {
+          clearTimeout(timer);
+          disarmRequestTimeout(request);
+          resolve(response);
+        },
+        (error) => {
+          clearTimeout(timer);
+          disarmRequestTimeout(request);
+          reject(error);
+        },
+      );
+    });
   }
 
   private async runLifecycle(

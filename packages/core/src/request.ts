@@ -11,11 +11,106 @@ const BLOCKED_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 // Symbol holding the source Web Request on the wrapper (excluded from Object.keys/JSON).
 const SRC = Symbol("celsian.srcRequest");
 
+// Symbol holding the request's resolved `signal`, once something has read it.
+const SIGNAL = Symbol("celsian.signal");
+
+// Symbol holding the request timeout's state: undefined when no timeout can
+// abort this request, ARMED while one can, the AbortController it will abort
+// once `signal` has been read, or a TimedOut record after it fired unobserved.
+const TIMEOUT = Symbol("celsian.requestTimeout");
+const ARMED = Symbol("celsian.requestTimeout.armed");
+
+/** A request timeout that fired before anything had read the request's `signal`. */
+class TimedOut {
+  constructor(
+    readonly reason: unknown,
+    /** The transport had already aborted, so that abort is the one `signal` reports. */
+    readonly transportAbortedFirst: boolean,
+  ) {}
+}
+
+/** The fields the fast request wrapper keeps under symbols. */
+interface FastRequestState {
+  [SRC]: Request;
+  [SIGNAL]: AbortSignal | undefined;
+  [TIMEOUT]: typeof ARMED | AbortController | TimedOut | undefined;
+}
+
+/**
+ * The signal a handler sees: the transport's own, which a request timeout can
+ * also abort. Built on first read. Most handlers never read it, and the
+ * controller, the combined signal and their listeners cost more than the rest
+ * of the request wrapper put together.
+ */
+function resolveSignal(state: FastRequestState): AbortSignal {
+  const incoming = state[SRC].signal;
+  const timeout = state[TIMEOUT];
+  if (timeout === undefined) return incoming;
+  if (timeout instanceof TimedOut) {
+    if (timeout.transportAbortedFirst) return incoming;
+    const fired = new AbortController();
+    fired.abort(timeout.reason);
+    return fired.signal;
+  }
+
+  // A timeout can still abort this request. Its controller is separate from
+  // the transport's, so a timeout never aborts the upstream signal, and the
+  // combined signal keeps following the transport after the handler returns
+  // (a streaming response's producer retains it).
+  const controller = timeout === ARMED ? new AbortController() : timeout;
+  state[TIMEOUT] = controller;
+  if (typeof AbortSignal.any === "function") {
+    return AbortSignal.any([incoming, controller.signal]);
+  }
+  // Node 20.0 and older edge runtimes predate AbortSignal.any(). Each source
+  // is a request-local signal, so normal completion is garbage-collectable.
+  const abort = () => controller.abort(incoming.reason);
+  if (incoming.aborted) abort();
+  else {
+    incoming.addEventListener("abort", abort, { once: true });
+    controller.signal.addEventListener("abort", () => incoming.removeEventListener("abort", abort), { once: true });
+  }
+  return controller.signal;
+}
+
+/** Note that a request timeout may abort `request` from now on. Fast requests only. */
+export function armRequestTimeout(request: CelsianRequest): void {
+  const state = request as unknown as FastRequestState;
+  if (state[TIMEOUT] === undefined) state[TIMEOUT] = ARMED;
+}
+
+/** The request timeout fired: abort `request.signal` with `reason`, now or when it is first read. */
+export function fireRequestTimeout(request: CelsianRequest, reason: unknown): void {
+  const state = request as unknown as FastRequestState;
+  const timeout = state[TIMEOUT];
+  if (timeout instanceof AbortController) timeout.abort(reason);
+  else if (timeout === ARMED) state[TIMEOUT] = new TimedOut(reason, state[SRC].signal.aborted);
+}
+
+/** The request finished before its timeout: the timeout can no longer abort `request.signal`. */
+export function disarmRequestTimeout(request: CelsianRequest): void {
+  const state = request as unknown as FastRequestState;
+  // A controller that was handed out stays where it is; it is simply never aborted.
+  if (state[TIMEOUT] === ARMED) state[TIMEOUT] = undefined;
+}
+
 // Shared prototype for fast request wrappers: body-consuming methods and the
 // live body/bodyUsed accessors delegate to the source Request via `this[SRC]`.
 // Using a prototype avoids per-request `.bind()` (×6) and `Object.defineProperty`
 // (×2) -- ~10× cheaper to construct than per-request property definition.
 const REQUEST_PROTO = {
+  get signal(): AbortSignal {
+    const state = this as unknown as FastRequestState;
+    let signal = state[SIGNAL];
+    if (signal === undefined) {
+      signal = resolveSignal(state);
+      state[SIGNAL] = signal;
+    }
+    return signal;
+  },
+  set signal(value: AbortSignal) {
+    (this as unknown as FastRequestState)[SIGNAL] = value;
+  },
   get body() {
     return (this as Record<symbol, Request>)[SRC].body;
   },
@@ -321,10 +416,11 @@ export function buildRequestFast(
   const celsianRequest = Object.create(REQUEST_PROTO) as CelsianRequest;
   const req = celsianRequest as unknown as Record<string | symbol, unknown>;
   req[SRC] = request;
+  req[SIGNAL] = undefined;
+  req[TIMEOUT] = undefined;
   req.headers = request.headers;
   req.method = request.method;
   req.url = effectiveUrl;
-  req.signal = request.signal;
   req.params = params;
   req.query = query;
   req.parsedBody = undefined;
