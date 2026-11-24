@@ -141,6 +141,23 @@ export class ValidationError extends CelsianError {
   }
 }
 
+// ─── Intentional-error brand ───
+
+/**
+ * Marks the two error classes whose `statusCode`, `code` and `message` are
+ * written for the client. It lets a package that does not depend on
+ * `@celsian/core` (`@celsian/rpc`) tell a thrown `HttpError` apart from a
+ * database or HTTP-client error that merely happens to carry a `statusCode`,
+ * and it still matches when two copies of this module are installed, which
+ * `instanceof` does not.
+ *
+ * Set on the prototypes, non-enumerable, so it costs nothing per instance and
+ * never shows up in logs or JSON.
+ */
+const INTENTIONAL_ERROR = Symbol.for("celsian.httpError");
+Object.defineProperty(HttpError.prototype, INTENTIONAL_ERROR, { value: true });
+Object.defineProperty(ValidationError.prototype, INTENTIONAL_ERROR, { value: true });
+
 // ─── Plugin assertion ───
 
 /**

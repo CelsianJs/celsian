@@ -123,6 +123,23 @@ new RPCHandler(appRouter, {
 });
 ```
 
+### 4. Only an `HttpError` chooses the response status
+
+A procedure or middleware that throws `HttpError` (or `ValidationError`) from
+`@celsian/core` gets that status, code and message sent to the client:
+
+```typescript
+import { HttpError } from '@celsian/core';
+
+throw new HttpError(403, 'Admins only'); // 403 { error: { message: 'Admins only', code: 'FORBIDDEN' } }
+```
+
+Anything else that is thrown is a `500`, even if it carries a `statusCode` of
+its own. Database drivers and HTTP clients put that field on their errors, and
+their messages are not written for your users. In production a `500` is sent as
+`{ message: 'Internal error', code: 'INTERNAL_ERROR' }`; the real error goes to
+the logger.
+
 ### Logging
 
 Pass the app logger so 5xx detail goes through its redaction, levels, and sinks
