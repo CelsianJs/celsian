@@ -1,0 +1,84 @@
+{
+  "note": "Ceilings for benchmarks/alloc-gate.mjs (pnpm test:alloc). The per-request counters are exact. minorGCs is the young-generation GC total over 'requests' requests, recorded 10% above the measured value and only compared on the Node major in 'node'. Regenerate with: pnpm build && node benchmarks/alloc-gate.mjs --update",
+  "node": "v22.13.1",
+  "requests": 20000,
+  "scenarios": {
+    "json": {
+      "promises": 3,
+      "timers": 1,
+      "AbortController": 2,
+      "Request": 1,
+      "Response": 1,
+      "Headers": 0,
+      "ReadableStream": 1,
+      "URL": 1,
+      "minorGCs": 553
+    },
+    "body": {
+      "promises": 45,
+      "timers": 2,
+      "AbortController": 2,
+      "Request": 1,
+      "Response": 1,
+      "Headers": 0,
+      "ReadableStream": 3,
+      "URL": 1,
+      "minorGCs": 1110
+    },
+    "params": {
+      "promises": 3,
+      "timers": 1,
+      "AbortController": 2,
+      "Request": 1,
+      "Response": 1,
+      "Headers": 0,
+      "ReadableStream": 1,
+      "URL": 1,
+      "minorGCs": 571
+    },
+    "notFound": {
+      "promises": 3,
+      "timers": 1,
+      "AbortController": 2,
+      "Request": 1,
+      "Response": 1,
+      "Headers": 0,
+      "ReadableStream": 1,
+      "URL": 2,
+      "minorGCs": 664
+    },
+    "error": {
+      "promises": 3,
+      "timers": 1,
+      "AbortController": 2,
+      "Request": 1,
+      "Response": 1,
+      "Headers": 0,
+      "ReadableStream": 1,
+      "URL": 1,
+      "minorGCs": 827
+    },
+    "headers": {
+      "promises": 3,
+      "timers": 1,
+      "AbortController": 2,
+      "Request": 1,
+      "Response": 1,
+      "Headers": 0,
+      "ReadableStream": 1,
+      "URL": 1,
+      "minorGCs": 664
+    },
+    "validated": {
+      "promises": 45,
+      "timers": 2,
+      "AbortController": 2,
+      "Request": 1,
+      "Response": 1,
+      "Headers": 0,
+      "ReadableStream": 3,
+      "URL": 1,
+      "minorGCs": 1232
+    }
+  }
+}
