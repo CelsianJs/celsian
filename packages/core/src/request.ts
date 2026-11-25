@@ -108,12 +108,15 @@ const KEPT = new WeakMap<AbortSignal, AbortController | typeof SHARED>();
  *
  * What it listens on. An ordinary listener on `incoming` would be added after
  * any the application put there, and one of those that calls
- * `event.stopImmediatePropagation()` would keep it from ever running. So the
- * listener goes on a relay of its own, `AbortSignal.any([incoming])`, that
- * nothing else can reach: the runtime aborts a signal made that way when
- * `incoming` aborts, whatever `incoming`'s listeners do. Without
- * `AbortSignal.any` the listener goes on `incoming`, where a listener before it
- * can stop it.
+ * `event.stopImmediatePropagation()` would keep it from ever running. An
+ * `abort` event that someone merely dispatched on `incoming` would run it too,
+ * although `incoming` has not aborted. So the listener goes on a relay of its
+ * own, `AbortSignal.any([incoming])`, that nothing else can reach: the runtime
+ * aborts a signal made that way when `incoming` itself aborts, whatever
+ * `incoming`'s listeners do, and never for a dispatched event. Without
+ * `AbortSignal.any` the listener goes on `incoming`, checks that it really has
+ * aborted, and stays for the real abort after a dispatched one; a listener
+ * before it can stop it there.
  *
  * What it keeps alive. Node keeps a signal made by `AbortSignal.any()` that has
  * a listener in a process-wide set, until the listener is removed (or, on Node
@@ -171,6 +174,8 @@ function relayTo(
   registry: FinalizationRegistry<() => void>,
 ): () => void {
   const forward = () => {
+    // An `abort` event dispatched on the input itself (no relay): not an abort.
+    if (!relay.aborted) return;
     stop();
     const followed = target.deref();
     if (followed !== undefined) FOLLOWING.get(followed)?.controller.abort(relay.reason);
@@ -179,14 +184,18 @@ function relayTo(
     relay.removeEventListener("abort", forward);
     registry.unregister(stop);
   };
-  relay.addEventListener("abort", forward, { once: true });
+  relay.addEventListener("abort", forward);
   return stop;
 }
 
 /** {@link follow} without weak references: a listener on `incoming`, which keeps `controller`. */
 function listenFor(incoming: AbortSignal, controller: AbortController): () => void {
-  const forward = () => controller.abort(incoming.reason);
-  incoming.addEventListener("abort", forward, { once: true });
+  const forward = () => {
+    if (!incoming.aborted) return;
+    incoming.removeEventListener("abort", forward);
+    controller.abort(incoming.reason);
+  };
+  incoming.addEventListener("abort", forward);
   return () => incoming.removeEventListener("abort", forward);
 }
 

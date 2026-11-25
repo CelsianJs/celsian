@@ -337,3 +337,84 @@ describe("request.signal stops following its input", () => {
     }
   });
 });
+
+describe.each([
+  ["", "relay"],
+  [", where the runtime has no AbortSignal.any", "no AbortSignal.any"],
+  [", where the runtime has no WeakRef", "no WeakRef"],
+] as const)("request.signal and an abort event dispatched on an input that has not aborted%s", (_label, runtime) => {
+  afterEach(() => {
+    vi.resetModules();
+  });
+
+  it("is not aborted by it, keeps following, and aborts with the real reason when the input does", async () => {
+    // Made first: Node's own Request uses a WeakRef to follow its signal.
+    const source = new AbortController();
+    const input = new Request("http://localhost/", { signal: source.signal });
+    const realAny = AbortSignal.any;
+    const realWeakRef = globalThis.WeakRef;
+    if (runtime === "no AbortSignal.any") (AbortSignal as { any?: unknown }).any = undefined;
+    if (runtime === "no WeakRef") (globalThis as { WeakRef?: unknown }).WeakRef = undefined;
+    try {
+      vi.resetModules();
+      const { createApp: make } = await import("../src/app.js");
+      let signal: AbortSignal | undefined;
+      const heard: unknown[] = [];
+      const answer = make({ requestTimeout: 30_000 });
+      answer.get("/", (request) => {
+        signal = request.signal;
+        signal.addEventListener("abort", () => heard.push(signal?.reason));
+        return "ok";
+      });
+      await answer.handle(input);
+
+      input.signal.dispatchEvent(new Event("abort"));
+      expect(input.signal.aborted).toBe(false);
+      expect(signal?.aborted).toBe(false);
+      expect(heard).toEqual([]);
+
+      source.abort("the real reason");
+      expect(signal?.aborted).toBe(true);
+      expect(signal?.reason).toBe("the real reason");
+      expect(heard).toEqual(["the real reason"]);
+    } finally {
+      AbortSignal.any = realAny;
+      globalThis.WeakRef = realWeakRef;
+    }
+  });
+});
+
+describe("request.signal and the input's own state", () => {
+  it("is aborted at first read, with the input's reason, when the input aborted before the request", async () => {
+    const source = new AbortController();
+    source.abort("before");
+    const app = createApp();
+    app.get("/", (request, reply) => reply.json({ aborted: request.signal.aborted, reason: request.signal.reason }));
+    const res = await app.handle(new Request("http://localhost/", { signal: source.signal }));
+    expect(await res.json()).toEqual({ aborted: true, reason: "before" });
+  });
+
+  // On Node and Bun request.signal hears the input's abort from a relay of
+  // its own, whose listeners run after the input's. An abort listener that was
+  // on the input before the request reached the app therefore runs while
+  // request.signal is still unaborted. (ef8953c's AbortSignal.any() set it
+  // aborted before the input's listeners on Node 22 and later, and after them
+  // on Node 20; see the changeset.)
+  it("aborts after the input's abort listeners have run: one added before the request reached the app sees it unaborted", async () => {
+    const source = new AbortController();
+    const input = new Request("http://localhost/", { signal: source.signal });
+    let signal: AbortSignal | undefined;
+    const seen: boolean[] = [];
+    input.signal.addEventListener("abort", () => seen.push(signal?.aborted === true));
+    const app = createApp();
+    app.get("/", (request) => {
+      signal = request.signal;
+      return "ok";
+    });
+    await app.handle(input);
+    source.abort("example");
+    expect(seen).toEqual([false]);
+    expect(signal?.aborted).toBe(true);
+    expect(signal?.reason).toBe("example");
+  });
+});
