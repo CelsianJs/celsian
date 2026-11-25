@@ -74,7 +74,8 @@ packages/
 
 - A failure names the scenario and the counter. `ALLOC_SCENARIOS=json ALLOC_TRACE=PROMISE node benchmarks/alloc-gate.mjs` prints the stack of every place that kind of object is created.
 - Synchronous and `async` handlers are separate scenarios (`json` and `jsonAsync`, `body` and `bodyAsync`). An `async` handler costs promises a synchronous one does not, and most real handlers are `async`, so the `Async` rows are what most applications get.
-- `node benchmarks/alloc-gate.mjs --compare` counts Express, Fastify and Hono beside it, like for like: within a scenario every framework runs the same handler style and sends the same status, the same response header names and a body of the same length, and the run stops if they do not.
+- `node benchmarks/alloc-gate.mjs --compare` counts Express, Fastify and Hono beside it, like for like: within a scenario every framework runs the same handler style and sends the same status, the same response headers with the same values and the same body bytes, and the run stops if they do not. Hono has no synchronous way to read a body, so it sits out the synchronous POST row.
+- The gate does not see work that allocates nothing it counts. Two optimisations are like that and are pinned by unit tests instead: the exact-path lookup for static routes (`router-static-fast-path.test.ts`) and adapting route schemas once at registration (`route-validators.test.ts`). See `benchmarks/README.md`.
 - If your change is meant to cost more, or costs less, run `node benchmarks/alloc-gate.mjs --update` on the Node major recorded in the ceilings file, commit the result, and say why in the pull request.
 
 ## Adding a Plugin

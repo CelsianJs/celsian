@@ -11,7 +11,9 @@
 //   - each route exists twice, with a synchronous handler and with an `async`
 //     one (`/json` and `/json-async`, `/echo` and `/echo-async`). An `async`
 //     handler costs every framework promises a synchronous one does not, so a
-//     scenario uses the same style everywhere;
+//     scenario uses the same style everywhere. (Hono cannot read a body
+//     synchronously, so it has no `/echo` and sits out that row);
+//   - the same Content-Type value, charset included;
 //   - the same JSON bodies, for the 404 and the 500 as well, which each
 //     framework would otherwise word, and size, in its own way;
 //   - the same response headers: Express's `X-Powered-By` and `ETag` are
@@ -232,20 +234,24 @@ async function start() {
         return next();
       });
     }
-    app.get("/json", (c) => c.json({ message: "Hello, World!" }));
-    app.get("/json-async", async (c) => c.json({ message: "Hello, World!" }));
+    // c.json() sends `application/json`; the others send the charset as well,
+    // so it is given the same value they send.
+    const JSON_TYPE = { "Content-Type": "application/json; charset=utf-8" };
+    app.get("/json", (c) => c.json({ message: "Hello, World!" }, 200, JSON_TYPE));
+    app.get("/json-async", async (c) => c.json({ message: "Hello, World!" }, 200, JSON_TYPE));
     app.get("/user/:id", (c) => {
       const id = c.req.param("id");
-      return c.json({ id, name: `User ${id}`, email: `user${id}@test.com` });
+      return c.json({ id, name: `User ${id}`, email: `user${id}@test.com` }, 200, JSON_TYPE);
     });
-    // Hono has no synchronous way to read a body, so both of these await it.
-    app.post("/echo", async (c) => c.json(await c.req.json()));
-    app.post("/echo-async", async (c) => c.json(await c.req.json()));
+    // Hono has no synchronous way to read a body, so it has no synchronous
+    // /echo: alloc-gate.mjs leaves it out of the `body` row rather than set an
+    // `async` handler beside the others' synchronous ones.
+    app.post("/echo-async", async (c) => c.json(await c.req.json(), 200, JSON_TYPE));
     app.get("/error", () => {
       throw new Error("Intentional benchmark error");
     });
-    app.notFound((c) => c.json(NOT_FOUND, 404));
-    app.onError((_err, c) => c.json(SERVER_ERROR, 500));
+    app.notFound((c) => c.json(NOT_FOUND, 404, JSON_TYPE));
+    app.onError((_err, c) => c.json(SERVER_ERROR, 500, JSON_TYPE));
     return new Promise((resolve) => {
       serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1" }, (info) => resolve(info.port));
     });

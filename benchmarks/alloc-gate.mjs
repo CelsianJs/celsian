@@ -20,10 +20,12 @@
 // numbers most applications get; `json` and `body` are the floor.
 //
 // `--compare` is like for like: within a scenario every framework runs the
-// same handler style, answers with the same status, the same response header
-// names and a body of the same length (see alloc-server.mjs), and the run
-// stops when they do not. Read each scenario as a row-by-row comparison, not
-// one scenario against another.
+// same handler style and answers with the same status, the same response
+// headers (names and values) and the same body bytes (see alloc-server.mjs),
+// and the run stops when they do not. A framework that cannot run a
+// scenario's handler style is left out of that row, and the report says so.
+// Read each scenario as a row-by-row comparison, not one scenario against
+// another.
 //
 // Nothing here depends on where the repository is checked out. The one
 // scenario that could, the thrown error, runs with NODE_ENV=production: in
@@ -36,6 +38,14 @@
 // more). They are checked on whatever Node runs this. The young-generation GC
 // total depends on the size of Node's own objects, so it is only compared on
 // the Node major the ceilings were recorded on, and CI pins that major.
+//
+// What is not: work that allocates nothing counted here, or too little to
+// move the GC total past its 10% margin. Two of the branch's optimisations
+// are like that, and undoing either passes this gate: the exact-path lookup
+// for static routes (it saves a canonicalization and a map lookup, no
+// allocation) and adapting route schemas once at registration instead of per
+// request. Unit tests pin both instead: router-static-fast-path.test.ts and
+// route-validators.test.ts in packages/core/test. See benchmarks/README.md.
 //
 // Why counts and not timings: a request's promise, timer and object counts are
 // a property of the code path, so they are the same on a laptop under load and
@@ -69,13 +79,15 @@ const BODY = JSON.stringify({ name: "test", value: 42, nested: { a: 1, b: [1, 2,
 /**
  * scenario -> the request to send and the answer to expect.
  * `variant` is the server variant (default "plain"), `env` the server's
- * NODE_ENV (default "development"), `celsianOnly` keeps it out of --compare.
+ * NODE_ENV (default "development"), `celsianOnly` keeps it out of --compare,
+ * `without` names frameworks left out of its --compare row, and why.
  */
 const SCENARIOS = {
   json: { method: "GET", path: "/json", status: 200 },
   // The same route with an `async` handler.
   jsonAsync: { method: "GET", path: "/json-async", status: 200 },
-  body: { method: "POST", path: "/echo", body: BODY, status: 200 },
+  // Hono has no synchronous way to read a body, so it can only run the `async` row.
+  body: { method: "POST", path: "/echo", body: BODY, status: 200, without: { hono: "no synchronous body read" } },
   bodyAsync: { method: "POST", path: "/echo-async", body: BODY, status: 200 },
   params: { method: "GET", path: "/user/42", status: 200 },
   notFound: { method: "GET", path: "/nope", status: 404 },
@@ -129,20 +141,33 @@ const TRANSPORT_HEADERS = new Set(["date", "connection", "keep-alive"]);
 
 /**
  * What one response looks like on the wire, for checking that the frameworks
- * in a comparison answered alike: the status, the header names the framework
- * sent (sorted) and the body's length.
+ * in a comparison answered alike: the status, every header the framework sent
+ * with its value (sorted by name), and the body's bytes.
  */
 function describeResponse(port, method, path, body) {
   return new Promise((resolve, reject) => {
     const headers = body === undefined ? {} : { "content-type": "application/json", "content-length": Buffer.byteLength(body) };
     const req = http.request({ port, host: "127.0.0.1", method, path, agent, headers }, (res) => {
-      let bytes = 0;
+      const chunks = [];
       res.on("data", (chunk) => {
-        bytes += chunk.length;
+        chunks.push(chunk);
       });
       res.on("end", () => {
-        const names = Object.keys(res.headers).filter((name) => !TRANSPORT_HEADERS.has(name));
-        resolve({ status: res.statusCode, headers: names.sort().join(", "), bodyBytes: bytes });
+        // Raw pairs, so a repeated header is seen as sent, and names as Node lowercases them.
+        const sent = [];
+        for (let i = 0; i < res.rawHeaders.length; i += 2) {
+          const name = res.rawHeaders[i].toLowerCase();
+          if (!TRANSPORT_HEADERS.has(name)) sent.push(`${name}: ${res.rawHeaders[i + 1]}`);
+        }
+        sent.sort();
+        const bytes = Buffer.concat(chunks);
+        resolve({
+          status: res.statusCode,
+          headerNames: [...new Set(sent.map((line) => line.slice(0, line.indexOf(":"))))].join(", "),
+          headers: sent.join("\n"),
+          body: bytes.toString("base64"),
+          bodyBytes: bytes.length,
+        });
       });
     });
     req.on("error", reject);
@@ -252,13 +277,20 @@ for (const scenario of selected) {
   if (!(scenario in SCENARIOS)) throw new Error(`unknown scenario: ${scenario}`);
   const rows = [];
   let celsianWire;
+  const leftOut = [];
   for (const framework of frameworks) {
     if (framework !== "celsian" && SCENARIOS[scenario].celsianOnly === true) continue;
+    const reason = SCENARIOS[scenario].without?.[framework];
+    if (reason !== undefined) {
+      leftOut.push(`${framework} (${reason})`);
+      continue;
+    }
     const { wire, ...counts } = await measure(framework, scenario);
     rows.push([framework, counts]);
     if (framework !== "celsian") {
-      // A comparison is only worth printing when both sides did the same job.
-      for (const key of ["status", "headers", "bodyBytes"]) {
+      // A comparison is only worth printing when both sides did the same job:
+      // the same status, the same headers with the same values, the same bytes.
+      for (const key of ["status", "headers", "body"]) {
         if (wire[key] !== celsianWire[key]) {
           throw new Error(
             `${scenario}: not like for like. ${framework} answered with ${key} ${JSON.stringify(wire[key])}, ` +
@@ -288,8 +320,9 @@ for (const scenario of selected) {
   }
   if (!asJson) {
     const { method, path, env = "development" } = SCENARIOS[scenario];
-    const sent = `HTTP ${celsianWire.status}, ${celsianWire.bodyBytes} body bytes, headers: ${celsianWire.headers}`;
+    const sent = `HTTP ${celsianWire.status}, ${celsianWire.bodyBytes} body bytes, headers: ${celsianWire.headerNames}`;
     printTable(`== ${scenario}: ${method} ${path} (NODE_ENV=${env}) -> ${sent} ==`, rows);
+    if (compare && leftOut.length > 0) console.log(`  not run: ${leftOut.join(", ")}`);
   }
 }
 
