@@ -119,6 +119,17 @@ function readNodeBody<T>(
 }
 
 /**
+ * Throw the 413 when `request` declares a body longer than `limit`. Reads the
+ * Content-Length header once. Only for a real limit (above 0).
+ */
+function checkDeclaredLength(request: Request | CelsianRequest, limit: number): void {
+  const contentLength = request.headers.get("content-length");
+  if (contentLength && parseInt(contentLength, 10) > limit) {
+    throw payloadTooLarge(limit, parseInt(contentLength, 10));
+  }
+}
+
+/**
  * Read the request body as text, enforcing a byte limit during streaming.
  * Rejects with 413 if the body exceeds the limit before reading completes.
  */
@@ -126,13 +137,12 @@ export async function readBodyText(request: Request, limit: number): Promise<str
   // A limit of 0 means no limit, so a declared length is only held against a
   // real one. Checked unconditionally, `bodyLimit: 0` refused every body that
   // declared its length, which is nearly every body, with a 413.
-  if (limit > 0) {
-    const contentLength = request.headers.get("content-length");
-    if (contentLength && parseInt(contentLength, 10) > limit) {
-      throw payloadTooLarge(limit, parseInt(contentLength, 10));
-    }
-  }
+  if (limit > 0) checkDeclaredLength(request, limit);
+  return readCheckedBodyText(request, limit);
+}
 
+/** {@link readBodyText} once the declared length has been checked. */
+function readCheckedBodyText(request: Request, limit: number): Promise<string> {
   // On core's Node server, read the Node stream itself rather than the web
   // stream wrapped around it. Same bytes, same limit, same decoding.
   const nodeBody = limit > 0 ? takeNodeBody(request) : undefined;
@@ -141,8 +151,12 @@ export async function readBodyText(request: Request, limit: number): Promise<str
   if (!request.body || limit <= 0) {
     return request.text();
   }
+  return readWebBodyText(request.body, limit);
+}
 
-  const reader = request.body.getReader();
+/** Read a web stream to its end as UTF-8 text, rejecting with a 413 once it passes `limit`. */
+async function readWebBodyText(body: ReadableStream<Uint8Array>, limit: number): Promise<string> {
+  const reader = body.getReader();
   const decoder = new TextDecoder();
   let totalBytes = 0;
   let result = "";
@@ -367,75 +381,71 @@ function invalidBody(error: unknown, contentType: string): HttpError {
 /** Parse a JSON, form, multipart or text body. `contentType` is known to be one of them. */
 function parseBuiltIn(request: CelsianRequest, bodyLimit: number, contentType: string): Promise<void> {
   const json = contentType.includes("application/json");
-  if (
-    json ||
-    !(contentType.includes("application/x-www-form-urlencoded") || contentType.includes("multipart/form-data"))
-  ) {
-    // JSON or text/*, the bodies nearly every request with a body has. When
-    // core's Node server offers the Node stream, the body is read, decoded and
-    // parsed in that stream's "end" callback: one promise for all of it, where
-    // going through readBodyText() costs an async function here, another there
-    // and the read itself. Same checks in the same order, same errors.
-    const direct = parseTextFromNodeStream(request, bodyLimit, contentType, json);
-    if (direct !== undefined) return direct;
+  if (contentType.includes("application/x-www-form-urlencoded") || contentType.includes("multipart/form-data")) {
+    // A JSON content type that also names a form type is still parsed as JSON.
+    if (!json) return parseFormBody(request, bodyLimit, contentType);
   }
-  return parseBuiltInThroughRequest(request, bodyLimit, contentType);
+  return parseTextBody(request, bodyLimit, contentType, json);
 }
 
 /**
- * {@link parseBuiltIn} for a JSON or text body that can be read straight from
- * the Node stream. `undefined` when it cannot (no such stream, or no limit to
- * enforce), and then nothing has been touched.
+ * Parse a JSON or text/* body, the bodies nearly every request with a body
+ * has.
+ *
+ * The declared length is read once, before either stream is touched, and a
+ * failure to read it is reported like any other failure to read the body (a
+ * 400 INVALID_JSON or INVALID_BODY), as it always was. Then, when core's Node
+ * server offers the Node stream, the body is read, decoded and parsed in that
+ * stream's "end" callback: one promise for all of it. Otherwise it is read
+ * through the Request (`inject()`, the other runtimes' adapters). Same checks
+ * in the same order and the same errors either way.
  */
-function parseTextFromNodeStream(
-  request: CelsianRequest,
-  bodyLimit: number,
-  contentType: string,
-  json: boolean,
-): Promise<void> | undefined {
-  if (bodyLimit <= 0) return undefined;
-  // The declared length is checked before the stream is taken, as readBodyText does.
-  const contentLength = request.headers.get("content-length");
-  if (contentLength && parseInt(contentLength, 10) > bodyLimit) {
-    return Promise.reject(payloadTooLarge(bodyLimit, parseInt(contentLength, 10)));
+function parseTextBody(request: CelsianRequest, bodyLimit: number, contentType: string, json: boolean): Promise<void> {
+  const explain = json
+    ? (error: unknown) => invalidJson(error, contentType)
+    : (error: unknown) => invalidBody(error, contentType);
+  if (bodyLimit > 0) {
+    try {
+      checkDeclaredLength(request, bodyLimit);
+    } catch (error) {
+      return Promise.reject(explain(error));
+    }
+    const nodeBody = takeNodeBody(request);
+    if (nodeBody !== undefined) {
+      return readNodeBody(
+        nodeBody,
+        bodyLimit,
+        (chunks) => {
+          const text = decodeChunks(chunks);
+          if (!json) request.parsedBody = text;
+          else if (text.trim()) request.parsedBody = scrubPrototypePollution(JSON.parse(text));
+        },
+        explain,
+      );
+    }
   }
-  const nodeBody = takeNodeBody(request);
-  if (nodeBody === undefined) return undefined;
-  return readNodeBody(
-    nodeBody,
-    bodyLimit,
-    (chunks) => {
-      const text = decodeChunks(chunks);
-      if (!json) request.parsedBody = text;
-      else if (text.trim()) request.parsedBody = scrubPrototypePollution(JSON.parse(text));
-    },
-    json ? (error) => invalidJson(error, contentType) : (error) => invalidBody(error, contentType),
-  );
+  return parseTextThroughRequest(request, bodyLimit, json, explain);
 }
 
-async function parseBuiltInThroughRequest(
+/** {@link parseTextBody} through the Request, once the declared length has been checked. */
+async function parseTextThroughRequest(
   request: CelsianRequest,
   bodyLimit: number,
-  contentType: string,
+  json: boolean,
+  explain: (error: unknown) => unknown,
 ): Promise<void> {
   try {
-    if (contentType.includes("application/json")) {
-      try {
-        const text = await readBodyText(request, bodyLimit);
-        if (!text.trim()) return;
-        request.parsedBody = scrubPrototypePollution(JSON.parse(text));
-      } catch (parseErr) {
-        throw invalidJson(parseErr, contentType);
-      }
-    } else if (
-      contentType.includes("application/x-www-form-urlencoded") ||
-      contentType.includes("multipart/form-data")
-    ) {
-      request.parsedBody = await parseFormData(request, bodyLimit);
-    } else {
-      // text/*
-      request.parsedBody = await readBodyText(request, bodyLimit);
-    }
+    const text = await readCheckedBodyText(request as unknown as Request, bodyLimit);
+    if (!json) request.parsedBody = text;
+    else if (text.trim()) request.parsedBody = scrubPrototypePollution(JSON.parse(text));
+  } catch (error) {
+    throw explain(error);
+  }
+}
+
+async function parseFormBody(request: CelsianRequest, bodyLimit: number, contentType: string): Promise<void> {
+  try {
+    request.parsedBody = await parseFormData(request, bodyLimit);
   } catch (e) {
     // Surface parse failures (malformed form/multipart, etc.) as a 400 instead
     // of swallowing them and letting the handler run with an undefined body.

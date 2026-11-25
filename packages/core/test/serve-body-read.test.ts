@@ -399,6 +399,63 @@ describe("hooks that touch the body before it is parsed", () => {
   });
 });
 
+// The declared length is checked against the limit before the body is read.
+// It is read once, whichever stream the body then comes from, and a failure
+// to read it is a failure to read the body: a 400 from the parser, not a 500
+// from the lifecycle. On ef8953c that was so on both paths; since c8855c4 the
+// Request path (inject(), the other runtimes' adapters) read it twice, and a
+// header getter that threw gave a 500 on both paths.
+describe.each(["inject", "socket"] as const)("the declared length of a body, through %s", (via) => {
+  /** An app whose preParsing hook counts reads of content-length, and makes them throw when `fail` is set. */
+  function countingApp(fail: boolean) {
+    const app = createApp();
+    const counted = { reads: 0 };
+    app.addHook("preParsing", (req) => {
+      const get = req.headers.get.bind(req.headers);
+      // `get` is read-only in the Headers type, not on the object.
+      (req.headers as { get: Headers["get"] }).get = (name: string) => {
+        if (name.toLowerCase() === "content-length") {
+          counted.reads++;
+          if (fail) throw new Error("length unavailable");
+        }
+        return get(name);
+      };
+    });
+    app.post("/", (req, reply) => reply.json({ got: req.parsedBody }));
+    return { app, counted };
+  }
+
+  async function post(app: CelsianApp, type: string, body: string): Promise<Response> {
+    if (via === "inject")
+      return app.inject({ method: "POST", url: "/", headers: { "content-type": type }, payload: body });
+    const base = await listen(app);
+    return fetch(`${base}/`, { method: "POST", headers: { "content-type": type }, body });
+  }
+
+  it.each([
+    ["application/json", '{"a":1}', { a: 1 }],
+    ["text/plain", "hello", "hello"],
+  ] as const)("reads it once for %s", async (type, body, parsed) => {
+    const { app, counted } = countingApp(false);
+    const res = await post(app, type, body);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ got: parsed });
+    expect(counted.reads).toBe(1);
+  });
+
+  it.each([
+    ["application/json", "INVALID_JSON", '{"a":1}'],
+    ["text/plain", "INVALID_BODY", "hello"],
+  ] as const)("answers a %s body whose length cannot be read with a 400 %s", async (type, code, body) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { app, counted } = countingApp(true);
+    const res = await post(app, type, body);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ statusCode: 400, code });
+    expect(counted.reads).toBe(1);
+  });
+});
+
 describe("the body limit on core's Node server", () => {
   it("rejects a declared length over the limit with 413, without reading, and keeps the connection usable", async () => {
     const app = createApp({ bodyLimit: 64 });
