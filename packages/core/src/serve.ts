@@ -416,8 +416,11 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
 
       // The app's internal entry point can answer without a promise, and with a
       // fast response whose final headers are still beside it, which
-      // writeOutgoing sends as is.
-      response = stock ? dispatchRequest(app, webRequest) : app.handle(webRequest);
+      // writeOutgoing sends as is. A replaced handle is answered the way
+      // `await app.handle()` answers it: what it returns may be a promise from
+      // another realm (`instanceof Promise` is false for one), another
+      // thenable, or a Response returned without a promise at all.
+      response = stock ? dispatchRequest(app, webRequest) : Promise.resolve(app.handle(webRequest));
     } catch (error) {
       failed(req, res, error);
       return;
