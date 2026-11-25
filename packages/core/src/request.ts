@@ -47,61 +47,154 @@ interface FastRequestState {
   [TIMEOUT]: typeof ARMED | AbortController | TimedOut | undefined;
 }
 
-type AbortListenerAdder = (signal: AbortSignal, listener: () => void) => unknown;
-
-/**
- * An `addAbortListener` that listens for an abort in a way no other listener
- * can stop, where the runtime has one: Node's `events.addAbortListener`, and
- * Bun's. An ordinary listener can be stopped: one added to the same signal
- * before it that calls `event.stopImmediatePropagation()` keeps it from ever
- * running. Taken through `process.getBuiltinModule`, so this module loads where
- * there is no `node:events`, and tried once here, because one runtime's
- * `addAbortListener` (Deno's) is an ordinary listener.
- */
-const addAbortListener: AbortListenerAdder | undefined = (() => {
-  const getBuiltinModule = (globalThis as { process?: { getBuiltinModule?: unknown } }).process?.getBuiltinModule;
-  if (typeof getBuiltinModule !== "function") return undefined;
-  try {
-    const events = getBuiltinModule("node:events") as { addAbortListener?: unknown } | undefined;
-    const add = events?.addAbortListener;
-    if (typeof add !== "function") return undefined;
-    const probe = new AbortController();
-    probe.signal.addEventListener("abort", (event) => event.stopImmediatePropagation());
-    let heard = false;
-    add(probe.signal, () => {
-      heard = true;
-    });
-    probe.abort();
-    return heard ? (add as AbortListenerAdder) : undefined;
-  } catch {
-    return undefined;
-  }
-})();
-
-/**
- * `AbortSignal.any`, off Node, for a runtime with no unstoppable listener
- * (Deno, workerd): there it is what followed the transport before, and nothing
- * can stop it either. Never on Node, where a composite signal with a listener
- * is kept for the life of the process (see resolveSignal); Node without an
- * unstoppable listener (before 20.16) keeps the ordinary one.
- */
-const anyOffNode: ((signals: AbortSignal[]) => AbortSignal) | undefined = (() => {
-  if (typeof AbortSignal.any !== "function") return undefined;
+/** Node or Bun: the runtimes request.signal follows its input on through a relay (see `follow`). */
+const relayRuntime: boolean = (() => {
   const proc = (globalThis as { process?: { versions?: Record<string, unknown> } }).process;
+  if (typeof proc?.versions?.bun === "string") return true;
   const userAgent = (globalThis as { navigator?: { userAgent?: unknown } }).navigator?.userAgent;
   // Node 21 and later name themselves here; Node 20 has no navigator.
-  const node =
-    typeof userAgent === "string"
-      ? userAgent.startsWith("Node.js/")
-      : typeof proc?.versions?.node === "string" && proc.versions.bun === undefined && !("Deno" in globalThis);
-  return node ? undefined : (signals) => AbortSignal.any(signals);
+  return typeof userAgent === "string"
+    ? userAgent.startsWith("Node.js/")
+    : typeof proc?.versions?.node === "string" && !("Deno" in globalThis);
 })();
+
+/**
+ * `AbortSignal.any`, where request.signal is the combination of its input and
+ * the timeout's own signal, as it was on every runtime before: Deno, workerd
+ * and anything else that is neither Node nor Bun.
+ */
+const combine: ((signals: AbortSignal[]) => AbortSignal) | undefined =
+  !relayRuntime && typeof AbortSignal.any === "function" ? AbortSignal.any.bind(AbortSignal) : undefined;
+
+/** Whether this runtime can follow a signal weakly: WeakRef and FinalizationRegistry. */
+const weakRefs = typeof WeakRef === "function" && typeof FinalizationRegistry === "function";
+
+/**
+ * `AbortSignal.any` as it was when this module loaded, on Node or Bun, to make
+ * relays with (see `follow`); `undefined` where there is none.
+ */
+const relayOf: ((signals: AbortSignal[]) => AbortSignal) | undefined =
+  relayRuntime && typeof AbortSignal.any === "function" && weakRefs ? AbortSignal.any.bind(AbortSignal) : undefined;
+
+/** A request signal that follows its input: its controller, and how to stop following. */
+interface Following {
+  readonly controller: AbortController;
+  readonly stop: () => void;
+}
+
+/**
+ * Each following signal's record, kept by the signal itself (a WeakMap holds
+ * its value for as long as its key lives), so that the signal's controller,
+ * which can abort it, lives exactly as long as the signal does.
+ */
+const FOLLOWING = new WeakMap<AbortSignal, Following>();
+
+/** Stops following once a following signal has been collected. */
+const UNFOLLOW: FinalizationRegistry<() => void> | undefined = weakRefs
+  ? new FinalizationRegistry((stop) => stop())
+  : undefined;
+
+/** Marks an input signal that more than one request has followed. */
+const SHARED = Symbol("celsian.signal.shared");
+
+/**
+ * The controller each input signal keeps alive: the first request to follow
+ * it, until a second one does (then SHARED). Keyed weakly by the input.
+ */
+const KEPT = new WeakMap<AbortSignal, AbortController | typeof SHARED>();
+
+/**
+ * Make `controller` abort, with the input's reason, when `incoming` aborts.
+ *
+ * What it listens on. An ordinary listener on `incoming` would be added after
+ * any the application put there, and one of those that calls
+ * `event.stopImmediatePropagation()` would keep it from ever running. So the
+ * listener goes on a relay of its own, `AbortSignal.any([incoming])`, that
+ * nothing else can reach: the runtime aborts a signal made that way when
+ * `incoming` aborts, whatever `incoming`'s listeners do. Without
+ * `AbortSignal.any` the listener goes on `incoming`, where a listener before it
+ * can stop it.
+ *
+ * What it keeps alive. Node keeps a signal made by `AbortSignal.any()` that has
+ * a listener in a process-wide set, until the listener is removed (or, on Node
+ * 22 and later, until its input is collected). So the
+ * relay's listener must not keep the request: through `request.signal`'s own
+ * listeners it would keep everything they close over, and, once the input had
+ * aborted, everything the abort reason's stack reaches (for core's Node server,
+ * the IncomingMessage, its socket and its ServerResponse). It refers to the
+ * following signal only weakly, and is removed when that signal aborts, when
+ * the timeout aborts it, or when it is collected. An input signal is then
+ * never what keeps a finished request alive, which matters where one long-lived
+ * signal is the input of many requests (a test harness dispatching the same
+ * Request, an adapter passing one shutdown signal to every request).
+ *
+ * But a listener alone on `request.signal`, with nothing else holding the
+ * signal, is the ordinary way to stop work when the client goes away:
+ *
+ *     request.signal.addEventListener("abort", () => clearInterval(timer));
+ *     return new Response(stream);   // the stream does not refer to the signal
+ *
+ * That listener has to run when the input aborts after the handler returned.
+ * So the first request to follow an input is kept alive by it, as an ordinary
+ * listener on the input would keep it: for as long as the input lives (for a
+ * Node request, until the connection's request is over), `request.signal` and
+ * its listeners do too. Once a second request follows the same input, the
+ * input is shared, and no request is kept by it, the first one included: each
+ * signal then lives as long as something else holds it (a stream that refers
+ * to it does).
+ */
+function follow(incoming: AbortSignal, controller: AbortController): void {
+  const signal = controller.signal;
+  if (UNFOLLOW === undefined) {
+    FOLLOWING.set(signal, { controller, stop: listenFor(incoming, controller) });
+    return;
+  }
+  const stop = relayTo(relayOf === undefined ? incoming : relayOf([incoming]), new WeakRef(signal), UNFOLLOW);
+  FOLLOWING.set(signal, { controller, stop });
+  UNFOLLOW.register(signal, stop, stop);
+  const kept = KEPT.get(incoming);
+  if (kept === undefined) KEPT.set(incoming, controller);
+  else if (kept !== SHARED) KEPT.set(incoming, SHARED);
+}
+
+/**
+ * Abort the signal `target` refers to, through its controller, once `relay`
+ * aborts. Returns the function that stops listening.
+ *
+ * Its own function so that its closures hold only what is passed in: closures
+ * made in one call share that call's variables, and one that held the
+ * controller or its signal would keep them alive from the relay.
+ */
+function relayTo(
+  relay: AbortSignal,
+  target: WeakRef<AbortSignal>,
+  registry: FinalizationRegistry<() => void>,
+): () => void {
+  const forward = () => {
+    stop();
+    const followed = target.deref();
+    if (followed !== undefined) FOLLOWING.get(followed)?.controller.abort(relay.reason);
+  };
+  const stop = () => {
+    relay.removeEventListener("abort", forward);
+    registry.unregister(stop);
+  };
+  relay.addEventListener("abort", forward, { once: true });
+  return stop;
+}
+
+/** {@link follow} without weak references: a listener on `incoming`, which keeps `controller`. */
+function listenFor(incoming: AbortSignal, controller: AbortController): () => void {
+  const forward = () => controller.abort(incoming.reason);
+  incoming.addEventListener("abort", forward, { once: true });
+  return () => incoming.removeEventListener("abort", forward);
+}
 
 /**
  * The signal a handler sees: the transport's own, which a request timeout can
  * also abort. Built on first read. Most handlers never read it, and the
- * controller, the combined signal and their listeners cost more than the rest
- * of the request wrapper put together.
+ * controller and what follows the transport cost more than the rest of the
+ * request wrapper put together.
  */
 function resolveSignal(state: FastRequestState): AbortSignal {
   const incoming = state[SRC].signal;
@@ -117,36 +210,12 @@ function resolveSignal(state: FastRequestState): AbortSignal {
   // A timeout can still abort this request. Its controller is separate from
   // the transport's, so a timeout never aborts the upstream signal, and the
   // signal keeps following the transport after the handler returns (a
-  // streaming response's producer retains it).
+  // streaming response's producer retains it). See `follow` for how.
   const controller = timeout === ARMED ? new AbortController() : timeout;
   state[TIMEOUT] = controller;
-  // The transport is followed with a listener, never with AbortSignal.any().
-  // Node keeps a composite signal that has an "abort" listener in a global set
-  // (gcPersistentSignals) and only lets go of it when the listener is removed.
-  // A handler that leaves a listener on `request.signal` (not `{ once: true }`,
-  // never removed) therefore pinned the composite for the life of the process,
-  // and with it whatever the listener closes over and, once the signal had
-  // aborted, the sources and everything the abort reason's stack reaches: the
-  // IncomingMessage, its socket and its ServerResponse, for every request a
-  // client abandoned. A controller's own signal is in no such set. Everything
-  // here is request-local, so it is collected with the request.
-  //
-  // The listener goes on the transport's signal after any the application put
-  // there, so it is one that cannot be stopped: a transport abort that an
-  // earlier listener answered with `stopImmediatePropagation()` must still
-  // reach `request.signal`, as it did when this was AbortSignal.any().
-  // `removeEventListener` takes it off again either way. A runtime with no
-  // such listener, other than Node, follows the transport with
-  // AbortSignal.any() as before.
-  const abort = () => controller.abort(incoming.reason);
-  if (incoming.aborted) abort();
-  else if (addAbortListener === undefined && anyOffNode !== undefined) {
-    return anyOffNode([incoming, controller.signal]);
-  } else {
-    if (addAbortListener !== undefined) addAbortListener(incoming, abort);
-    else incoming.addEventListener("abort", abort, { once: true });
-    controller.signal.addEventListener("abort", () => incoming.removeEventListener("abort", abort), { once: true });
-  }
+  if (incoming.aborted) controller.abort(incoming.reason);
+  else if (combine !== undefined) return combine([incoming, controller.signal]);
+  else follow(incoming, controller);
   return controller.signal;
 }
 
@@ -160,8 +229,11 @@ export function armRequestTimeout(request: CelsianRequest): void {
 export function fireRequestTimeout(request: CelsianRequest, reason: unknown): void {
   const state = request as unknown as FastRequestState;
   const timeout = state[TIMEOUT];
-  if (timeout instanceof AbortController) timeout.abort(reason);
-  else if (timeout === ARMED) state[TIMEOUT] = new TimedOut(reason, state[SRC].signal.aborted);
+  if (timeout instanceof AbortController) {
+    // Aborted by the timeout, the signal has nothing left to follow.
+    FOLLOWING.get(timeout.signal)?.stop();
+    timeout.abort(reason);
+  } else if (timeout === ARMED) state[TIMEOUT] = new TimedOut(reason, state[SRC].signal.aborted);
 }
 
 /** The request finished before its timeout: the timeout can no longer abort `request.signal`. */

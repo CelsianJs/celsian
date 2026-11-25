@@ -459,12 +459,13 @@ describe.each([0, 30_000])("request.signal on core's Node server, requestTimeout
   });
 });
 
-// request.signal follows the transport with a listener on the transport's
-// signal. That listener is added after any the application put there first,
-// and an ordinary listener does not run when an earlier one calls
-// `event.stopImmediatePropagation()`. With AbortSignal.any(), as on ef8953c,
-// nothing an application listener did could keep the abort from arriving, and
-// it still cannot.
+// request.signal follows the transport. An ordinary listener on the
+// transport's signal would be added after any the application put there first,
+// and would not run when an earlier one calls `event.stopImmediatePropagation()`.
+// With AbortSignal.any(), as on ef8953c, nothing an application listener did
+// could keep the abort from arriving, and it still cannot: on Node and Bun the
+// listener is on a relay made with AbortSignal.any() that nothing else can
+// reach (request-signal-input.test.ts covers the rest of how it follows).
 describe.each([0, 30_000])(
   "request.signal after another listener stopped the transport's abort event, requestTimeout %i",
   (requestTimeout) => {
@@ -549,9 +550,10 @@ describe.each([0, 30_000])(
   },
 );
 
-// Deno has an events.addAbortListener, but it is an ordinary listener, which a
-// stopped event blocks. core tries the one it finds when it loads and, off
-// Node, falls back to AbortSignal.any() when it does not hold, as before.
+// Off Node and Bun (Deno, workerd), request.signal is AbortSignal.any() of
+// the input and the timeout, as it was everywhere before. This loads core as
+// Deno would look to it: a navigator naming Deno, and an events.addAbortListener
+// that is an ordinary listener (Deno's is), which core must not rely on.
 describe("request.signal on a runtime whose addAbortListener can be stopped", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
