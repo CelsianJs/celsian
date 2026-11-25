@@ -1138,23 +1138,69 @@ function writeOutgoing(res: ServerResponse, out: Outgoing): Promise<void> | unde
     if (!nonAscii && NON_ASCII.test(value)) nonAscii = true;
   }
   if (nonAscii && typeof body === "string") body = Buffer.from(body);
-  // Always derived from the bytes about to be written, whatever the headers say.
-  if (body !== null) headers["content-length"] = contentLengthOf(body);
   const cookies = live.getSetCookie?.() ?? [];
   if (cookies.length > 0) headers["set-cookie"] = cookies;
   sendWhole(res, fast.status, headers, body);
   return undefined;
 }
 
+/** A Transfer-Encoding whose last coding is chunked, the one that delimits a body (RFC 9112 section 6.3). */
+const CHUNKED_LAST = /(?:^|,)[\t ]*chunked[\t ]*$/i;
+
 /**
- * Send a status, its final headers and an already-serialized body in one go.
+ * Make `headers` say how the body that follows is delimited, and nothing that
+ * contradicts it. `headers` is the writer's own copy and is changed in place.
  *
- * With a body that is `writeHead()+end(body)`, `content-length` already among
- * the headers. Without one the framing is left to Node: `writeHead()` fixes
- * the header block before Node knows the response is empty, so a 200 with no
- * body went out as `Transfer-Encoding: chunked` and a zero-length chunk.
- * Headers set one by one and then `end()` give `Content-Length: 0` instead,
- * and nothing at all where no body is allowed (204, 304, a HEAD request).
+ * - A Transfer-Encoding set on the reply frames the body: Node then encodes it
+ *   in chunks when the coding is chunked. A Content-Length beside it is never
+ *   sent, whoever set it (RFC 9112 section 6.1; Node's client refuses such a
+ *   response). When the last coding is not chunked, only closing the
+ *   connection ends the body, so the connection is closed after it.
+ * - Otherwise a body is sent with the Content-Length of its bytes, replacing
+ *   any value set on the reply.
+ * - Otherwise there is no body. Where one would be allowed, Node then sends
+ *   `Content-Length: 0`, so a value set on the reply is dropped: it would make
+ *   the client wait for bytes that never come. A HEAD response and a 304 keep
+ *   it, since there it describes the content a GET would get.
+ * - A 204 carries neither header (RFC 9110 section 8.6, RFC 9112 section 6.1).
+ *
+ * 1xx statuses never get here: a Response cannot be built with one.
+ */
+function frame(
+  res: ServerResponse,
+  status: number,
+  headers: Record<string, string | string[]>,
+  body: string | Uint8Array | null,
+): void {
+  if (status === 204) {
+    if (headers["content-length"] !== undefined) delete headers["content-length"];
+    if (headers["transfer-encoding"] !== undefined) delete headers["transfer-encoding"];
+    return;
+  }
+  const codings = headers["transfer-encoding"];
+  if (codings !== undefined) {
+    if (headers["content-length"] !== undefined) delete headers["content-length"];
+    if (status !== 304 && res.req?.method !== "HEAD" && !CHUNKED_LAST.test(String(codings))) {
+      headers.connection = "close";
+    }
+    return;
+  }
+  if (body !== null) headers["content-length"] = contentLengthOf(body);
+  else if (headers["content-length"] !== undefined && status !== 304 && res.req?.method !== "HEAD") {
+    delete headers["content-length"];
+  }
+}
+
+/**
+ * Send a status, its final headers and an already-serialized body in one go,
+ * framed by {@link frame}.
+ *
+ * With a body that is `writeHead()+end(body)`. Without one the framing is
+ * left to Node: `writeHead()` fixes the header block before Node knows the
+ * response is empty, so a 200 with no body went out as
+ * `Transfer-Encoding: chunked` and a zero-length chunk. Headers set one by one
+ * and then `end()` give `Content-Length: 0` instead, and nothing at all where
+ * no body is allowed (204, 304, a HEAD request).
  */
 function sendWhole(
   res: ServerResponse,
@@ -1162,6 +1208,7 @@ function sendWhole(
   headers: Record<string, string | string[]>,
   body: string | Uint8Array | null,
 ): void {
+  frame(res, status, headers, body);
   if (body === null) {
     res.statusCode = status;
     for (const key in headers) res.setHeader(key, headers[key] as string | string[]);
@@ -1226,8 +1273,6 @@ function writeFast(
   if (typeof body === "string" && (hasNonAsciiValue(plainHeaders) || hasNonAsciiCookie(cookies))) {
     body = Buffer.from(body);
   }
-  // Always derived from the bytes about to be written, whatever the headers say.
-  if (body !== null) headers["content-length"] = contentLengthOf(body);
   if (cookies.length > 0) {
     // A Set-Cookie put in the plain headers by `reply.header()` is a cookie
     // too; it goes out alongside the `reply.cookie()` ones, not instead.
@@ -1241,9 +1286,19 @@ function writeFast(
 async function drainResponse(res: ServerResponse, response: Response): Promise<void> {
   res.statusCode = response.status;
 
+  // Framed as `frame` frames a fast response: a Transfer-Encoding frames the
+  // body, so no Content-Length goes with it, and one whose last coding is not
+  // chunked ends only when the connection does; a 204 carries neither.
+  const noContent = response.status === 204;
+  const codings = noContent ? null : response.headers.get("transfer-encoding");
   for (const [key, value] of response.headers.entries()) {
     if (key.toLowerCase() === "set-cookie") continue; // handled below
+    if ((codings !== null || noContent) && key === "content-length") continue;
+    if (noContent && key === "transfer-encoding") continue;
     res.setHeader(key, value);
+  }
+  if (codings !== null && response.status !== 304 && res.req?.method !== "HEAD" && !CHUNKED_LAST.test(codings)) {
+    res.setHeader("connection", "close");
   }
 
   // BUG-3 fix: preserve multiple Set-Cookie headers (entries() collapses them)
