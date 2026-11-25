@@ -22,7 +22,7 @@ An `async` handler adds five promises and a timer: its own promise, the one that
 What changed:
 
 - **`cors()`, `security()` and any `onSend` hook that sets a header no longer cost the fast response path.** Their headers used to force a second `Response` around the first one's body, which the Node server then drained from a stream and sent chunked. Responses from `reply.json()`, `reply.send()`, `reply.html()` and returned values now keep their single write whatever hooks add.
-- **A request that does nothing asynchronous is answered synchronously.** Hooks and handlers are only awaited when they return a promise, `GET` and `HEAD` skip body parsing without a tick, and the request timeout only sets its timer once a request has actually gone asynchronous. The deadline is still counted from the start of the request, and a request already past it by then is answered 504 before anything it waits on gets to run, as when the timer was set first. The timeout itself is one timer instead of a `Promise.race`.
+- **A request that does nothing asynchronous is answered synchronously.** Hooks and handlers are only awaited when they return a promise, `GET` and `HEAD` skip body parsing without a tick, and the request timeout only sets its timer once a request has actually gone asynchronous. The deadline is still counted from the start of the request. The timeout itself is one timer instead of a `Promise.race`.
 - **A request that is asynchronous is waited on fewer times.** The lifecycle, the timeout and the Node server each used to wait on the same answer in turn.
 - **`reply` methods and `request.cookies` live on prototypes** instead of being 27 closures and a `defineProperty` per request. Destructuring (`const { json } = reply`), keeping a reference to wrap a method, assigning a replacement, and wrapping a reply with `Object.create(reply)` or a `Proxy` all work as before.
 - **`request.signal` is built when you first read it**, on `serve()` and for the request timeout alike. It still aborts when the client disconnects and when the request times out.
@@ -44,7 +44,22 @@ Things you could notice:
 - The built-in error, 404 and 405 responses, and responses that gain headers in `onSend`, now carry `Content-Length` on Node instead of `Transfer-Encoding: chunked`. Statuses, bodies and header values are otherwise the same.
 - On Node, those same responses now send their headers in the order they were set, `content-type` first, where they used to be sorted by name (they went through a `Headers` object): a 405 sends `allow` after `content-type`, and `cors()` and `security()` headers come after the route's own. Header order has no meaning in HTTP, but a test that compares raw header blocks will see it.
 - In development, the stack in the body of a 500 for an error thrown after an `await` in an `async` handler ends at the handler. It used to go on through `async CelsianApp.runLifecycle`, `async CelsianApp.handle` and the caller, frames V8 only records across `await`, and the lifecycle no longer awaits the handler. The error's own message and the handler's frame are unchanged, and production bodies carry no stack at all.
-- The request timeout's deadline now includes the synchronous work of the first `onRequest` (or `preParsing`) hook, which ran before the timer used to be set.
+- **A request already past its deadline when it first waits is answered 504 unless it settles on promises alone.** A timer cannot interrupt synchronous work, so a hook or handler that works past `requestTimeout` before it waits is decided at that wait. If it then settles on promises (microtasks) or a `process.nextTick`, it answers as before. If it waits on anything the event loop has to come round for (an immediate, a timer, I/O), it now gets the 504 before what it waits on runs, and resumes with `request.signal` aborted with the 504 error. In 0.6.7 the timer was set when the lifecycle began, after the first `onRequest` hook's synchronous work, and fired only when the event loop reached timers, so such a request could still answer 200. Measured over a real socket with `requestTimeout: 15` and 40 ms of synchronous work (`timeout-overrun.test.ts` pins the "now" column):
+
+  | After 40 ms of synchronous work, past a 15 ms deadline, the request | 0.6.7 | now |
+  |---|---|---|
+  | answers without waiting | 200 | 200 |
+  | waits only on promises | 200 | 200 |
+  | waits on a `process.nextTick` | 200 | 200 |
+  | waits on `setImmediate` | 200 | 504 |
+  | waits on a timer or on I/O, in the handler | 504 | 504 |
+  | waits on a timer or on I/O, in an `onRequest` hook | 200 | 504 |
+  | called `reply.send()` first, then waits on promises | 200 | 200 |
+  | called `reply.send()` first, then waits on `setImmediate` | 200 | 504 |
+  | returned a streamed `Response` at once, whose producer then works 40 ms | 200 | 200 |
+  | first of two pipelined requests, waiting on `setImmediate` (the second answers at once) | 200, 200 | 504, 200 |
+
+  Pipelined requests still get one response each, in order. The deadline covers the lifecycle, not a streamed body. It also now includes the synchronous work of the first `onRequest` (or `preParsing`) hook, which ran before the timer used to be set.
 - With no asynchronous hook in front of it, a handler now starts inside the `app.handle()` call rather than one microtask later. `app.handle()` still always returns a promise.
 
 `@celsian/adapter-node` uses the same response writer, so it also keeps the single write when hooks add headers, and gets the header-bytes and `Content-Length: 0` fixes. It still reads bodies and builds `request.signal` as before.
