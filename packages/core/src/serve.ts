@@ -2,7 +2,7 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Socket } from "node:net";
-import { type CelsianApp, dispatchRequest, handlesAsDefined } from "./app.js";
+import { type CelsianApp, dispatchRequest, isStockHandle } from "./app.js";
 import { HttpError } from "./errors.js";
 import { getFastPayload, type Outgoing, peekHeaders, WireResponse } from "./fast-response.js";
 import { readConfinedFile } from "./reply.js";
@@ -404,7 +404,12 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
       // follows the signal the original holds internally, not the one its
       // `signal` property reports. So such an app gets a Request built with its
       // signal, as every Request was before signals became lazy.
-      const stock = handlesAsDefined(app);
+      //
+      // `app.handle` is read once, and what was read is what is called, with
+      // the app as `this`, as `await app.handle(request)` did: an accessor may
+      // answer differently each time it is read.
+      const handle = app.handle;
+      const stock = isStockHandle(handle);
 
       // Build Web Request with raw path (let the app do fast URL parsing)
       let webRequest: Request;
@@ -420,7 +425,7 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
       // `await app.handle()` answers it: what it returns may be a promise from
       // another realm (`instanceof Promise` is false for one), another
       // thenable, or a Response returned without a promise at all.
-      response = stock ? dispatchRequest(app, webRequest) : Promise.resolve(app.handle(webRequest));
+      response = stock ? dispatchRequest(app, webRequest) : Promise.resolve(Reflect.apply(handle, app, [webRequest]));
     } catch (error) {
       failed(req, res, error);
       return;

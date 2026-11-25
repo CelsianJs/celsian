@@ -189,3 +189,67 @@ describe("what a replaced handle returns", () => {
     }
   });
 });
+
+// serve() decides from `app.handle` whether to call the app's internal entry
+// point, and calls the handle it found otherwise. It reads the property once,
+// and calls what it read with the app as `this`, as `await app.handle(request)`
+// did: an accessor may answer differently on a second read.
+describe("app.handle read through an accessor", () => {
+  const override = () => new Response("override", { status: 203 });
+
+  it("is read once per request, and a replacement it gives on that read is the one called", async () => {
+    const app = createApp();
+    app.get("/", () => "default");
+    const stock = app.handle;
+    let reads = 0;
+    Object.defineProperty(app, "handle", {
+      configurable: true,
+      get() {
+        reads++;
+        // A replacement on the first read of each request, the stock method on any later one.
+        return reads % 2 === 1 ? override : stock;
+      },
+    });
+    const port = await listen(app);
+
+    const res = await fetch(`http://127.0.0.1:${port}/`);
+    expect(res.status).toBe(203);
+    expect(await res.text()).toBe("override");
+    expect(reads).toBe(1);
+  });
+
+  it("is read once per request when it gives the stock method, which is then not called through the property", async () => {
+    const app = createApp();
+    app.get("/", () => "default");
+    const stock = app.handle;
+    let reads = 0;
+    Object.defineProperty(app, "handle", {
+      configurable: true,
+      get() {
+        reads++;
+        return reads % 2 === 1 ? stock : override;
+      },
+    });
+    const port = await listen(app);
+
+    const res = await fetch(`http://127.0.0.1:${port}/`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("default");
+    expect(reads).toBe(1);
+  });
+
+  it("calls what it read with the app as this", async () => {
+    const app = createApp();
+    app.get("/", () => "default");
+    const stock = app.handle;
+    let receiver: unknown;
+    app.handle = function (this: unknown, request: Request) {
+      receiver = this;
+      return stock.call(app, request);
+    };
+    const port = await listen(app);
+
+    expect(await (await fetch(`http://127.0.0.1:${port}/`)).text()).toBe("default");
+    expect(receiver).toBe(app);
+  });
+});

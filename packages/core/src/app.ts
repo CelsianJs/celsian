@@ -131,15 +131,17 @@ export function dispatchRequest(app: CelsianApp, request: Request): Outgoing | P
 let stockHandle: CelsianApp["handle"];
 
 /**
- * True when `app.handle` is the method this module defined, so that calling
- * {@link dispatchRequest} instead is the same as calling it. False when it was
- * replaced on the instance, overridden by a subclass, or replaced on
- * `CelsianApp.prototype` itself: that last case is why this compares with the
- * method as it was when the module loaded, not with the prototype's current
- * one. Internal to core: not exported from the package.
+ * True when `handle`, what `app.handle` read as, is the method this module
+ * defined, so that calling {@link dispatchRequest} instead is the same as
+ * calling it. False when it was replaced on the instance, overridden by a
+ * subclass, or replaced on `CelsianApp.prototype` itself: that last case is
+ * why this compares with the method as it was when the module loaded, not
+ * with the prototype's current one. The caller reads `app.handle` once and
+ * calls what it read, so an accessor is asked once. Internal to core: not
+ * exported from the package.
  */
-export function handlesAsDefined(app: CelsianApp): boolean {
-  return app.handle === stockHandle;
+export function isStockHandle(handle: unknown): boolean {
+  return handle === stockHandle;
 }
 
 /**
