@@ -215,6 +215,30 @@ describe("reading a body from the Node stream", () => {
     expect(listeners(stream)).toBe(0);
   });
 
+  // An empty body can end without a single "data" event, and a Node stream
+  // that has ended is destroyed straight after. Nothing was read from it, so
+  // it is still offered, and it is an empty body, not a client that went away:
+  // the read must not wait for an "end" that has already been emitted, nor
+  // take the destroyed stream for an aborted one.
+  it.each([
+    ["application/json", undefined],
+    ["text/plain", ""],
+  ] as const)("parses an empty %s body whose stream ended before the read began", async (type, parsed) => {
+    const stream = nodeStream();
+    const { request } = requestOver(stream, type);
+    stream.push(null);
+    stream.resume();
+    await new Promise<void>((resolve) => stream.once("end", () => resolve()));
+    expect(stream.readableEnded).toBe(true);
+    expect(stream.readableDidRead).toBe(false);
+    expect(stream.destroyed).toBe(true);
+
+    const result = await outcome(parseBodyIfAny(request, LIMIT, NO_PARSERS));
+    expect(result).toEqual({ value: undefined });
+    expect(request.parsedBody).toBe(parsed);
+    expect(listeners(stream)).toBe(0);
+  });
+
   it("answers 413 as soon as the limit is passed, and stops the stream there", async () => {
     const stream = nodeStream();
     const { request } = requestOver(stream, "text/plain");

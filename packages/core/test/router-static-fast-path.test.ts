@@ -132,6 +132,53 @@ describe("Router.match, exact static paths and their aliases", () => {
   });
 });
 
+// The exact lookup is a pure optimisation: without it the full match gives
+// the same answer, so no test of what match() returns can tell it is gone,
+// and the allocation gate does not see it either (the path it saves allocates
+// nothing it counts). So this looks at what match() does instead: for a path
+// that is, character for character, a registered static route, it must answer
+// without canonicalizing the path, which is what consulting the canonical
+// static map means.
+describe("Router.match, the exact lookup itself", () => {
+  /** Wrap the router's canonical static-route map so that every lookup in it is counted. */
+  function countCanonicalLookups(router: Router): { lookups: string[] } {
+    const internals = router as unknown as { staticRoutes: Map<string, unknown> };
+    const counted = { lookups: [] as string[] };
+    const canonical = new Map(internals.staticRoutes);
+    const get = canonical.get.bind(canonical);
+    canonical.get = (key: string) => {
+      counted.lookups.push(key);
+      return get(key);
+    };
+    internals.staticRoutes = canonical;
+    return counted;
+  }
+
+  it("answers a path that is exactly a static route without the canonical lookup", () => {
+    const router = build();
+    const counted = countCanonicalLookups(router);
+    for (const [method, path] of [
+      ["GET", "/json"],
+      ["POST", "/json"],
+      ["GET", "/"],
+      ["GET", "/users/me"],
+      ["GET", "/assets/app.min.js"],
+    ] as const) {
+      expect(router.match(method, path)?.route.url, path).toBe(path);
+    }
+    expect(counted.lookups).toEqual([]);
+  });
+
+  it("still takes the canonical lookup for another spelling, another method or a param route", () => {
+    const router = build();
+    const counted = countCanonicalLookups(router);
+    expect(matched(router, "GET", "/json/")).toBe("GET /json {}");
+    expect(matched(router, "DELETE", "/json")).toBeNull();
+    expect(matched(router, "GET", "/users/42")).toBe('GET /users/:id {"id":"42"}');
+    expect(counted.lookups).toEqual(["/json", "/json", "/users/42"]);
+  });
+});
+
 describe("Router.match with ignoreTrailingSlash: false", () => {
   const strict = build({ ignoreTrailingSlash: false });
 

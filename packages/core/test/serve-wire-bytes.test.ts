@@ -209,6 +209,32 @@ describe("a header value outside ASCII on a fast response", () => {
     expect(cookies[1]?.startsWith("set-cookie: b=2")).toBe(true);
   });
 
+  // The first and last characters whose latin-1 byte differs from their UTF-8
+  // bytes: U+0080 is 80 in latin-1 and C2 80 in UTF-8, U+00FF is FF and C3 BF.
+  // Both writers must spot them, the one that sends the payload's own header
+  // record and the one that reads the headers off a Response handed out.
+  it.each([
+    ["U+0080", "a\u0080b", "618062"],
+    ["U+00FF", "a\u00ffb", "61ff62"],
+  ])("writes %s in a header value as its latin-1 byte, through either writer", async (_label, value, hex) => {
+    const app = createApp();
+    app.get("/record", (_request, reply) => reply.header("x-name", value).json({ ok: 1 }));
+    app.get("/response", (_request, reply) => {
+      const response = reply.json({ ok: 1 });
+      response.headers.set("x-name", value);
+      return response;
+    });
+    const port = await listen(app);
+
+    for (const path of ["/record", "/response"]) {
+      const wire = await raw(port, path);
+      expect(wire.hex("x-name"), path).toBe(hex);
+      expect(wire.header("content-length"), path).toBe(String(wire.body.byteLength));
+      expect(wire.body.toString(), path).toBe('{"ok":1}');
+      expect((await app.inject({ url: path })).headers.get("x-name"), path).toBe(value);
+    }
+  });
+
   it("does not touch an all-ASCII response", async () => {
     const app = createApp();
     app.get("/ascii", (_request, reply) => reply.header("x-name", "cafe").json({ word: CAFE }));
