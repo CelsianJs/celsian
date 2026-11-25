@@ -63,6 +63,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
+import { notLikeForLike } from "./alloc-compare.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const CEILINGS_FILE = `${HERE}alloc-ceilings.json`;
@@ -290,14 +291,8 @@ for (const scenario of selected) {
     if (framework !== "celsian") {
       // A comparison is only worth printing when both sides did the same job:
       // the same status, the same headers with the same values, the same bytes.
-      for (const key of ["status", "headers", "body"]) {
-        if (wire[key] !== celsianWire[key]) {
-          throw new Error(
-            `${scenario}: not like for like. ${framework} answered with ${key} ${JSON.stringify(wire[key])}, ` +
-              `celsian with ${JSON.stringify(celsianWire[key])}. Make the servers in alloc-server.mjs answer alike.`,
-          );
-        }
-      }
+      const mismatch = notLikeForLike(scenario, framework, wire, celsianWire);
+      if (mismatch !== undefined) throw new Error(mismatch);
       continue;
     }
     celsianWire = wire;

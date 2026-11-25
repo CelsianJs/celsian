@@ -31,6 +31,8 @@ not that it runs as fast as it did.
 `node benchmarks/alloc-gate.mjs --compare` runs Express, Fastify and Hono through the same
 scenarios (never gated). Within a scenario every framework runs the same handler style and must
 answer with the same status, the same response headers with the same values and the same body
-bytes, or the run stops. Hono has no synchronous way to read a body, so it is left out of the
+bytes, or the run stops (the check is `alloc-compare.mjs`; `alloc-compare.test.mjs`, part of
+`pnpm test`, holds it to a header value and a same-length body that differ). Hono has no
+synchronous way to read a body, so it is left out of the
 synchronous POST row (`body`), and the report says so. `validated` is CelsianJS only: each
 framework would validate with a different library.
