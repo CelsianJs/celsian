@@ -13,7 +13,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type CelsianApp, createApp } from "../src/app.js";
-import { getFastPayload, type Outgoing, toResponse, WireResponse } from "../src/fast-response.js";
+import { fastResponse, getFastPayload, type Outgoing, toResponse, WireResponse } from "../src/fast-response.js";
 import { cors } from "../src/plugins/cors.js";
 import { security } from "../src/plugins/security.js";
 import { createReply } from "../src/reply.js";
@@ -553,7 +553,7 @@ describe("merging reply headers onto a fast response gives what the Headers merg
   // And these it cannot see because `Headers` trims as it stores, so turning
   // the result into a Response hides the difference. The Node writer sends a
   // WireResponse's record as it stands, padding included.
-  it("falls back for a padded Set-Cookie, so the Node writer never sends the padding", () => {
+  it("never leaves a padded Set-Cookie for the Node writer to send", () => {
     // Set in onSend.
     const reply = createReply("http://localhost/");
     const built = reply.json({ a: 1 });
@@ -562,7 +562,9 @@ describe("merging reply headers onto a fast response gives what the Headers merg
     expect(merged).not.toBeInstanceOf(WireResponse);
     expect(toResponse(merged).headers.getSetCookie()).toEqual(["padded=1"]);
 
-    // Carried by a response that already gained a header, when a cookie is queued.
+    // Carried by a response that already gained a header, when a cookie is
+    // queued. The handler's record holds it padded; the merged record holds it
+    // as Headers does, so the next merge can trust it and stays a single write.
     const second = createReply("http://localhost/");
     second.header("set-cookie", "  padded=1  ");
     const response = second.json({ a: 1 });
@@ -570,10 +572,11 @@ describe("merging reply headers onto a fast response gives what the Headers merg
     second.header("x-a", "1");
     const first = mergeReply(response, second, null);
     expect(first).toBeInstanceOf(WireResponse);
-    expect((first as WireResponse).headers["set-cookie"]).toBe("  padded=1  ");
+    expect((first as WireResponse).headers["set-cookie"]).toBe("padded=1");
     second.cookie("b", "2", { secure: false });
     const final = mergeReply(first, second, { ...second.headers });
-    expect(final).not.toBeInstanceOf(WireResponse);
+    expect(final).toBeInstanceOf(WireResponse);
+    expect((final as WireResponse).headers["set-cookie"]).toBeUndefined();
     expect(
       toResponse(final)
         .headers.getSetCookie()
@@ -610,5 +613,64 @@ describe("merging reply headers onto a fast response gives what the Headers merg
     const res = toResponse(out);
     expect(res.headers.get("x-live")).toBe("1");
     expect(res.headers.get("x-a")).toBe("1");
+  });
+});
+
+// The merge used to look only at the names and values it added. The rest of
+// the record is the handler's, which went through `Headers` when its Response
+// was built, so inject() reports `x` for `reply.header("x-a", " x ")`. But the
+// record itself still says " x ", and the Node writer sends the record.
+describe("the wire record of a merged fast response", () => {
+  const merged = (prepare: (reply: CelsianReply) => void, onSend: (reply: CelsianReply) => void): Outgoing => {
+    const reply = createReply("http://localhost/");
+    prepare(reply);
+    const built = reply.send("hello");
+    const shown = { ...reply.headers };
+    onSend(reply);
+    return mergeReply(built, reply, shown);
+  };
+  const padded = (reply: CelsianReply) => {
+    reply.header("x-padded", " x ");
+    reply.header("x-tab", "\tx\t");
+    reply.header("x-inner", "a  b");
+  };
+
+  it.each([
+    ["adds a header", (reply: CelsianReply) => reply.header("x-hook", "yes")],
+    ["queues a cookie", (reply: CelsianReply) => reply.cookie("c", "1", { secure: false })],
+  ])("holds the handler's values as Headers holds them when the hook %s", (_label, onSend) => {
+    const out = merged(padded, onSend);
+    expect(out).toBeInstanceOf(WireResponse);
+    const record = (out as WireResponse).headers;
+    expect(record["x-padded"]).toBe("x");
+    expect(record["x-tab"]).toBe("x");
+    expect(record["x-inner"]).toBe("a  b");
+    const res = toResponse(out);
+    expect([res.headers.get("x-padded"), res.headers.get("x-tab"), res.headers.get("x-inner")]).toEqual([
+      "x",
+      "x",
+      "a  b",
+    ]);
+  });
+
+  it("does not change the handler's own record", () => {
+    const reply = createReply("http://localhost/");
+    reply.header("x-padded", " x ");
+    const built = reply.send("hello");
+    reply.header("x-hook", "yes");
+    mergeReply(built, reply, null);
+    expect(getFastPayload(built)?.headers["x-padded"]).toBe(" x ");
+  });
+
+  it("merges through Headers when the record holds a value Headers keeps but the record cannot be trusted with", () => {
+    // A control character inside a value: Headers accepts it, the plain-record
+    // check does not, so the merge is left to Headers as before.
+    const built = fastResponse("hello", 200, { "x-ctl": "a\u0001b" });
+    const reply = createReply("http://localhost/");
+    reply.header("x-hook", "yes");
+    const out = mergeReply(built, reply, null);
+    expect(out).not.toBeInstanceOf(WireResponse);
+    expect(getFastPayload(out as Response)).toBeUndefined();
+    expect((out as Response).headers.get("x-hook")).toBe("yes");
   });
 });

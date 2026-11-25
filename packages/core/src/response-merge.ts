@@ -15,6 +15,36 @@ const HEADER_VALUE = /^(?:[\x21-\x7e\x80-\xff](?:[\t\x20-\x7e\x80-\xff]*[\x21-\x
 
 const NO_COOKIES: readonly string[] = Object.freeze([]);
 
+/** The whitespace `Headers` strips from both ends of a value: tab, LF, CR and space. */
+const ENDS_WHITESPACE = /^[\t\n\r ]+|[\t\n\r ]+$/g;
+
+/**
+ * `record` as a `Headers` object would hold it, for a merged fast response's
+ * wire record: the same object when every name and value is one `Headers`
+ * keeps unchanged, a copy (or `record` itself, when the caller `owns` it) with
+ * the whitespace at both ends of a value removed where that is all `Headers`
+ * would change, and `null` when `Headers` would refuse a name or value, or
+ * change it some other way, so the caller merges through `Headers` instead.
+ *
+ * The Response a handler built has already been through `Headers`, so
+ * `inject()` and every other runtime see `x`, not ` x `; this is the record
+ * core's Node server writes, which must say the same (on ef8953c a merged
+ * response was always rebuilt through `Headers`).
+ */
+function asHeadersHoldIt(record: Record<string, string>, owns: boolean): Record<string, string> | null {
+  let held: Record<string, string> | null = owns ? record : null;
+  for (const name in record) {
+    const value: unknown = record[name];
+    if (typeof value !== "string" || name === "__proto__" || !HEADER_NAME.test(name)) return null;
+    if (HEADER_VALUE.test(value)) continue;
+    const trimmed = value.replace(ENDS_WHITESPACE, "");
+    if (!HEADER_VALUE.test(trimmed)) return null;
+    held ??= { ...record };
+    held[name] = trimmed;
+  }
+  return held ?? record;
+}
+
 /** True when every name in `headers` is already lower-case, so a plain lookup finds what `Headers.get()` would. */
 function hasLowerCaseNames(headers: Record<string, string>): boolean {
   for (const key in headers) {
@@ -172,13 +202,17 @@ function mergeIntoFast(
   }
 
   if (headers === null && cookies === null) return unchanged;
+  // The record goes on the wire as it is, so it must hold what `Headers`
+  // would: the handler's own values too, which nothing above looked at.
+  const sent = asHeadersHoldIt(headers ?? baseHeaders, headers !== null);
+  if (sent === null) return null;
   // The cookie list is copied: a payload's list is the reply's own, and a
   // cookie queued after this point has not been merged yet.
   return new WireResponse(
     source,
     body,
     status,
-    headers ?? baseHeaders,
+    sent,
     cookies ?? (baseCookies.length === 0 ? NO_COOKIES : [...baseCookies]),
   );
 }

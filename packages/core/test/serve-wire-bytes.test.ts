@@ -8,6 +8,7 @@ import { connect } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type CelsianApp, createApp } from "../src/app.js";
 import { type ServeResult, serve } from "../src/serve.js";
+import type { CelsianReply } from "../src/types.js";
 
 let server: ServeResult | undefined;
 
@@ -341,5 +342,36 @@ describe("a fast response with no body", () => {
     expect(statuses).toEqual(["200", "200"]);
     expect(answer.endsWith('{"after":true}')).toBe(true);
     expect(answer).not.toContain("chunked");
+  });
+});
+
+// A value set on the reply with whitespace at either end is held by the
+// Response without it (`Headers` strips it), and that is what a response an
+// onSend hook added a header or a cookie to used to be sent with, rebuilt
+// through `Headers`. The single write must send the same.
+describe("a padded header value on a fast response an onSend hook adds to", () => {
+  it.each([
+    ["adds a header", (reply: CelsianReply) => reply.header("x-hook", "yes")],
+    ["queues a cookie", (reply: CelsianReply) => reply.cookie("c", "1", { secure: false })],
+  ])("is sent as Headers holds it when the hook %s", async (_label, onSend) => {
+    const app = createApp();
+    app.addHook("onSend", (_request, reply) => {
+      onSend(reply);
+    });
+    app.get("/padded", (_request, reply) =>
+      reply.header("x-padded", " x ").header("x-tab", "\tx\t").header("x-inner", "a  b").send("hello"),
+    );
+    const port = await listen(app);
+
+    const wire = await raw(port, "/padded");
+    const lines = wire.head.split("\r\n");
+    expect(lines).toContain("x-padded: x");
+    expect(lines).toContain("x-tab: x");
+    expect(lines).toContain("x-inner: a  b");
+    // Still the single write, with its length.
+    expect(wire.header("content-length")).toBe("5");
+    expect(wire.body.toString()).toBe("hello");
+    const injected = await app.inject({ url: "/padded" });
+    expect(injected.headers.get("x-padded")).toBe("x");
   });
 });
