@@ -496,3 +496,82 @@ describe("request.cookies", () => {
     expect(assignment).toBeInstanceOf(TypeError);
   });
 });
+
+// A reply holds itself in a symbol-keyed slot so that a proxy of it, or an
+// object made with Object.create(reply), finds it (see reply.ts). Nothing may
+// copy that slot onto another object by accident, and a copy must not make
+// that object the reply.
+describe("the slot a reply holds itself in", () => {
+  const slotOf = (reply: CelsianReply): symbol | undefined =>
+    Object.getOwnPropertySymbols(reply).find((key) => key.description === "celsian.reply.self");
+
+  it("is neither enumerable nor writable, so a spread or Object.assign() does not copy it", () => {
+    const reply = createReply("http://localhost/");
+    const slot = slotOf(reply);
+    expect(slot).toBeDefined();
+    const descriptor = Object.getOwnPropertyDescriptor(reply, slot as symbol);
+    expect(descriptor?.enumerable).toBe(false);
+    expect(descriptor?.writable).toBe(false);
+    expect(Object.getOwnPropertySymbols({ ...reply })).not.toContain(slot);
+    expect(Object.getOwnPropertySymbols(Object.assign({}, reply))).not.toContain(slot);
+    // Module code is strict: an assignment to a read-only property throws.
+    expect(() => {
+      (reply as unknown as Record<symbol, unknown>)[slot as symbol] = createReply("http://localhost/");
+    }).toThrow(TypeError);
+  });
+
+  it("copied by assignment onto an unrelated object, does not make that object the reply", () => {
+    const reply = createReply("http://localhost/");
+    const fake = Object.create(Object.getPrototypeOf(reply)) as CelsianReply & Record<symbol, unknown>;
+    for (const key of Object.getOwnPropertySymbols(reply))
+      fake[key] = (reply as unknown as Record<symbol, unknown>)[key];
+    expect(fake.status).toBeUndefined();
+    expect(fake.statusCode).toBeUndefined();
+    fake.statusCode = 299;
+    expect(reply.statusCode).toBe(200);
+  });
+
+  it("copied from another request's reply, does not let one request drive the other's answer", async () => {
+    const app = createApp({ requestTimeout: 0 });
+    let replyA: CelsianReply | undefined;
+    let releaseA = () => {};
+    const released = new Promise<void>((resolve) => {
+      releaseA = resolve;
+    });
+    let enteredA = () => {};
+    const entered = new Promise<void>((resolve) => {
+      enteredA = resolve;
+    });
+    app.get("/a", async (_request, reply) => {
+      replyA = reply;
+      enteredA();
+      await released;
+      return { request: "a" };
+    });
+    app.get("/b", (_request, reply) => {
+      const unrelated = Object.create(Object.getPrototypeOf(reply)) as CelsianReply & Record<symbol, unknown>;
+      const slot = slotOf(replyA as CelsianReply);
+      if (slot !== undefined) unrelated[slot] = replyA;
+      unrelated.status?.(299).header("x-test-marker", "from-b");
+      releaseA();
+      return { request: "b" };
+    });
+    const pendingA = app.inject({ url: "/a" });
+    await entered;
+    const b = await app.inject({ url: "/b" });
+    const a = await pendingA;
+    expect([a.status, a.headers.get("x-test-marker")]).toEqual([200, null]);
+    expect([b.status, b.headers.get("x-test-marker")]).toEqual([200, null]);
+  });
+
+  it("pointing at something that is not a reply, is not honoured, and reading through it gives undefined", () => {
+    const reply = createReply("http://localhost/");
+    const slot = slotOf(reply) as symbol;
+    const forged = Object.create(Object.getPrototypeOf(reply)) as CelsianReply;
+    // Forged with the descriptor a reply gives its own slot, but holding a plain object.
+    Object.defineProperty(forged, slot, { value: {}, writable: false, enumerable: false, configurable: true });
+    expect(forged.statusCode).toBeUndefined();
+    expect(forged.sent).toBeUndefined();
+    expect(forged.json).toBeUndefined();
+  });
+});

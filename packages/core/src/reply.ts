@@ -378,10 +378,23 @@ function contentDisposition(name: string): string {
 // the read to its target, so both lead back to the reply. A private field
 // alone could not: a proxy has none of its target's private fields, and its
 // prototype chain skips the target.
+//
+// The slot is neither enumerable nor writable, so a spread or Object.assign()
+// does not copy it and an assignment cannot point it elsewhere. And it is only
+// honoured where it is the reply's own: found on the reply itself, on an
+// object that inherits from it, or through a proxy, which reports the reply's
+// own slot. A slot some other object holds as its own property (copied over
+// by assignment from another request's reply, say) is not, so such an object
+// is not a reply. Code that copies the slot on purpose, descriptor and all, is
+// on its own: that is not supported. A proxy whose `get` trap hides symbols,
+// or wraps what it returns (a membrane), does not reach the reply either: its
+// reads of `statusCode`, `sent` and every method give `undefined`.
 
 const HEADERS = Symbol("celsian.reply.headers");
 /** Where a reply holds itself, for objects that stand for it (see above). */
 const SELF = Symbol("celsian.reply.self");
+/** How a reply defines its `SELF` slot; `value` is set for the one call. */
+const SELF_SLOT: PropertyDescriptor = { value: undefined, writable: false, enumerable: false, configurable: true };
 const REQUEST_URL = Symbol("celsian.reply.requestUrl");
 const REQUEST_HEADERS = Symbol("celsian.reply.requestHeaders");
 
@@ -634,7 +647,7 @@ const METHODS = {
 class Reply {
   #statusCode = 200;
   #sent = false;
-  [SELF]: Reply = this;
+  declare [SELF]: Reply;
   [HEADERS]: Record<string, string> = {};
   [REPLY_COOKIES]: string[] = [];
   [REQUEST_URL]: string | URL | undefined;
@@ -643,6 +656,10 @@ class Reply {
   constructor(requestUrl: string | URL | undefined, requestHeaders: Headers | undefined) {
     this[REQUEST_URL] = requestUrl;
     this[REQUEST_HEADERS] = requestHeaders;
+    // One shared descriptor, so defining the slot allocates nothing.
+    SELF_SLOT.value = this;
+    Object.defineProperty(this, SELF, SELF_SLOT);
+    SELF_SLOT.value = undefined;
   }
 
   /**
@@ -651,8 +668,17 @@ class Reply {
    * `undefined` for anything else, the prototype itself included.
    */
   static of(self: object): Reply | undefined {
+    if (#statusCode in self) return self;
     const reply = (self as { [SELF]?: unknown })[SELF];
-    return typeof reply === "object" && reply !== null && #statusCode in reply ? (reply as Reply) : undefined;
+    if (typeof reply !== "object" || reply === null || !(#statusCode in reply)) return undefined;
+    // Honoured only where the slot is the reply's own: the first object on
+    // `self`'s prototype chain that has the slot (the reply, or a proxy that
+    // reports the reply's) must hold it as the reply defined it.
+    for (let holder: object | null = self; holder !== null; holder = Reflect.getPrototypeOf(holder)) {
+      const slot = Reflect.getOwnPropertyDescriptor(holder, SELF);
+      if (slot !== undefined) return slot.writable === false && slot.value === reply ? (reply as Reply) : undefined;
+    }
+    return undefined;
   }
 
   get statusCode(): number {
