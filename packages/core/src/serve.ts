@@ -2,7 +2,7 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Socket } from "node:net";
-import { CelsianApp, dispatchRequest } from "./app.js";
+import { type CelsianApp, dispatchRequest, handlesAsDefined } from "./app.js";
 import { HttpError } from "./errors.js";
 import { getFastPayload, type Outgoing, peekHeaders, WireResponse } from "./fast-response.js";
 import { readConfinedFile } from "./reply.js";
@@ -404,7 +404,7 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
       // follows the signal the original holds internally, not the one its
       // `signal` property reports. So such an app gets a Request built with its
       // signal, as every Request was before signals became lazy.
-      const stock = app.handle === CelsianApp.prototype.handle;
+      const stock = handlesAsDefined(app);
 
       // Build Web Request with raw path (let the app do fast URL parsing)
       let webRequest: Request;

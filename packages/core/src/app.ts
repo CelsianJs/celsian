@@ -127,6 +127,21 @@ export function dispatchRequest(app: CelsianApp, request: Request): Outgoing | P
   return dispatch(app, request);
 }
 
+/** `CelsianApp.prototype.handle` as this module defined it; set by the class's static initializer. */
+let stockHandle: CelsianApp["handle"];
+
+/**
+ * True when `app.handle` is the method this module defined, so that calling
+ * {@link dispatchRequest} instead is the same as calling it. False when it was
+ * replaced on the instance, overridden by a subclass, or replaced on
+ * `CelsianApp.prototype` itself: that last case is why this compares with the
+ * method as it was when the module loaded, not with the prototype's current
+ * one. Internal to core: not exported from the package.
+ */
+export function handlesAsDefined(app: CelsianApp): boolean {
+  return app.handle === stockHandle;
+}
+
 /**
  * The main application class. Provides routing, hooks, plugins, task queues, cron,
  * WebSocket, and request handling -- all built on Web Standard APIs.
@@ -156,6 +171,7 @@ export class CelsianApp {
 
   static {
     dispatch = (app, request) => app.dispatch(request);
+    stockHandle = CelsianApp.prototype.handle;
   }
 
   private router = new Router();
