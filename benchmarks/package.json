@@ -6,7 +6,7 @@
     "@celsian/core": "workspace:*"
   },
   "devDependencies": {
-    "@hono/node-server": "^2.0.12",
+    "@hono/node-server": "^2.1.5",
     "@types/autocannon": "^7.12.7",
     "@types/express": "^5.0.6",
     "autocannon": "^8.0.0",
