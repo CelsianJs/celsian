@@ -7,6 +7,7 @@
 // Every test here fails against the pre-fix handler.
 
 import { describe, expect, it, vi } from "vitest";
+import { HttpError } from "../../core/src/errors.js";
 import { json } from "../../core/test/helpers/json.js";
 import { procedure } from "../src/procedure.js";
 import { RPCHandler, router } from "../src/router.js";
@@ -451,10 +452,7 @@ describe("M-12: introspection endpoints must be gated", () => {
         async ({ ctx, next }) => {
           seen.push("guard");
           if (!ctx.request.headers.get("authorization")) {
-            const err = new Error("Unauthorized") as Error & { statusCode: number; code: string };
-            err.statusCode = 401;
-            err.code = "UNAUTHORIZED";
-            throw err;
+            throw new HttpError(401, "Unauthorized");
           }
           return next();
         },
@@ -478,9 +476,7 @@ describe("M-12: introspection endpoints must be gated", () => {
       introspection: true,
       introspectionMiddlewares: [
         async () => {
-          const err = new Error("nope") as Error & { statusCode: number };
-          err.statusCode = 403;
-          throw err;
+          throw new HttpError(403, "nope");
         },
       ],
     });
@@ -568,9 +564,7 @@ describe("RPCHandler logger option", () => {
   it("maps a throwing contextFactory to a response as well", async () => {
     const handler = new RPCHandler(router({ ok: procedure.query(async () => ({ ok: true })) }), {
       contextFactory: () => {
-        const err = new Error("no session") as Error & { statusCode: number };
-        err.statusCode = 401;
-        throw err;
+        throw new HttpError(401, "no session");
       },
     });
 
@@ -583,9 +577,7 @@ describe("RPCHandler logger option", () => {
     const handler = new RPCHandler(
       router({
         nope: procedure.query(async () => {
-          const err = new Error("bad request") as Error & { statusCode: number };
-          err.statusCode = 400;
-          throw err;
+          throw new HttpError(400, "bad request");
         }),
       }),
       {

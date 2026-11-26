@@ -89,6 +89,8 @@ The convenience methods on `reply` set both the status and a fixed code:
 
 If a handler throws something that is not an `HttpError` or `ValidationError` (a plain `Error`, or a thrown non-Error value), CelsianJS responds with status `500` and code `INTERNAL_SERVER_ERROR`. In production the message is `"Internal Server Error"`; in development the real message and stack are included to aid debugging.
 
+A thrown error that is answered with a `5xx` is always recorded on the server. With a logger (`createApp({ logger: true })`) it goes through the request log as `request error`. Without one, CelsianJS writes it to `console.error` with the method, path and full error, so a production `500` is never left without a trace. `4xx` errors are not written to `console.error`, and neither is a `5xx` response your handler returns itself (for example `reply.internalServerError()`). If your own `setErrorHandler` or `onError` hook returns the response, logging it is up to you.
+
 To map your own errors to specific codes, register a custom handler:
 
 ```typescript

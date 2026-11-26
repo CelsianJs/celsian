@@ -130,6 +130,9 @@ function errnoOf(err: unknown): string | undefined {
  * the read, and the read follows it out of the root. `O_NOFOLLOW` makes the
  * kernel refuse a symlinked final component, so the check and the read can no
  * longer disagree, and the handle is read directly rather than looked up twice.
+ *
+ * Exported from the package so that anything else serving files from disk
+ * (`@celsian/adapter-node`'s static handler) uses this instead of a copy.
  */
 export async function readConfinedFile(filePath: string, options: SendFileOptions | undefined): Promise<ConfinedRead> {
   const resolved = await resolveConfinedPath(filePath, options);

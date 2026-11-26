@@ -120,6 +120,50 @@ function isProductionEnv(): boolean {
   );
 }
 
+/** Brand `@celsian/core` puts on `HttpError` and `ValidationError` (0.6.8+). */
+const INTENTIONAL_ERROR = Symbol.for("celsian.httpError");
+
+/**
+ * The status a thrown value asks for, or `undefined` when it has no say.
+ *
+ * Only `@celsian/core`'s `HttpError` and `ValidationError` are intentional:
+ * their status, code and message were written for the client. Everything else
+ * is an unknown failure, whatever fields it carries. Database drivers and HTTP
+ * clients attach `statusCode` to their errors too, and trusting it both
+ * downgraded a 500 to their status and skipped production sanitization, so a
+ * driver error went to the client with its full message (connection string
+ * included). This is the rule `@celsian/core`'s error handler applies with
+ * `instanceof`; this package does not depend on core, so it reads the brand
+ * core sets on those two classes instead.
+ *
+ * A status outside 400-599 is rejected as well: `new Response()` throws a
+ * RangeError below 200, which used to escape `handle()` as a rejection.
+ */
+function intentionalStatus(error: unknown): number | undefined {
+  if (!(error instanceof Error) || !isCelsianHttpError(error)) return undefined;
+  const status = (error as { statusCode?: unknown }).statusCode;
+  return typeof status === "number" && Number.isInteger(status) && status >= 400 && status <= 599 ? status : undefined;
+}
+
+function isCelsianHttpError(error: Error): boolean {
+  if ((error as unknown as Record<symbol, unknown>)[INTENTIONAL_ERROR] === true) return true;
+  // `@celsian/core` before 0.6.8 sets no brand. Nothing ties this package's
+  // version to core's, so recognise the older classes by their chain (an
+  // `HttpError` or `ValidationError` that extends `CelsianError`) rather than
+  // turn every 401 and 403 into a 500 for an app that upgraded rpc first.
+  let named = false;
+  for (
+    let proto = Object.getPrototypeOf(error);
+    proto && proto !== Error.prototype;
+    proto = Object.getPrototypeOf(proto)
+  ) {
+    const name = (proto as { constructor?: { name?: unknown } }).constructor?.name;
+    if (name === "HttpError" || name === "ValidationError") named = true;
+    else if (name === "CelsianError") return named;
+  }
+  return false;
+}
+
 /**
  * Server-side RPC handler. Flattens a router definition, validates input/output,
  * runs middleware, and serves OpenAPI and manifest endpoints.
@@ -396,7 +440,10 @@ export class RPCHandler {
 
   /** Shared error → Response mapping for procedures and introspection guards. */
   private handleError(error: unknown, rpcPath: string): Response {
-    const status = (error as { statusCode?: number }).statusCode ?? 500;
+    // `undefined` means the thrown value is not an intentional HTTP error (see
+    // intentionalStatus): it is a 500, and its own `statusCode` is ignored.
+    const intentional = intentionalStatus(error);
+    const status = intentional ?? 500;
 
     // Always log unexpected errors server-side so operators keep full detail
     // even when the client-facing message is sanitized below. Routed through
@@ -408,17 +455,17 @@ export class RPCHandler {
       });
     }
 
-    // In production, unexpected (5xx-equivalent) errors must not leak
-    // internals, raw error messages/codes can disclose stack details, file
-    // paths, or query fragments. Mirrors @celsian/core's error-handler
-    // sanitization. Intentional HTTP-style errors (statusCode < 500, e.g.
-    // thrown HttpErrors) pass through unchanged.
+    // In production, 5xx errors must not leak internals: raw error
+    // messages/codes can disclose stack details, file paths, connection
+    // strings or query fragments. Mirrors @celsian/core's error-handler
+    // sanitization. Intentional HttpErrors below 500 pass through unchanged.
     if (isProductionEnv() && status >= 500) {
       return this.errorResponse(status, "INTERNAL_ERROR", "Internal error");
     }
 
     const message = error instanceof Error ? error.message : "Internal error";
-    const code = (error as { code?: string }).code ?? "INTERNAL_ERROR";
+    const rawCode = (error as { code?: unknown } | null | undefined)?.code;
+    const code = typeof rawCode === "string" ? rawCode : "INTERNAL_ERROR";
     return this.errorResponse(status, code, message);
   }
 

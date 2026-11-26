@@ -262,11 +262,29 @@ export class CronScheduler {
         // even if ticks race or the scheduler restarts mid-minute.
         if (this.lastFiredEpochMinute.get(job.name) === epochMinute) continue;
         this.lastFiredEpochMinute.set(job.name, epochMinute);
-        // Fire and forget, log errors instead of silently swallowing
-        Promise.resolve(job.handler()).catch((err) => {
-          console.error("[celsian] Cron job error:", err);
-        });
+        this.fire(job);
       }
+    }
+  }
+
+  /**
+   * Run one job, fire and forget, reporting a failure instead of swallowing it.
+   *
+   * The handler is called inside a `try`: `Promise.resolve(job.handler())`
+   * only catches a REJECTION, because a handler that throws synchronously
+   * throws before `Promise.resolve` is ever called. That throw left `tick()`,
+   * so the rest of the jobs due in the same minute never ran, and then left
+   * the timer callback as an uncaught exception, which under `serve()` shuts
+   * the process down with exit code 1.
+   */
+  private fire(job: CronJob): void {
+    const report = (err: unknown) => {
+      console.error("[celsian] Cron job error:", err);
+    };
+    try {
+      Promise.resolve(job.handler()).catch(report);
+    } catch (err) {
+      report(err);
     }
   }
 

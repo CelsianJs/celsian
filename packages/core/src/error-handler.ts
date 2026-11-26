@@ -13,6 +13,37 @@ function logHandlerError(logger: Logger | null | undefined, message: string, err
   }
 }
 
+/** `GET /users/7` for a log line: no origin, and no query string (it can hold tokens). */
+function describeRequest(request: CelsianRequest): string {
+  const method = typeof request?.method === "string" ? request.method : "";
+  const url = typeof request?.url === "string" ? request.url : "";
+  const path = url.replace(/^[a-z][a-z0-9+.-]*:\/\/[^/?#]*/i, "").replace(/[?#].*$/, "") || "/";
+  return method ? `${method} ${path}` : path;
+}
+
+/**
+ * Make sure a server fault is recorded somewhere.
+ *
+ * `createApp()` with no `logger` option has a silent no-op logger, and in
+ * production the 500 response is sanitized as well, so a thrown error left no
+ * trace at all: not in the response, not on stderr. Three of the four
+ * create-celsian templates start from a bare `createApp()`.
+ *
+ * With a logger, the app's request logger already records every failed request
+ * ("request error"), so this stays quiet and nothing is logged twice. Only
+ * 5xx gets here: a 4xx is the client's mistake, answered in full, and would
+ * turn stderr into an access log.
+ */
+function reportServerError(
+  logger: Logger | null | undefined,
+  error: Error,
+  request: CelsianRequest,
+  status: number,
+): void {
+  if (logger) return;
+  console.error(`[celsian] ${describeRequest(request)} failed with ${status}:`, error);
+}
+
 /**
  * Process an error through custom handlers, onError hooks, and default formatting.
  * Returns a well-formed JSON Response with appropriate status code.
@@ -53,6 +84,9 @@ export async function handleError(
   }
 
   if (error instanceof HttpError) {
+    // An intentional 5xx still has its message stripped from the production
+    // response (HttpError.toJSON), so it needs the same trace as an unknown one.
+    if (error.statusCode >= 500) reportServerError(logger, error, request, error.statusCode);
     return new Response(JSON.stringify(error.toJSON()), {
       status: error.statusCode,
       headers: { "content-type": "application/json; charset=utf-8" },
@@ -64,6 +98,7 @@ export async function handleError(
   // otherwise both downgrade the status AND skip production sanitization,
   // leaking the raw message. Unknown errors are 500s, always sanitized in prod.
   const status = 500;
+  reportServerError(logger, error, request, status);
   const isProduction =
     typeof process !== "undefined" &&
     (process.env.NODE_ENV === "production" || process.env.CELSIAN_ENV === "production");

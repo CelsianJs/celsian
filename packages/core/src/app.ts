@@ -7,7 +7,7 @@ import { parseCookies } from "./cookie.js";
 import { type CronJob, CronScheduler } from "./cron.js";
 import { handleError as handleErrorFn } from "./error-handler.js";
 import { assertPlugin, CelsianError, HttpError, ValidationError, wrapNonError } from "./errors.js";
-import { fastResponse, getFastPayload } from "./fast-response.js";
+import { fastResponse, getFastPayload, peekHeaders } from "./fast-response.js";
 import { runHooks, runHooksFireAndForget, runOnSendHooks } from "./hooks.js";
 import { createInject, type InjectOptions } from "./inject.js";
 import { createLogger, generateRequestId, type Logger } from "./logger.js";
@@ -1322,7 +1322,7 @@ export class CelsianApp {
       payload = handlerResult;
     } else {
       // The handler built its own Response (reply.json(...), reply.send(...)).
-      if (!(response.headers.get("content-type") ?? "").includes("json")) return response;
+      if (!(peekHeaders(response).get("content-type") ?? "").includes("json")) return response;
 
       // Only a body that was already serialized in memory may be read here.
       // `response.clone().json()` looks harmless but it TEES the body stream and

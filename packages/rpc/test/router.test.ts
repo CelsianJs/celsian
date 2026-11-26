@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { HttpError } from "../../core/src/errors.js";
 import { json } from "../../core/test/helpers/json.js";
 import { procedure } from "../src/procedure.js";
 import { RPCHandler, router } from "../src/router.js";
@@ -251,15 +252,12 @@ describe("RPCHandler production error sanitization", () => {
     }
   });
 
-  it("passes through intentional HTTP-style errors (statusCode < 500) in production", async () => {
+  it("passes through intentional HttpErrors (statusCode < 500) in production", async () => {
     vi.stubEnv("NODE_ENV", "production");
     try {
       const routes = router({
         forbidden: procedure.query(async () => {
-          const err = new Error("You shall not pass") as Error & { statusCode: number; code: string };
-          err.statusCode = 403;
-          err.code = "FORBIDDEN";
-          throw err;
+          throw new HttpError(403, "You shall not pass");
         }),
       });
 

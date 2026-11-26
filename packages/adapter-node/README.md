@@ -33,6 +33,8 @@ serve(app, {
 });
 ```
 
+Files under `staticDir` are served before the app sees the request. A path that resolves outside `staticDir`, including through a symlink inside it, is not served and falls through to the app's routes.
+
 ### Conversion Helpers
 
 For advanced use, the package also exports low-level helpers:
