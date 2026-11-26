@@ -74,7 +74,16 @@ if (body.ok !== true || body.runtime !== "workerd") {
   fail(`unexpected body: ${JSON.stringify(body)}`);
 }
 
-console.log(`\n[workerd-smoke] PASS: ${response.status} ${JSON.stringify(body)}`);
+// request.signal under workerd: past a stopped event, not on a dispatched one,
+// and already aborted inside the input's own abort listeners.
+const signalResponse = await fetch(URL_.replace("/health", "/signal"));
+const signalBody = await signalResponse.json();
+const expectedSignal = { stopped: [true, "cancelled"], afterDispatch: false, realReason: "real", during: [true] };
+if (JSON.stringify(signalBody) !== JSON.stringify(expectedSignal)) {
+  fail(`request.signal: expected ${JSON.stringify(expectedSignal)}, got ${JSON.stringify(signalBody)}`);
+}
+
+console.log(`\n[workerd-smoke] PASS: ${response.status} ${JSON.stringify(body)} ${JSON.stringify(signalBody)}`);
 child.kill("SIGTERM");
 // Give wrangler a moment to shut down workerd, then force-exit.
 await sleep(2000);

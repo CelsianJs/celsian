@@ -2,11 +2,11 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Socket } from "node:net";
-import type { CelsianApp } from "./app.js";
+import { type CelsianApp, dispatchRequest, isStockHandle } from "./app.js";
 import { HttpError } from "./errors.js";
-import { getFastPayload, peekHeaders } from "./fast-response.js";
+import { getFastPayload, type Outgoing, peekHeaders, WireResponse } from "./fast-response.js";
 import { readConfinedFile } from "./reply.js";
-import { setRemoteAddress } from "./request.js";
+import { clearNodeBody, setNodeBody, setRemoteAddress } from "./request.js";
 import { authorizeWSUpgrade, type WSAllowedOrigins, WSConnectionLimiter } from "./websocket.js";
 
 /** Options for `serve()` -- port, host, static files, graceful shutdown. */
@@ -299,7 +299,150 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
   let baseUrl = `http://${host.includes(":") ? `[${host}]` : host}:${port}`;
   const hasStaticDir = !!options.staticDir;
 
-  const server = http.createServer(async (req: IncomingMessage, res: ServerResponse) => {
+  /**
+   * Serve `req` from `staticDir` when it names a file there. Resolves to true
+   * once the file has been written, false when the app should answer instead.
+   */
+  const serveStatic = async (res: ServerResponse, requestUrl: string | URL): Promise<boolean> => {
+    const url = typeof requestUrl === "string" ? new URL(requestUrl) : requestUrl;
+    const { resolve } = await import("node:path");
+    const staticRoot = resolve(options.staticDir!);
+    // Decode URI and normalize to prevent path traversal (e.g., /../../../etc/passwd).
+    // Malformed percent-encoding (e.g. "/%ZZ") throws URIError, respond 400
+    // rather than letting it crash the async server callback.
+    let decodedPath: string;
+    try {
+      decodedPath = decodeURIComponent(url.pathname);
+    } catch {
+      throw new HttpError(400, "Bad Request");
+    }
+    // `join` first, then confine: a URL path is always absolute ("/app.js"),
+    // and handing that straight to `resolve(root, path)` would let it replace
+    // the root outright, so every request would look like an escape.
+    const filePath = resolve(join(staticRoot, decodedPath));
+    // Containment is delegated to the SAME helper reply.sendFile() uses, so
+    // this second file-serving path cannot drift from it again. It was
+    // lexical-only here (a `startsWith` on the resolved path) while sendFile
+    // had already been hardened with realpath() + O_NOFOLLOW, which meant a
+    // symlink planted inside staticDir served whatever it pointed at:
+    // `GET /avatar.png` returning the contents of `.env` with a 200.
+    //
+    // A rejection falls through to the app handler rather than answering 403,
+    // matching what the lexical check already did for traversal attempts, so
+    // the static layer still never reports on files outside its own root.
+    const file = await readConfinedFile(filePath, { root: staticRoot });
+    if (!file.ok) return false;
+    // Extension comes from the requested path, not the realpath()-resolved
+    // one, so the content-type does not change under the client's feet.
+    const ext = extname(filePath);
+    res.setHeader("content-type", MIME_TYPES[ext] ?? "application/octet-stream");
+    res.setHeader("cache-control", "public, max-age=31536000, immutable");
+    res.end(file.data);
+    return true;
+  };
+
+  /** Runs once per request, however it ended. */
+  const done = (req: IncomingMessage): void => {
+    endTransportSignal(req);
+    inFlight--;
+  };
+
+  /** Answer for a request that failed before or while it was written. */
+  const fail = (res: ServerResponse, error: unknown): void => {
+    if (res.destroyed) return;
+    const badRequest = error instanceof HttpError && error.statusCode === 400;
+    if (!badRequest) console.error("[celsian] Unhandled error:", error);
+    if (res.headersSent) res.destroy();
+    else {
+      try {
+        res.statusCode = badRequest ? 400 : 500;
+        res.setHeader("connection", "close");
+        res.end(badRequest ? "Bad Request" : "Internal Server Error");
+      } catch {
+        res.destroy();
+      }
+    }
+  };
+
+  const failed = (req: IncomingMessage, res: ServerResponse, error: unknown): void => {
+    fail(res, error);
+    done(req);
+  };
+
+  /**
+   * Write the app's answer and finish the request. A fast response is written
+   * and finished before this returns; a body stream is drained first.
+   */
+  const write = (req: IncomingMessage, res: ServerResponse, out: Outgoing): void => {
+    let draining: Promise<void> | undefined;
+    try {
+      draining = writeOutgoing(res, out);
+    } catch (error) {
+      failed(req, res, error);
+      return;
+    }
+    if (draining === undefined) done(req);
+    else
+      draining.then(
+        () => done(req),
+        (error) => failed(req, res, error),
+      );
+  };
+
+  /**
+   * Hand `req` to the app, write its answer and finish the request. All of it
+   * happens before this returns when the app answers synchronously with a fast
+   * response. An answer that is still pending is waited on once: the same
+   * callback writes it and finishes the request.
+   */
+  const answer = (req: IncomingMessage, res: ServerResponse, requestUrl: string | URL): void => {
+    let response: Outgoing | Promise<Outgoing>;
+    try {
+      // An app whose `handle` was replaced or overridden keeps going through
+      // it, and that code is handed the Request itself. It may rebuild it
+      // (`handle(new Request(request, { headers }))`), and a rebuilt Request
+      // follows the signal the original holds internally, not the one its
+      // `signal` property reports. So such an app gets a Request built with its
+      // signal, as every Request was before signals became lazy.
+      //
+      // `app.handle` is read once, and what was read is what is called, with
+      // the app as `this`, as `await app.handle(request)` did: an accessor may
+      // answer differently each time it is read.
+      const handle = app.handle;
+      const stock = isStockHandle(handle);
+
+      // Build Web Request with raw path (let the app do fast URL parsing)
+      let webRequest: Request;
+      try {
+        webRequest = nodeToWebRequestFast(req, requestUrl, !stock);
+      } catch {
+        throw new HttpError(400, "Bad Request");
+      }
+
+      // The app's internal entry point can answer without a promise, and with a
+      // fast response whose final headers are still beside it, which
+      // writeOutgoing sends as is. A replaced handle is answered the way
+      // `await app.handle()` answers it: what it returns may be a promise from
+      // another realm (`instanceof Promise` is false for one), another
+      // thenable, or a Response returned without a promise at all.
+      response = stock ? dispatchRequest(app, webRequest) : Promise.resolve(Reflect.apply(handle, app, [webRequest]));
+    } catch (error) {
+      failed(req, res, error);
+      return;
+    }
+    if (response instanceof Promise) {
+      response.then(
+        (settled) => write(req, res, settled),
+        (error) => failed(req, res, error),
+      );
+    } else {
+      write(req, res, response);
+    }
+  };
+
+  // Not an async function: a request the app answers synchronously is written
+  // and finished right here, without a promise for the callback itself.
+  const server = http.createServer((req: IncomingMessage, res: ServerResponse) => {
     if (shuttingDown) {
       res.statusCode = 503;
       res.end("Service Unavailable");
@@ -308,77 +451,32 @@ async function serveNode(app: CelsianApp, port: number, host: string, options: S
 
     inFlight++;
 
+    let requestUrl: string | URL;
     try {
-      const requestUrl = nodeRequestUrl(req.url ?? "/", baseUrl);
-      // Static files, only parse URL when staticDir is configured
-      if (hasStaticDir) {
-        const url = typeof requestUrl === "string" ? new URL(requestUrl) : requestUrl;
-        const { resolve } = await import("node:path");
-        const staticRoot = resolve(options.staticDir!);
-        // Decode URI and normalize to prevent path traversal (e.g., /../../../etc/passwd).
-        // Malformed percent-encoding (e.g. "/%ZZ") throws URIError, respond 400
-        // rather than letting it crash the async server callback.
-        let decodedPath: string;
-        try {
-          decodedPath = decodeURIComponent(url.pathname);
-        } catch {
-          throw new HttpError(400, "Bad Request");
-        }
-        // `join` first, then confine: a URL path is always absolute ("/app.js"),
-        // and handing that straight to `resolve(root, path)` would let it replace
-        // the root outright, so every request would look like an escape.
-        const filePath = resolve(join(staticRoot, decodedPath));
-        // Containment is delegated to the SAME helper reply.sendFile() uses, so
-        // this second file-serving path cannot drift from it again. It was
-        // lexical-only here (a `startsWith` on the resolved path) while sendFile
-        // had already been hardened with realpath() + O_NOFOLLOW, which meant a
-        // symlink planted inside staticDir served whatever it pointed at:
-        // `GET /avatar.png` returning the contents of `.env` with a 200.
-        //
-        // A rejection falls through to the app handler rather than answering 403,
-        // matching what the lexical check already did for traversal attempts, so
-        // the static layer still never reports on files outside its own root.
-        const file = await readConfinedFile(filePath, { root: staticRoot });
-        if (file.ok) {
-          // Extension comes from the requested path, not the realpath()-resolved
-          // one, so the content-type does not change under the client's feet.
-          const ext = extname(filePath);
-          res.setHeader("content-type", MIME_TYPES[ext] ?? "application/octet-stream");
-          res.setHeader("cache-control", "public, max-age=31536000, immutable");
-          res.end(file.data);
-          return;
-        }
-      }
-
-      // Build Web Request with raw path (let app.handle() do fast URL parsing)
-      let webRequest: Request;
-      try {
-        webRequest = nodeToWebRequestFast(req, requestUrl);
-      } catch {
-        throw new HttpError(400, "Bad Request");
-      }
-
-      const response = await app.handle(webRequest);
-      await writeWebResponse(res, response);
+      requestUrl = nodeRequestUrl(req.url ?? "/", baseUrl);
     } catch (error) {
-      if (!res.destroyed) {
-        const badRequest = error instanceof HttpError && error.statusCode === 400;
-        if (!badRequest) console.error("[celsian] Unhandled error:", error);
-        if (res.headersSent) res.destroy();
-        else {
-          try {
-            res.statusCode = badRequest ? 400 : 500;
-            res.setHeader("connection", "close");
-            res.end(badRequest ? "Bad Request" : "Internal Server Error");
-          } catch {
-            res.destroy();
-          }
-        }
-      }
-    } finally {
-      requestSignalCleanup.get(req)?.();
-      inFlight--;
+      failed(req, res, error);
+      return;
     }
+    // Static files, only parse URL when staticDir is configured
+    if (!hasStaticDir) {
+      answer(req, res, requestUrl);
+      return;
+    }
+    let serving: Promise<boolean>;
+    try {
+      serving = serveStatic(res, requestUrl);
+    } catch (error) {
+      failed(req, res, error);
+      return;
+    }
+    serving.then(
+      (served) => {
+        if (served) done(req);
+        else answer(req, res, requestUrl);
+      },
+      (error) => failed(req, res, error),
+    );
   });
 
   server.on("connection", (socket: Socket) => {
@@ -817,6 +915,97 @@ function nodeRequestSignal(req: IncomingMessage): AbortSignal {
   return controller.signal;
 }
 
+// ─── The transport signal of a request core's own server builds ───
+//
+// `request.signal` has to abort when the client goes away. Wiring that up
+// costs a controller, two listeners and their closures, and handing the signal
+// to `new Request()` costs considerably more: the Request builds a second
+// controller to follow the first, with a WeakRef, a FinalizationRegistry entry
+// and (in Node 22) an error object thrown and caught while it sizes the
+// listener list. Most handlers never read `request.signal`.
+//
+// So the Request is built without a signal, and reading `signal` on it builds
+// the transport signal then. A signal read while the request is in flight is
+// the one `nodeRequestSignal` has always produced. One first read after the
+// request was answered gets a signal in the state the eager one would be in by
+// then: aborted if the request was aborted before it was answered, otherwise
+// not aborted and never going to be.
+//
+// What the property cannot reach is the signal a Request holds internally,
+// which is the one `new Request(request, init)` and `fetch(request)` follow.
+// A lazy Request's internal signal never aborts. Only core sees such a
+// Request, with two exceptions that are therefore built with a real signal:
+// the Request handed to a replaced `app.handle`, and any clone.
+
+/** The transport signal of a Node request, once something has read it. On the IncomingMessage, so a clone shares it. */
+const TRANSPORT_SIGNAL = Symbol("celsian.transportSignal");
+/** Set on an IncomingMessage once its request was answered: whether it had been aborted by then. */
+const ABORTED_WHEN_ANSWERED = Symbol("celsian.abortedWhenAnswered");
+/** The IncomingMessage a {@link NodeRequest} was built from. */
+const INCOMING = Symbol("celsian.incomingMessage");
+
+interface TrackedIncoming extends IncomingMessage {
+  [TRANSPORT_SIGNAL]?: AbortSignal;
+  [ABORTED_WHEN_ANSWERED]?: boolean;
+}
+
+function transportSignal(req: TrackedIncoming): AbortSignal {
+  let signal = req[TRANSPORT_SIGNAL];
+  if (signal === undefined) {
+    const abortedWhenAnswered = req[ABORTED_WHEN_ANSWERED];
+    if (abortedWhenAnswered === undefined) {
+      signal = nodeRequestSignal(req);
+    } else {
+      const controller = new AbortController();
+      if (abortedWhenAnswered) controller.abort();
+      signal = controller.signal;
+    }
+    req[TRANSPORT_SIGNAL] = signal;
+  }
+  return signal;
+}
+
+/** The request was answered: stop following the socket, and remember how it stood for a late first read. */
+function endTransportSignal(req: TrackedIncoming): void {
+  requestSignalCleanup.get(req)?.();
+  req[ABORTED_WHEN_ANSWERED] = req.aborted || req.socket.destroyed;
+}
+
+/** The `Request` this module loaded with, which {@link NodeRequest} extends. */
+const BaseRequest = Request;
+
+/** A Request built from a Node request. Identical to a plain one except that `signal` is built on first read. */
+class NodeRequest extends BaseRequest {
+  declare [INCOMING]: TrackedIncoming;
+
+  /** A clone follows the same connection, so it keeps the same transport signal. */
+  override clone(): Request {
+    // Cloning tees the body stream, and both halves read from the Node stream
+    // through it. The body parser must then do the same.
+    clearNodeBody(this);
+    // A clone leaves core: `request.clone()` in a handler returns it. So it is
+    // rebuilt around the transport signal, which makes that the signal it
+    // holds internally as well as the one it reports. A Request made from the
+    // clone (`new Request(clone, init)`, `fetch(clone)`) then still aborts when
+    // the client goes away. Costs a second Request, on clone() only.
+    const incoming = this[INCOMING];
+    const copy = new NodeRequest(super.clone(), { signal: transportSignal(incoming) });
+    copy[INCOMING] = incoming;
+    return copy;
+  }
+}
+
+// On the prototype, so building a NodeRequest costs nothing extra. Defined
+// here rather than in the class body because `Request` declares `signal` as a
+// property, which a class may not override with an accessor.
+Object.defineProperty(NodeRequest.prototype, "signal", {
+  configurable: true,
+  enumerable: true,
+  get(this: NodeRequest): AbortSignal {
+    return transportSignal(this[INCOMING]);
+  },
+});
+
 /** Convert a Node.js IncomingMessage to a Web Standard Request. */
 export function nodeToWebRequest(req: IncomingMessage, url: URL): Request {
   const headers = new Headers();
@@ -844,8 +1033,11 @@ export function nodeToWebRequest(req: IncomingMessage, url: URL): Request {
 /**
  * Fast variant of nodeToWebRequest using a prebuilt URL string for origin-form.
  * Absolute-form uses its parsed authority instead of the received Host header.
+ *
+ * `eagerSignal` builds the transport signal now and gives it to the Request,
+ * for a Request that code outside core will hold (see {@link NodeRequest}).
  */
-function nodeToWebRequestFast(req: IncomingMessage, url: string | URL): Request {
+function nodeToWebRequestFast(req: IncomingMessage, url: string | URL, eagerSignal: boolean): Request {
   const raw = req.headers;
   // Common case: every header value is a string (Node coalesces duplicates,
   // leaving only set-cookie and a handful as arrays). Pass the plain record
@@ -877,77 +1069,241 @@ function nodeToWebRequestFast(req: IncomingMessage, url: string | URL): Request 
   const hasBody = method !== "GET" && method !== "HEAD";
 
   // Origin-form's full URL was built by concatenation, without a URL allocation.
-  const request = new Request(url, {
-    method,
-    headers,
-    body: hasBody ? (req as unknown as ReadableStream) : undefined,
-    duplex: hasBody ? "half" : undefined,
-    signal: nodeRequestSignal(req),
-  });
+  const body = hasBody ? (req as unknown as ReadableStream) : undefined;
+  const duplex = hasBody ? "half" : undefined;
+  let request: Request;
+  if (Request === BaseRequest) {
+    // Normally no `signal` is passed: NodeRequest builds it when it is first read.
+    const lazy = eagerSignal
+      ? new NodeRequest(url, { method, headers, body, duplex, signal: transportSignal(req) })
+      : new NodeRequest(url, { method, headers, body, duplex });
+    lazy[INCOMING] = req;
+    // Lets the body parser read `req` itself instead of the web stream around it.
+    if (hasBody) setNodeBody(lazy, req);
+    request = lazy;
+  } else {
+    // The global Request has been replaced since this module loaded (a
+    // polyfill, an instrumentation wrapper). NodeRequest extends the original,
+    // so build the request the replacement's own way, signal included.
+    request = new Request(url, { method, headers, body, duplex, signal: nodeRequestSignal(req) });
+  }
   return setRemoteAddress(request, req.socket?.remoteAddress);
 }
 
 /** Write a Web Standard Response back to a Node.js ServerResponse, preserving Set-Cookie headers. */
 export async function writeWebResponse(res: ServerResponse, response: Response): Promise<void> {
   try {
-    await writeNodeResponse(res, response);
+    await writeOutgoing(res, response);
   } finally {
     requestSignalCleanup.get(res.req)?.();
   }
 }
 
-async function writeNodeResponse(res: ServerResponse, response: Response): Promise<void> {
+/**
+ * {@link writeWebResponse} for what the app's internal entry point returns.
+ * Returns `undefined` when the response was written in full before this
+ * returned (any fast response), a promise while a body stream is being drained.
+ */
+function writeOutgoing(res: ServerResponse, out: Outgoing): Promise<void> | undefined {
+  if (out instanceof WireResponse) {
+    if (res.destroyed) {
+      void out.source.body?.cancel().catch(() => {});
+      return undefined;
+    }
+    writeFast(res, out.status, out.body, out.headers, out.cookies);
+    return undefined;
+  }
   if (res.destroyed) {
-    void response.body?.cancel().catch(() => {});
-    return;
+    void out.body?.cancel().catch(() => {});
+    return undefined;
   }
   // Fast path: responses built by reply.json()/send()/html() or the auto-serializer
   // carry their already-serialized body + plain headers. Write them in a single
   // writeHead()+end(), no ReadableStream reader, no async drain, no second socket
   // write, and with an explicit Content-Length (avoids chunked encoding).
-  const fast = getFastPayload(response);
-  if (fast !== undefined) {
-    const body = fast.body;
-    // Always derived from the bytes about to be written, whatever the headers say.
-    const contentLength =
-      body === null ? undefined : String(typeof body === "string" ? Buffer.byteLength(body) : body.byteLength);
-    let headers: Record<string, string | string[]>;
-    if (fast.headersExposed) {
-      // Something read `response.headers` after the Response was built, so it
-      // may have added, replaced or removed a header. The snapshot can no
-      // longer be trusted; take the headers the Response actually carries,
-      // which is what inject() and every other runtime report. Still a single
-      // writeHead()+end(): only the source of the headers changes.
-      headers = {};
-      const live = peekHeaders(response);
-      for (const [key, value] of live) {
-        // Iteration yields each Set-Cookie on its own; they are collected below.
-        if (key !== "set-cookie") headers[key] = value;
-      }
-      if (contentLength !== undefined) headers["content-length"] = contentLength;
-      const cookies = live.getSetCookie?.() ?? [];
-      if (cookies.length > 0) headers["set-cookie"] = cookies;
-    } else {
-      headers = { ...fast.headers };
-      if (contentLength !== undefined) headers["content-length"] = contentLength;
-      if (fast.cookies.length > 0) {
-        // A Set-Cookie put in the plain headers by `reply.header()` is a cookie
-        // too; it goes out alongside the `reply.cookie()` ones, not instead.
-        const fromHeader = headers["set-cookie"];
-        headers["set-cookie"] = typeof fromHeader === "string" ? [fromHeader, ...fast.cookies] : fast.cookies;
-      }
-    }
-    res.writeHead(fast.status, headers);
-    if (body === null) res.end();
-    else res.end(body);
+  const fast = getFastPayload(out);
+  if (fast === undefined) return drainResponse(res, out);
+  if (!fast.headersExposed) {
+    writeFast(res, fast.status, fast.body, fast.headers, fast.cookies);
+    return undefined;
+  }
+  // Something read `response.headers` after the Response was built, so it
+  // may have added, replaced or removed a header. The snapshot can no
+  // longer be trusted; take the headers the Response actually carries,
+  // which is what inject() and every other runtime report. Still a single
+  // writeHead()+end(): only the source of the headers changes.
+  let body = fast.body;
+  const headers: Record<string, string | string[]> = {};
+  const live = peekHeaders(out);
+  let nonAscii = false;
+  for (const [key, value] of live) {
+    // Iteration yields each Set-Cookie on its own (and so checks each one
+    // here); they are collected below.
+    if (key !== "set-cookie") headers[key] = value;
+    if (!nonAscii && NON_ASCII.test(value)) nonAscii = true;
+  }
+  if (nonAscii && typeof body === "string") body = Buffer.from(body);
+  const cookies = live.getSetCookie?.() ?? [];
+  if (cookies.length > 0) headers["set-cookie"] = cookies;
+  sendWhole(res, fast.status, headers, body);
+  return undefined;
+}
+
+/** A Transfer-Encoding whose last coding is chunked, the one that delimits a body (RFC 9112 section 6.3). */
+const CHUNKED_LAST = /(?:^|,)[\t ]*chunked[\t ]*$/i;
+
+/**
+ * Make `headers` say how the body that follows is delimited, and nothing that
+ * contradicts it. `headers` is the writer's own copy and is changed in place.
+ *
+ * - A Transfer-Encoding set on the reply frames the body: Node then encodes it
+ *   in chunks when the coding is chunked. A Content-Length beside it is never
+ *   sent, whoever set it (RFC 9112 section 6.1; Node's client refuses such a
+ *   response). When the last coding is not chunked, only closing the
+ *   connection ends the body, so the connection is closed after it.
+ * - Otherwise a body is sent with the Content-Length of its bytes, replacing
+ *   any value set on the reply.
+ * - Otherwise there is no body. Where one would be allowed, Node then sends
+ *   `Content-Length: 0`, so a value set on the reply is dropped: it would make
+ *   the client wait for bytes that never come. A HEAD response and a 304 keep
+ *   it, since there it describes the content a GET would get.
+ * - A 204 carries neither header (RFC 9110 section 8.6, RFC 9112 section 6.1).
+ *
+ * 1xx statuses never get here: a Response cannot be built with one.
+ */
+function frame(
+  res: ServerResponse,
+  status: number,
+  headers: Record<string, string | string[]>,
+  body: string | Uint8Array | null,
+): void {
+  if (status === 204) {
+    if (headers["content-length"] !== undefined) delete headers["content-length"];
+    if (headers["transfer-encoding"] !== undefined) delete headers["transfer-encoding"];
     return;
   }
+  const codings = headers["transfer-encoding"];
+  if (codings !== undefined) {
+    if (headers["content-length"] !== undefined) delete headers["content-length"];
+    if (status !== 304 && res.req?.method !== "HEAD" && !CHUNKED_LAST.test(String(codings))) {
+      headers.connection = "close";
+    }
+    return;
+  }
+  if (body !== null) headers["content-length"] = contentLengthOf(body);
+  else if (headers["content-length"] !== undefined && status !== 304 && res.req?.method !== "HEAD") {
+    delete headers["content-length"];
+  }
+}
 
+/**
+ * Send a status, its final headers and an already-serialized body in one go,
+ * framed by {@link frame}.
+ *
+ * With a body that is `writeHead()+end(body)`. Without one the framing is
+ * left to Node: `writeHead()` fixes the header block before Node knows the
+ * response is empty, so a 200 with no body went out as
+ * `Transfer-Encoding: chunked` and a zero-length chunk. Headers set one by one
+ * and then `end()` give `Content-Length: 0` instead, and nothing at all where
+ * no body is allowed (204, 304, a HEAD request).
+ */
+function sendWhole(
+  res: ServerResponse,
+  status: number,
+  headers: Record<string, string | string[]>,
+  body: string | Uint8Array | null,
+): void {
+  frame(res, status, headers, body);
+  if (body === null) {
+    res.statusCode = status;
+    for (const key in headers) res.setHeader(key, headers[key] as string | string[]);
+    res.end();
+    return;
+  }
+  res.writeHead(status, headers);
+  res.end(body);
+}
+
+function contentLengthOf(body: string | Uint8Array): string {
+  return String(typeof body === "string" ? Buffer.byteLength(body) : body.byteLength);
+}
+
+// ─── Header bytes ───
+//
+// A header value is a byte string: `reply.header("x-name", "café")` means the
+// bytes 63 61 66 E9, which is what `Headers` stores, what inject() reports and
+// what Node writes for a header block sent on its own. But when the first
+// body chunk is a string, Node joins the header block and that chunk into one
+// string and writes it in the BODY's encoding, UTF-8, so the same header goes
+// out as 63 61 66 C3 A9. That is the single write the fast path exists for.
+//
+// So a string body is turned into bytes first whenever a header value holds
+// anything outside ASCII. Node then writes the header block as latin-1 and the
+// body after it, still in one go (the socket is corked across end()). Checking
+// costs one pass over the header values, which Node makes as well to validate
+// them, and nothing is allocated when they are ASCII, which is nearly always.
+
+/** A character that makes a header value's UTF-8 bytes differ from its latin-1 bytes. */
+const NON_ASCII = /[\u0080-\uffff]/;
+
+/** True when a value in `headers` holds a character outside ASCII. */
+function hasNonAsciiValue(headers: Record<string, string>): boolean {
+  for (const key in headers) {
+    if (NON_ASCII.test(headers[key] as string)) return true;
+  }
+  return false;
+}
+
+/** {@link hasNonAsciiValue} for a list of Set-Cookie values. */
+function hasNonAsciiCookie(cookies: readonly string[]): boolean {
+  for (let i = 0; i < cookies.length; i++) {
+    if (NON_ASCII.test(cookies[i] as string)) return true;
+  }
+  return false;
+}
+
+/**
+ * Write an already-serialized body with its plain headers in one go (see
+ * {@link sendWhole}). `headers` is copied, never modified.
+ */
+function writeFast(
+  res: ServerResponse,
+  status: number,
+  body: string | Uint8Array | null,
+  plainHeaders: Record<string, string>,
+  cookies: readonly string[],
+): void {
+  const headers: Record<string, string | string[]> = { ...plainHeaders };
+  // See "Header bytes" above: a non-ASCII header value needs the body as bytes.
+  if (typeof body === "string" && (hasNonAsciiValue(plainHeaders) || hasNonAsciiCookie(cookies))) {
+    body = Buffer.from(body);
+  }
+  if (cookies.length > 0) {
+    // A Set-Cookie put in the plain headers by `reply.header()` is a cookie
+    // too; it goes out alongside the `reply.cookie()` ones, not instead.
+    const fromHeader = headers["set-cookie"];
+    headers["set-cookie"] = typeof fromHeader === "string" ? [fromHeader, ...cookies] : (cookies as string[]);
+  }
+  sendWhole(res, status, headers, body);
+}
+
+/** Write a Response that has no fast payload: its headers, then its body stream chunk by chunk. */
+async function drainResponse(res: ServerResponse, response: Response): Promise<void> {
   res.statusCode = response.status;
 
+  // Framed as `frame` frames a fast response: a Transfer-Encoding frames the
+  // body, so no Content-Length goes with it, and one whose last coding is not
+  // chunked ends only when the connection does; a 204 carries neither.
+  const noContent = response.status === 204;
+  const codings = noContent ? null : response.headers.get("transfer-encoding");
   for (const [key, value] of response.headers.entries()) {
     if (key.toLowerCase() === "set-cookie") continue; // handled below
+    if ((codings !== null || noContent) && key === "content-length") continue;
+    if (noContent && key === "transfer-encoding") continue;
     res.setHeader(key, value);
+  }
+  if (codings !== null && response.status !== 304 && res.req?.method !== "HEAD" && !CHUNKED_LAST.test(codings)) {
+    res.setHeader("connection", "close");
   }
 
   // BUG-3 fix: preserve multiple Set-Cookie headers (entries() collapses them)

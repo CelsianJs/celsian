@@ -318,6 +318,38 @@ jobs:
         # adapter-cloudflare) on workerd and asserts GET /health -> 200.
         run: node scripts/workerd-smoke.mjs
 
+  # Per-request allocation gate. Counts the promises, timers, web objects and
+  # young-generation GCs one request costs CelsianJS on Node, for nine kinds of
+  # request, and fails when any count is above its ceiling in
+  # benchmarks/alloc-ceilings.json. Counts, not timings, so the result does not
+  # depend on how busy the runner is.
+  #
+  # Why it exists: throughput cannot be gated on shared runners (the benchmark
+  # table carries 30% standard deviations), so a change that makes every request
+  # allocate more used to be invisible until someone re-ran the benchmarks by
+  # hand. See the header of benchmarks/alloc-gate.mjs for how to read a failure
+  # and how to raise a ceiling on purpose.
+  alloc-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          # Must stay on the Node major recorded in benchmarks/alloc-ceilings.json:
+          # the GC ceilings are only compared on that major. The per-request
+          # counters are compared on any version.
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: Per-request allocation gate
+        run: pnpm test:alloc
+
   # Final gate: all required checks must pass before this reports success.
   # Use this as the single required status check in branch protection.
   ci-passed:
@@ -327,13 +359,13 @@ jobs:
     # fail, and slow enough to gate every merge on a job whose result was then
     # discarded. It is now a sub-second runtime smoke that exits non-zero on
     # failure, so it is a real gate like test-deno and test-workerd.
-    needs: [test, lint, security-audit, examples, test-bun, test-deno, test-workerd]
+    needs: [test, lint, security-audit, examples, test-bun, test-deno, test-workerd, alloc-gate]
     runs-on: ubuntu-latest
     steps:
       - name: Check all jobs passed
         run: |
           failed=0
-          for job in test lint security-audit examples test-bun test-deno test-workerd; do
+          for job in test lint security-audit examples test-bun test-deno test-workerd alloc-gate; do
             # Every job in the list above MUST have a branch here. A missing one
             # does not error: $result simply keeps the previous iteration's
             # value, so the job is silently checked against someone else's
@@ -346,6 +378,7 @@ jobs:
               test-bun)       result="${{ needs.test-bun.result }}" ;;
               test-deno)      result="${{ needs.test-deno.result }}" ;;
               test-workerd)   result="${{ needs.test-workerd.result }}" ;;
+              alloc-gate)     result="${{ needs.alloc-gate.result }}" ;;
               *)              echo "BUG: no result mapping for job '$job'"; exit 1 ;;
             esac
             if [[ "$result" != "success" ]]; then

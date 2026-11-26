@@ -75,6 +75,73 @@ export async function runOnSendHooks(
   }
 }
 
+/** True for anything `await` would wait on: a promise, or any other object with a `then` method. */
+export function isThenable(value: unknown): value is PromiseLike<unknown> {
+  return (
+    value !== null &&
+    (typeof value === "object" || typeof value === "function") &&
+    typeof (value as { then?: unknown }).then === "function"
+  );
+}
+
+/** A real promise for a thenable, so `.then()` on it behaves as `await` would. */
+export function toPromise<T>(value: PromiseLike<T>): Promise<T> {
+  return value instanceof Promise ? value : Promise.resolve(value);
+}
+
+/**
+ * {@link runHooks} that only becomes asynchronous if a hook does.
+ *
+ * Same contract: hooks run in order, and the chain stops with a Response as
+ * soon as one returns it or sets `reply.sent`. But while every hook returns a
+ * plain value the answer comes back directly, with no promise and no tick.
+ * The first hook to return a promise (or any thenable) switches the rest of
+ * the chain to a promise. A hook that throws synchronously throws out of here.
+ */
+export function runHooksUntilAnswer(
+  hooks: HookHandler[],
+  request: CelsianRequest,
+  reply: CelsianReply,
+  from = 0,
+): Response | null | Promise<Response | null> {
+  for (let i = from; i < hooks.length; i++) {
+    const result: unknown = (hooks[i] as HookHandler)(request, reply);
+    if (isThenable(result)) {
+      return toPromise(result).then((settled) => {
+        if (settled instanceof Response) return settled;
+        if (reply.sent) return reply.send(null);
+        return runHooksUntilAnswer(hooks, request, reply, i + 1);
+      });
+    }
+    if (result instanceof Response) {
+      return result;
+    }
+    if (reply.sent) {
+      return reply.send(null);
+    }
+  }
+  return null;
+}
+
+/**
+ * {@link runOnSendHooks} that only becomes asynchronous if a hook does.
+ * Returns `undefined` when every hook finished synchronously.
+ */
+export function runOnSendHooksNow(
+  hooks: HookHandler[],
+  request: CelsianRequest,
+  reply: CelsianReply,
+  from = 0,
+): Promise<void> | undefined {
+  for (let i = from; i < hooks.length; i++) {
+    const result: unknown = (hooks[i] as HookHandler)(request, reply);
+    if (isThenable(result)) {
+      return toPromise(result).then(() => runOnSendHooksNow(hooks, request, reply, i + 1));
+    }
+  }
+  return undefined;
+}
+
 /** Run hooks without awaiting -- errors are logged, not thrown. Used for onResponse. */
 export function runHooksFireAndForget(
   hooks: HookHandler[],

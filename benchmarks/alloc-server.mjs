@@ -1,0 +1,295 @@
+// Child process of alloc-gate.mjs: starts ONE framework server and counts what
+// each request costs it. Counters, not timings: promises and timers through
+// async_hooks, web primitives through wrapped global constructors, and
+// young-generation collections through a GC performance observer.
+//
+// Usage: node alloc-server.mjs <celsian|express|fastify|hono>[:headers]
+//
+// Every framework is set up to do the same work and send the same response, so
+// that `--compare` sets like beside like (alloc-gate.mjs checks the responses
+// against each other and refuses to print a table when they differ):
+//   - each route exists twice, with a synchronous handler and with an `async`
+//     one (`/json` and `/json-async`, `/echo` and `/echo-async`). An `async`
+//     handler costs every framework promises a synchronous one does not, so a
+//     scenario uses the same style everywhere. (Hono cannot read a body
+//     synchronously, so it has no `/echo` and sits out that row);
+//   - the same Content-Type value, charset included;
+//   - the same JSON bodies, for the 404 and the 500 as well, which each
+//     framework would otherwise word, and size, in its own way;
+//   - the same response headers: Express's `X-Powered-By` and `ETag` are
+//     switched off, and the "headers" variant sets by hand, in each framework,
+//     the header names CelsianJS's cors() and security() send.
+// It listens on an OS-assigned port and talks to the parent over IPC:
+//   child -> { ready: port }      parent -> "begin"   child -> "go"
+//   parent -> "end"               child -> { counts, ctor, minorGC, majorGC }
+//   parent -> "exit"
+//
+// Nothing in here may allocate per request on its own account, or it would be
+// charged to the framework: the hook and the constructor traps only bump
+// integers.
+
+import { createHook } from "node:async_hooks";
+import { createRequire } from "node:module";
+import { PerformanceObserver } from "node:perf_hooks";
+
+const require = createRequire(import.meta.url);
+const [framework = "celsian", variant = "plain"] = (process.argv[2] ?? "celsian").split(":");
+const withHeaders = variant === "headers";
+
+let counting = false;
+const counts = { PROMISE: 0, Timeout: 0 };
+// ALLOC_TRACE=<type> prints one stack per distinct creation site, for finding
+// out where a count comes from. Never set by the gate.
+const traceType = process.env.ALLOC_TRACE;
+const traceSites = new Map();
+function trace(type) {
+  if (traceType !== type && traceType !== "all") return;
+  const stack = new Error(type).stack.split("\n").slice(2, 12).join("\n");
+  traceSites.set(stack, (traceSites.get(stack) ?? 0) + 1);
+}
+
+createHook({
+  init(_id, type) {
+    if (!counting) return;
+    if (type === "PROMISE") counts.PROMISE++;
+    else if (type === "Timeout") counts.Timeout++;
+    else return;
+    if (traceType !== undefined) trace(type);
+  },
+}).enable();
+
+let minorGC = 0;
+let majorGC = 0;
+new PerformanceObserver((list) => {
+  if (!counting) return;
+  for (const entry of list.getEntries()) {
+    // detail.kind 1 is a scavenge (young generation); everything else is old-space work.
+    if (entry.detail?.kind === 1) minorGC++;
+    else majorGC++;
+  }
+}).observe({ entryTypes: ["gc"] });
+
+// Web primitives a framework constructs through the globals. Node's own fetch
+// implementation resolves these lazily too, so objects it builds internally
+// (the AbortController and ReadableStream inside `new Request`/`new Response`)
+// are counted as well.
+const ctor = {
+  AbortController: 0,
+  Request: 0,
+  Response: 0,
+  Headers: 0,
+  ReadableStream: 0,
+  URL: 0,
+  URLSearchParams: 0,
+  TextDecoder: 0,
+};
+for (const name of Object.keys(ctor)) {
+  const Original = globalThis[name];
+  const Wrapped = new Proxy(Original, {
+    construct(target, args, newTarget) {
+      if (counting) {
+        ctor[name]++;
+        if (traceType !== undefined) trace(name);
+      }
+      return Reflect.construct(target, args, newTarget === Wrapped ? target : newTarget);
+    },
+  });
+  globalThis[name] = Wrapped;
+}
+
+// The bodies every framework answers a miss and a thrown error with: the ones
+// CelsianJS sends by itself (in production, where the 500 carries no stack).
+const NOT_FOUND = { error: "Not Found", statusCode: 404, code: "NOT_FOUND" };
+const SERVER_ERROR = { error: "Internal Server Error", statusCode: 500, code: "INTERNAL_SERVER_ERROR" };
+
+// The headers `cors()` and `security()` put on a response, set by hand in the
+// other frameworks so they send the same ones in the "headers" variant.
+const EXTRA_HEADERS = [
+  ["access-control-allow-origin", "*"],
+  ["x-content-type-options", "nosniff"],
+  ["x-frame-options", "DENY"],
+  ["x-xss-protection", "0"],
+  ["strict-transport-security", "max-age=31536000; includeSubDomains"],
+  ["referrer-policy", "strict-origin-when-cross-origin"],
+  ["x-dns-prefetch-control", "off"],
+  ["x-download-options", "noopen"],
+  ["x-permitted-cross-domain-policies", "none"],
+];
+
+/** Start the server on an OS-assigned port and resolve with that port. */
+async function start() {
+  if (framework === "celsian") {
+    const { createApp, serve, cors, security } = await import("@celsian/core");
+    const app = createApp();
+    if (withHeaders) {
+      await app.register(cors(), { encapsulate: false });
+      await app.register(security(), { encapsulate: false });
+    }
+    app.get("/json", (_req, reply) => reply.json({ message: "Hello, World!" }));
+    app.get("/json-async", async (_req, reply) => reply.json({ message: "Hello, World!" }));
+    app.get("/user/:id", (req, reply) =>
+      reply.json({ id: req.params.id, name: `User ${req.params.id}`, email: `user${req.params.id}@test.com` }),
+    );
+    app.post("/echo", (req, reply) => reply.json(req.parsedBody));
+    app.post("/echo-async", async (req, reply) => reply.json(req.parsedBody));
+    app.get("/error", () => {
+      throw new Error("Intentional benchmark error");
+    });
+    // A body validated against a Zod schema, as most real POST routes are.
+    const { z } = await import("zod");
+    const body = z.object({
+      name: z.string(),
+      value: z.number(),
+      nested: z.object({ a: z.number(), b: z.array(z.number()) }),
+    });
+    app.post("/validated", { schema: { body } }, (req, reply) => reply.json(req.parsedBody));
+    const port = await new Promise((resolve) => {
+      serve(app, { port: 0, host: "127.0.0.1", onReady: (info) => resolve(info.port) });
+    });
+    // serve() starts the background task worker and the cron scheduler. Both
+    // poll on a timer whether or not a request is in flight, which would add
+    // a few promises and timers per second of wall clock to the counts: noise
+    // that grows with how slow the machine is. Neither is per-request work.
+    await app.stopWorker();
+    app.stopCron();
+    return port;
+  }
+
+  if (framework === "express") {
+    const express = require("express");
+    const app = express();
+    // Headers and work the others do not send or do: no hash of every body.
+    app.disable("x-powered-by");
+    app.set("etag", false);
+    app.use(express.json());
+    if (withHeaders) {
+      app.use((_req, res, next) => {
+        for (const [key, value] of EXTRA_HEADERS) res.setHeader(key, value);
+        next();
+      });
+    }
+    app.get("/json", (_req, res) => res.json({ message: "Hello, World!" }));
+    app.get("/json-async", async (_req, res) => {
+      res.json({ message: "Hello, World!" });
+    });
+    app.get("/user/:id", (req, res) =>
+      res.json({ id: req.params.id, name: `User ${req.params.id}`, email: `user${req.params.id}@test.com` }),
+    );
+    app.post("/echo", (req, res) => res.json(req.body));
+    app.post("/echo-async", async (req, res) => {
+      res.json(req.body);
+    });
+    app.get("/error", () => {
+      throw new Error("Intentional benchmark error");
+    });
+    app.use((_req, res) => res.status(404).json(NOT_FOUND));
+    app.use((_err, _req, res, _next) => res.status(500).json(SERVER_ERROR));
+    return new Promise((resolve) => {
+      const server = app.listen(0, "127.0.0.1", () => resolve(server.address().port));
+    });
+  }
+
+  if (framework === "fastify") {
+    const Fastify = require("fastify");
+    const app = Fastify({ logger: false });
+    if (withHeaders) {
+      app.addHook("onSend", (_req, reply, payload, done) => {
+        for (const [key, value] of EXTRA_HEADERS) reply.header(key, value);
+        done(null, payload);
+      });
+    }
+    app.get("/json", (_req, reply) => {
+      reply.send({ message: "Hello, World!" });
+    });
+    app.get("/json-async", async () => ({ message: "Hello, World!" }));
+    app.get("/user/:id", (req, reply) => {
+      reply.send({ id: req.params.id, name: `User ${req.params.id}`, email: `user${req.params.id}@test.com` });
+    });
+    app.post("/echo", (req, reply) => {
+      reply.send(req.body);
+    });
+    app.post("/echo-async", async (req) => req.body);
+    app.get("/error", () => {
+      throw new Error("Intentional benchmark error");
+    });
+    app.setNotFoundHandler((_req, reply) => {
+      reply.status(404).send(NOT_FOUND);
+    });
+    app.setErrorHandler((_error, _req, reply) => {
+      reply.status(500).send(SERVER_ERROR);
+    });
+    await app.listen({ port: 0, host: "127.0.0.1" });
+    return app.server.address().port;
+  }
+
+  if (framework === "hono") {
+    const { Hono } = require("hono");
+    const { serve } = require("@hono/node-server");
+    const app = new Hono();
+    if (withHeaders) {
+      // By hand rather than with hono/cors and hono/secure-headers: those send
+      // a different set of headers, and add them to a copy of the response.
+      app.use((c, next) => {
+        for (const [key, value] of EXTRA_HEADERS) c.header(key, value);
+        return next();
+      });
+    }
+    // c.json() sends `application/json`; the others send the charset as well,
+    // so it is given the same value they send.
+    const JSON_TYPE = { "Content-Type": "application/json; charset=utf-8" };
+    app.get("/json", (c) => c.json({ message: "Hello, World!" }, 200, JSON_TYPE));
+    app.get("/json-async", async (c) => c.json({ message: "Hello, World!" }, 200, JSON_TYPE));
+    app.get("/user/:id", (c) => {
+      const id = c.req.param("id");
+      return c.json({ id, name: `User ${id}`, email: `user${id}@test.com` }, 200, JSON_TYPE);
+    });
+    // Hono has no synchronous way to read a body, so it has no synchronous
+    // /echo: alloc-gate.mjs leaves it out of the `body` row rather than set an
+    // `async` handler beside the others' synchronous ones.
+    app.post("/echo-async", async (c) => c.json(await c.req.json(), 200, JSON_TYPE));
+    app.get("/error", () => {
+      throw new Error("Intentional benchmark error");
+    });
+    app.notFound((c) => c.json(NOT_FOUND, 404, JSON_TYPE));
+    app.onError((_err, c) => c.json(SERVER_ERROR, 500, JSON_TYPE));
+    return new Promise((resolve) => {
+      serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1" }, (info) => resolve(info.port));
+    });
+  }
+
+  throw new Error(`unknown framework: ${framework}`);
+}
+
+// The error scenario makes every request log a stack to stderr. Writing 20,000
+// of them costs allocations that belong to the console, not the framework, and
+// buries the report. serve() also notes a loopback bind in production.
+console.error = () => {};
+console.warn = () => {};
+console.log = () => {};
+
+const port = await start();
+
+process.on("message", (message) => {
+  if (message === "begin") {
+    counts.PROMISE = 0;
+    counts.Timeout = 0;
+    for (const name of Object.keys(ctor)) ctor[name] = 0;
+    minorGC = 0;
+    majorGC = 0;
+    traceSites.clear();
+    counting = true;
+    process.send("go");
+  } else if (message === "end") {
+    counting = false;
+    // GC entries are delivered to the observer asynchronously; give the last
+    // batch a moment to arrive before reporting.
+    setTimeout(() => {
+      const sites = [...traceSites.entries()].sort((a, b) => b[1] - a[1]);
+      process.send({ counts, ctor, minorGC, majorGC, sites });
+    }, 100);
+  } else if (message === "exit") {
+    process.exit(0);
+  }
+});
+
+process.send({ ready: port });

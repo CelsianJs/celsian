@@ -59,6 +59,48 @@ Because it returns a standard `Response`, the status property is **`res.status`*
 
 `reply.json()`, `.send()`, `.html()`, `.stream()`, `.redirect()`, `.sendFile()`, `.download()`, `.cookie()`, `.clearCookie()`, `.status()`, `.header()`, plus status shortcuts: `.notFound()`, `.badRequest()`, `.unauthorized()`, `.forbidden()`, `.conflict()`, `.gone()`, `.tooManyRequests()`, `.internalServerError()`, `.serviceUnavailable()`.
 
+## Wrapping and inspecting `reply` and `request`
+
+What a handler, hook or plugin can rely on when it reads, copies, wraps or replaces these objects. Anything not listed here is not part of the API. Each statement is a test in [`test/reply-request-contract.test.ts`](test/reply-request-contract.test.ts).
+
+### `reply`
+
+- **Reading and assigning.** `reply.statusCode`, `reply.sent` and `reply.headers` read the reply's state, and assigning `statusCode` or `sent` sets it. `reply.headers` is live: writing to it sets a header. Assigning a method (`reply.send = wrapped`) replaces it on that reply only.
+- **Detached methods.** A method read off the reply acts on that reply when called on its own (`const { status, json } = reply`), and `reply.json === reply.json`. Such a function is named `"bound"` and has a `length` of 3.
+- **`in`, `for...in` and `Object.keys()`.** `in` and `for...in` see `statusCode`, `sent`, `headers` and every method. `Object.keys(reply)` lists only decorations and methods assigned on the reply.
+- **`JSON.stringify(reply)`** gives `statusCode`, `headers` and `sent`, then decorations.
+- **`Object.create(reply)`**, and `Object.create()` of that again, gives an object that acts on the reply: the status, headers and `sent` it sets, by method or by assignment, are the reply's, and its methods answer as the reply's.
+- **A transparent `Proxy`** acts on the reply the same way: one with no traps, one whose `get` and `set` traps forward through `Reflect.get` and `Reflect.set` (with the receiver or without), an `Object.create()` of a proxy, and a proxy of an `Object.create()`.
+- **Not supported: a `Proxy` whose `get` trap hides symbol-keyed properties, and a membrane** (a proxy that wraps every value it returns). Through one, `statusCode`, `sent` and every method read as `undefined`: a reply finds itself through a symbol-keyed property, which such a proxy hides or wraps. In 0.6.7, when every method was a closure of its own, these worked.
+- **A spread and `Object.assign()`** (`{ ...reply }`) copy the reply's own enumerable properties: its decorations, methods assigned on it, and some symbol-keyed fields internal to core. The copy has none of the reply's methods and is not a reply.
+- **`structuredClone(reply)`** gives a plain object with the reply's decorations, and throws a `DataCloneError` when one of them, or a method assigned on the reply, is a function. It is not a reply. (In 0.6.7 it always threw.)
+- **Not supported: copying a reply's symbol-keyed properties onto another object.** A copy made by assignment does not act on the reply, and assigning to the property a reply holds itself in throws a `TypeError`.
+
+### `request`, as a route sees it
+
+- **Own properties and the prototype.** `method`, `url`, `headers`, `params`, `query` and `parsedBody` are own properties (as are `ip` and decorations). `cookies`, `signal`, `body`, `bodyUsed` and the body methods (`json()`, `text()`, `formData()`, `arrayBuffer()`, `blob()`, `clone()`) are on the request's prototype: reading, destructuring, `in` and `for...in` see them, and `Object.keys(request)`, `{ ...request }` and `JSON.stringify(request)` do not.
+- **`structuredClone(request)`** does not give a request: its `headers` are a `Headers` object, which Node 22 and later refuse to clone (a `DataCloneError`), and which Node 20 clones as a plain object.
+- **It is not a `Request`.** `new Request(request, init)` throws a `TypeError`. `new Request(request.url, request)` gives a `Request` with the request's method, headers and signal.
+- **`request.clone()`** returns a `Request`: through `inject()`, and through `app.handle()` given a plain `Request`, a plain one. On `serve()` it is a `Request` subclass (`constructor.name` is `"NodeRequest"`, and `instanceof Request` holds) whose `signal`, and that of a `Request` built from it, aborts when the client disconnects.
+- The request that an unmatched request's hooks and a not-found handler see is built as in 0.6.7, with everything an own property.
+
+### Replacing `app.handle`
+
+- `serve()` goes through `app.handle` whenever it is not the method `CelsianApp` defines: replaced on the instance, replaced on `CelsianApp.prototype`, or overridden in a subclass. It reads `app.handle` once per request and calls what it read, with the app as `this`.
+- It answers what that returns: a `Response`, a thenable of one, or a promise of one, including a promise from another realm. A handle that throws or rejects is answered 500.
+- Such a handle is given a `Request` whose `signal`, and that of a `Request` it builds from it with `new Request(request, init)`, aborts when the client disconnects.
+
+### `request.signal`
+
+- **Without a request timeout** (`requestTimeout: 0`), `request.signal` is the signal of the `Request` the app was given. On `serve()` that is the connection's.
+- **With one** (the default, 30 seconds), it is a signal of its own. It aborts when the input signal aborts, with the input's reason, and when the timeout fires, with the 504 `HttpError` as its reason. The timeout never aborts the input signal.
+- It aborts when the input does even when an earlier `abort` listener on the input calls `stopImmediatePropagation()`. That holds on Node 20.3 and later, Bun, Deno and Cloudflare Workers. On Node 20.0 to 20.2, which have no `AbortSignal.any()`, such a listener keeps the abort from `request.signal`.
+- An `abort` event dispatched on an input signal that has not aborted (`signal.dispatchEvent(new Event("abort"))`) does not abort `request.signal`, which aborts with the real reason when the input does.
+- On Node and Bun, `request.signal` aborts just after the input signal's own `abort` listeners have run: inside one of them, `request.signal.aborted` is still `false`. On Deno and Cloudflare Workers, `request.signal` is `AbortSignal.any()` of the input and the timeout's signal, and is already `true` there. (In 0.6.7 it was `AbortSignal.any()` everywhere: already `true` on Node 22 and later, and `false` on Node 20.)
+- When the input signal aborted before the request reached the app, `request.signal` is already aborted, with the input's reason.
+- **How long it lives.** A request's signal keeps following its input after the handler has returned, and the input keeps it alive for as long as the input lives, so a listener on `request.signal` alone still runs when the client disconnects while a streamed response is being sent. The exception is an input signal that several requests share (the same `Request` dispatched more than once): no request's signal is kept alive by it, so a long-lived signal never holds finished requests in memory, and a signal that only has listeners may be collected before they run. One that something else holds, such as a stream, still aborts with the input's reason.
+- On `serve()`, a signal first read after the request was answered reports whether the client had gone by then.
+
 ## Schema validation
 
 Attach `schema.body`, `schema.querystring`, or `schema.response` to a route. Zod, TypeBox, and Valibot are auto-detected. Validated data lands on `req.parsedBody` / `req.parsedQuery`, and a validation failure returns 400 before your handler runs.

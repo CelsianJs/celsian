@@ -1,29 +1,40 @@
 // @celsian/core, CelsianApp: hook-based server with plugin encapsulation
 
-import { fromSchema, type InferOutput, type StandardSchema } from "@celsian/schema";
-import { parseBody } from "./body-parser.js";
+import type { InferOutput, StandardSchema } from "@celsian/schema";
+import { parseBodyIfAny } from "./body-parser.js";
 import { EncapsulationContext, type ScopeRegistry } from "./context.js";
-import { parseCookies } from "./cookie.js";
 import { type CronJob, CronScheduler } from "./cron.js";
-import { handleError as handleErrorFn } from "./error-handler.js";
+import { handleErrorNow } from "./error-handler.js";
 import { assertPlugin, CelsianError, HttpError, ValidationError, wrapNonError } from "./errors.js";
-import { fastResponse, getFastPayload, peekHeaders } from "./fast-response.js";
-import { runHooks, runHooksFireAndForget, runOnSendHooks } from "./hooks.js";
+import {
+  fastResponse,
+  getFastPayload,
+  type Outgoing,
+  peekHeaders,
+  toResponse,
+  WireResponse,
+  wireHeaders,
+} from "./fast-response.js";
+import { isThenable, runHooksFireAndForget, runHooksUntilAnswer, runOnSendHooksNow, toPromise } from "./hooks.js";
 import { createInject, type InjectOptions } from "./inject.js";
 import { createLogger, generateRequestId, type Logger } from "./logger.js";
 import { MemoryQueue, type QueueBackend } from "./queue.js";
 import { createReply, replyCookies } from "./reply.js";
 import {
   applyForwardedAuthority,
+  armRequestTimeout,
   buildRequest,
   buildRequestFast,
+  disarmRequestTimeout,
   type ForwardedTrustOptions,
+  fireRequestTimeout,
   remoteAddressFromServeContext,
   resolveClientIp,
   setRemoteAddress,
 } from "./request.js";
-import { mergeReplyIntoResponse } from "./response-merge.js";
+import { mergeReply } from "./response-merge.js";
 import { resolveResponseSchema } from "./response-schema.js";
+import { ROUTE_VALIDATORS, type RouteWithValidators, responseValidatorFor, validatorFor } from "./route-validators.js";
 import { Router } from "./router.js";
 import { createEnqueue, type TaskDefinition, TaskRegistry, TaskWorker, type TaskWorkerOptions } from "./task.js";
 import {
@@ -55,6 +66,14 @@ import { type WSHandler, WSRegistry } from "./websocket.js";
 /** Shared decoder for response bodies that were serialized as bytes. */
 const RESPONSE_DECODER = new TextDecoder();
 
+/** The bodiless answer to a HEAD request: the status and headers `out` would have been sent with. */
+function headOf(out: Outgoing): Response {
+  return new Response(null, {
+    status: out.status,
+    headers: out instanceof WireResponse ? wireHeaders(out) : out.headers,
+  });
+}
+
 /**
  * True when `prefix` scopes `pathname`: an exact match, or a path-segment
  * prefix. `/api` covers `/api` and `/api/chat`, but not `/apix`.
@@ -63,6 +82,66 @@ function prefixCoversPath(prefix: string, pathname: string): boolean {
   if (prefix === "" || prefix === "/") return true;
   const base = prefix.endsWith("/") ? prefix.slice(0, -1) : prefix;
   return pathname === base || pathname.startsWith(`${base}/`);
+}
+
+/**
+ * Run `callback` before any timer, I/O or immediate callback can run, and, on
+ * Node, only once the microtask queue has drained: after every promise
+ * reaction already queued, and every one those queue in turn. `undefined`
+ * where the runtime has no `process.nextTick`.
+ *
+ * A `process.nextTick` runs before the event loop moves on, on every runtime
+ * that has one. On Node, one queued from inside a microtask runs only when
+ * Node has drained V8's microtask queue. Bun runs it at the same point except
+ * after a top-level await, and other runtimes may run it as a microtask, so
+ * there it can come before the last microtask: never later than a timer would.
+ * Captured at load, so a test that fakes timers does not reach it.
+ */
+const afterMicrotasks: ((callback: () => void) => void) | undefined = (() => {
+  const nextTick = (globalThis as { process?: { nextTick?: unknown } }).process?.nextTick;
+  if (typeof nextTick !== "function" || typeof queueMicrotask !== "function") return undefined;
+  const queue = queueMicrotask;
+  return (callback) => queue(() => (nextTick as (callback: () => void) => void)(callback));
+})();
+
+/** What request logging needs to report a request's outcome. Only built when a logger is set. */
+interface RequestTrace {
+  method: string;
+  pathname: string;
+  requestId: string;
+  start: number;
+}
+
+/** Reaches `CelsianApp`'s private request entry point; set by the class's static initializer. */
+let dispatch: (app: CelsianApp, request: Request) => Outgoing | Promise<Outgoing>;
+
+/**
+ * `app.handle()` for core's own Node server. The answer may be a fast response
+ * with its final headers still beside it (see `WireResponse`), which that
+ * server writes directly; `handle()` turns it into a Response for everyone
+ * else. It also comes back without a promise when the request was answered
+ * synchronously, and then a failure is thrown rather than a rejection.
+ * Internal to core: not exported from the package.
+ */
+export function dispatchRequest(app: CelsianApp, request: Request): Outgoing | Promise<Outgoing> {
+  return dispatch(app, request);
+}
+
+/** `CelsianApp.prototype.handle` as this module defined it; set by the class's static initializer. */
+let stockHandle: CelsianApp["handle"];
+
+/**
+ * True when `handle`, what `app.handle` read as, is the method this module
+ * defined, so that calling {@link dispatchRequest} instead is the same as
+ * calling it. False when it was replaced on the instance, overridden by a
+ * subclass, or replaced on `CelsianApp.prototype` itself: that last case is
+ * why this compares with the method as it was when the module loaded, not
+ * with the prototype's current one. The caller reads `app.handle` once and
+ * calls what it read, so an accessor is asked once. Internal to core: not
+ * exported from the package.
+ */
+export function isStockHandle(handle: unknown): boolean {
+  return handle === stockHandle;
 }
 
 /**
@@ -91,6 +170,11 @@ export class CelsianApp {
   private static readonly JSON_CONTENT_TYPE: Record<string, string> = {
     "content-type": "application/json; charset=utf-8",
   };
+
+  static {
+    dispatch = (app, request) => app.dispatch(request);
+    stockHandle = CelsianApp.prototype.handle;
+  }
 
   private router = new Router();
   private rootContext: EncapsulationContext;
@@ -730,13 +814,35 @@ export class CelsianApp {
   // ─── Request Handling ───
 
   /** Handle an incoming Web Standard Request and return a Response. */
-  async handle(request: Request): Promise<Response> {
-    // Ensure all registered plugins are loaded before handling
-    // Skip the async call entirely when no pending plugins and no active ready promise
-    if (this.pendingPlugins.length > 0 || this.readyPromise !== null) {
-      await this.ready();
+  handle(request: Request): Promise<Response> {
+    // Not an async function: a request that is answered synchronously should
+    // cost one resolved promise here, not an async frame and an extra tick.
+    try {
+      const out = this.dispatch(request);
+      return out instanceof Promise ? out.then(toResponse) : Promise.resolve(toResponse(out));
+    } catch (error) {
+      return Promise.reject(error);
     }
+  }
 
+  /**
+   * The request lifecycle behind `handle()` and {@link dispatchRequest}.
+   *
+   * Answers synchronously whenever nothing on the way is asynchronous: no
+   * pending plugin, no body to read, and hooks and a handler that return plain
+   * values. The first step that returns a promise makes the rest of the
+   * request asynchronous. An error on the synchronous part is thrown, on the
+   * asynchronous part it rejects.
+   */
+  private dispatch(request: Request): Outgoing | Promise<Outgoing> {
+    // Ensure all registered plugins are loaded before handling
+    if (this.pendingPlugins.length > 0 || this.readyPromise !== null) {
+      return this.ready().then(() => this.dispatchReady(request));
+    }
+    return this.dispatchReady(request);
+  }
+
+  private dispatchReady(request: Request): Outgoing | Promise<Outgoing> {
     // Resolve every route's hook chain and decorations from its encapsulation
     // context chain. Only runs when something changed since the last request.
     if (this.scopes.dirty) this.scopes.flush();
@@ -830,96 +936,10 @@ export class CelsianApp {
     } catch (matchError) {
       // Malformed URI in a param/wildcard segment (HttpError 400), return a
       // structured error response instead of crashing the request.
-      const missContext = await this.createMissContext(request, effectiveUrl);
-      const response = await this.handleError(
-        wrapNonError(matchError),
-        missContext.request,
-        missContext.reply,
-        this.rootScope,
-      );
-      return this.finishMiss(
-        await this.applyOnSend(response, missContext.request, missContext.reply, this.rootScope.onSend),
-        missContext,
-      );
+      return this.answerMatchError(request, effectiveUrl, matchError);
     }
 
-    if (!match) {
-      const missContext = await this.createMissContext(request, effectiveUrl);
-
-      // Distinguish 404 (path not found) from 405 (wrong method)
-      const isMethodMismatch = this.router.hasPath(pathname);
-      // RFC 9110 makes `Allow` mandatory on a 405. Without it the client is
-      // told its method is wrong but never which ones would work, and
-      // `docs/errors.md` promised the header while nothing in core ever set it.
-      const allowed = isMethodMismatch ? this.router.allowedMethods(pathname) : [];
-
-      // A 405 enumerates the methods a path accepts, so it is a disclosure and
-      // has to clear the same gate the path's routes do. Running only the root
-      // scope listed `GET, HEAD, PUT, DELETE` for `/admin/users/1` behind an
-      // encapsulated auth guard that answered 401 to every real request.
-      //
-      // A 404 has no route to resolve a scope from, so it takes the same union
-      // of every guard covering the path that an unrouted WebSocket upgrade
-      // does. Running only the root scope let a custom `setNotFoundHandler`
-      // answer `/admin/nonexistent` without the `{ prefix: '/admin' }` guard
-      // ever seeing the request, while the identical un-prefixed guard ran.
-      const missHooks =
-        allowed.length > 0 ? this.routeScopeHooks(pathname, allowed) : this.onRequestHooksForPath(pathname);
-      const earlyResponse = await runHooks(missHooks, missContext.request, missContext.reply);
-      if (earlyResponse)
-        return this.finishMiss(mergeReplyIntoResponse(earlyResponse, missContext.reply, null), missContext);
-
-      if (isMethodMismatch) {
-        const r405 = new Response(CelsianApp.METHOD_NOT_ALLOWED_BODY, {
-          status: 405,
-          headers:
-            allowed.length > 0
-              ? { ...CelsianApp.JSON_CONTENT_TYPE, allow: allowed.join(", ") }
-              : CelsianApp.JSON_CONTENT_TYPE,
-        });
-        return this.finishMiss(
-          await this.applyOnSend(r405, missContext.request, missContext.reply, this.rootScope.onSend),
-          missContext,
-        );
-      }
-      if (this.notFoundHandler) {
-        try {
-          const result = await this.notFoundHandler(missContext.request, missContext.reply);
-          if (result instanceof Response) {
-            return this.finishMiss(
-              await this.applyOnSend(result, missContext.request, missContext.reply, this.rootScope.onSend),
-              missContext,
-            );
-          }
-          const empty = new Response(null, { status: missContext.reply.sent ? missContext.reply.statusCode : 404 });
-          return this.finishMiss(mergeReplyIntoResponse(empty, missContext.reply, null), missContext);
-        } catch (error) {
-          if (this.hasLogger) {
-            this.log.error("notFound handler error", {
-              error: error instanceof Error ? error.message : String(error),
-            });
-          } else {
-            console.error("[celsian]", error);
-          }
-          const r404 = new Response(CelsianApp.NOT_FOUND_BODY, {
-            status: 404,
-            headers: CelsianApp.JSON_CONTENT_TYPE,
-          });
-          return this.finishMiss(
-            await this.applyOnSend(r404, missContext.request, missContext.reply, this.rootScope.onSend),
-            missContext,
-          );
-        }
-      }
-      const r404 = new Response(CelsianApp.NOT_FOUND_BODY, {
-        status: 404,
-        headers: CelsianApp.JSON_CONTENT_TYPE,
-      });
-      return this.finishMiss(
-        await this.applyOnSend(r404, missContext.request, missContext.reply, this.rootScope.onSend),
-        missContext,
-      );
-    }
+    if (!match) return this.answerMiss(request, effectiveUrl, pathname);
 
     // Hooks and decorations that apply to this route, resolved from the chain of
     // encapsulation contexts it was registered in. Attached to the route's own
@@ -941,19 +961,6 @@ export class CelsianApp {
       }
     }
 
-    // Lazy cookie parsing
-    let parsedCookies: Record<string, string> | null = null;
-    Object.defineProperty(celsianRequest, "cookies", {
-      get: () => {
-        if (!parsedCookies) {
-          parsedCookies = parseCookies(request.headers.get("cookie") ?? "");
-        }
-        return parsedCookies;
-      },
-      configurable: true,
-      enumerable: true,
-    });
-
     // Only generate requestId and child logger when logging is enabled
     if (this.hasLogger) {
       const requestId = generateRequestId();
@@ -974,50 +981,351 @@ export class CelsianApp {
       }
     }
 
-    // Run lifecycle, inline timeout logic to avoid closure allocation
-    const timeout = this.cachedRequestTimeout;
-    const isHead = method === "HEAD";
+    return this.respond(celsianRequest, reply, match.route, scope, method === "HEAD", method, pathname);
+  }
 
+  /** Answer a request whose path could not even be matched (malformed percent-encoding). */
+  private async answerMatchError(request: Request, effectiveUrl: string, matchError: unknown): Promise<Outgoing> {
+    const missContext = this.createMissContext(request, effectiveUrl);
+    const response = await this.handleError(
+      wrapNonError(matchError),
+      missContext.request,
+      missContext.reply,
+      this.rootScope,
+    );
+    return this.finishMiss(
+      await this.applyOnSend(response, missContext.request, missContext.reply, this.rootScope.onSend),
+      missContext,
+    );
+  }
+
+  /** Answer a request that matched no route: a 404, or a 405 when the path exists for other methods. */
+  private answerMiss(request: Request, effectiveUrl: string, pathname: string): Outgoing | Promise<Outgoing> {
+    const missContext = this.createMissContext(request, effectiveUrl);
+
+    // Distinguish 404 (path not found) from 405 (wrong method)
+    const isMethodMismatch = this.router.hasPath(pathname);
+    // RFC 9110 makes `Allow` mandatory on a 405. Without it the client is
+    // told its method is wrong but never which ones would work, and
+    // `docs/errors.md` promised the header while nothing in core ever set it.
+    const allowed = isMethodMismatch ? this.router.allowedMethods(pathname) : [];
+
+    // A 405 enumerates the methods a path accepts, so it is a disclosure and
+    // has to clear the same gate the path's routes do. Running only the root
+    // scope listed `GET, HEAD, PUT, DELETE` for `/admin/users/1` behind an
+    // encapsulated auth guard that answered 401 to every real request.
+    //
+    // A 404 has no route to resolve a scope from, so it takes the same union
+    // of every guard covering the path that an unrouted WebSocket upgrade
+    // does. Running only the root scope let a custom `setNotFoundHandler`
+    // answer `/admin/nonexistent` without the `{ prefix: '/admin' }` guard
+    // ever seeing the request, while the identical un-prefixed guard ran.
+    const missHooks =
+      allowed.length > 0 ? this.routeScopeHooks(pathname, allowed) : this.onRequestHooksForPath(pathname);
+    if (missHooks.length > 0) {
+      const early = runHooksUntilAnswer(missHooks, missContext.request, missContext.reply);
+      if (early instanceof Promise) {
+        return early.then((answer) =>
+          answer !== null
+            ? this.finishMiss(mergeReply(answer, missContext.reply, null), missContext)
+            : this.answerMissUnhooked(missContext, isMethodMismatch, allowed),
+        );
+      }
+      if (early !== null) return this.finishMiss(mergeReply(early, missContext.reply, null), missContext);
+    }
+    return this.answerMissUnhooked(missContext, isMethodMismatch, allowed);
+  }
+
+  /** {@link answerMiss} once the guards covering the path have let the request through. */
+  private answerMissUnhooked(
+    missContext: { request: CelsianRequest; reply: CelsianReply },
+    isMethodMismatch: boolean,
+    allowed: RouteMethod[],
+  ): Outgoing | Promise<Outgoing> {
+    if (isMethodMismatch) {
+      // The built-in miss answers are fast responses, like any other JSON
+      // body: one write on Node instead of a stream drain.
+      const r405 = fastResponse(
+        CelsianApp.METHOD_NOT_ALLOWED_BODY,
+        405,
+        allowed.length > 0
+          ? { ...CelsianApp.JSON_CONTENT_TYPE, allow: allowed.join(", ") }
+          : { ...CelsianApp.JSON_CONTENT_TYPE },
+      );
+      return this.sendMiss(r405, missContext);
+    }
+    if (this.notFoundHandler) return this.answerWithNotFoundHandler(this.notFoundHandler, missContext);
+    const r404 = fastResponse(CelsianApp.NOT_FOUND_BODY, 404, { ...CelsianApp.JSON_CONTENT_TYPE });
+    return this.sendMiss(r404, missContext);
+  }
+
+  private async answerWithNotFoundHandler(
+    notFoundHandler: RouteHandler,
+    missContext: { request: CelsianRequest; reply: CelsianReply },
+  ): Promise<Outgoing> {
+    try {
+      const result = await notFoundHandler(missContext.request, missContext.reply);
+      if (result instanceof Response) {
+        return this.finishMiss(
+          await this.applyOnSend(result, missContext.request, missContext.reply, this.rootScope.onSend),
+          missContext,
+        );
+      }
+      const empty = new Response(null, { status: missContext.reply.sent ? missContext.reply.statusCode : 404 });
+      return this.finishMiss(mergeReply(empty, missContext.reply, null), missContext);
+    } catch (error) {
+      if (this.hasLogger) {
+        this.log.error("notFound handler error", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      } else {
+        console.error("[celsian]", error);
+      }
+      const r404 = fastResponse(CelsianApp.NOT_FOUND_BODY, 404, { ...CelsianApp.JSON_CONTENT_TYPE });
+      return this.finishMiss(
+        await this.applyOnSend(r404, missContext.request, missContext.reply, this.rootScope.onSend),
+        missContext,
+      );
+    }
+  }
+
+  /** Run the root onSend chain over a miss response and hand it to onResponse. */
+  private sendMiss(
+    response: Response,
+    missContext: { request: CelsianRequest; reply: CelsianReply },
+  ): Outgoing | Promise<Outgoing> {
+    const sent = this.applyOnSend(response, missContext.request, missContext.reply, this.rootScope.onSend);
+    if (sent instanceof Promise) return sent.then((out) => this.finishMiss(out, missContext));
+    return this.finishMiss(sent, missContext);
+  }
+
+  /**
+   * Run a matched route and turn whatever happens into the response to send:
+   * the lifecycle's own answer, or the error path's when it throws or times out.
+   */
+  private respond(
+    request: CelsianRequest,
+    reply: CelsianReply,
+    route: InternalRoute,
+    scope: ResolvedScope,
+    isHead: boolean,
+    method: string,
+    pathname: string,
+  ): Outgoing | Promise<Outgoing> {
     // Auto request logging
+    let trace: RequestTrace | null = null;
     if (this.hasLogger) {
-      const requestId = (celsianRequest as Record<string, unknown>).requestId as string;
-      const start = performance.now();
+      const requestId = (request as Record<string, unknown>).requestId as string;
+      trace = { method, pathname, requestId, start: performance.now() };
       this.log.info("incoming request", { method, url: pathname, requestId });
+    }
 
-      try {
-        let response = await this.runWithTimeout(celsianRequest, reply, match.route, scope, timeout);
-        if (isHead) response = new Response(null, { status: response.status, headers: response.headers });
-        const duration = Math.round(performance.now() - start);
-        this.log.info("request completed", { method, url: pathname, statusCode: response.status, duration, requestId });
-        return this.finish(response, celsianRequest, reply, scope.onResponse);
-      } catch (thrown) {
-        const error = wrapNonError(thrown);
-        let response = await this.handleError(error, celsianRequest, reply, scope);
-        response = await this.applyOnSend(response, celsianRequest, reply, scope.onSend);
-        if (isHead) response = new Response(null, { status: response.status, headers: response.headers });
-        const duration = Math.round(performance.now() - start);
-        this.log.error("request error", {
-          method,
-          url: pathname,
+    // From here until the lifecycle settles, the timeout may abort
+    // `request.signal`. The signal itself is only built if something reads it.
+    const timeout = this.cachedRequestTimeout;
+    let started = 0;
+    if (timeout > 0) {
+      armRequestTimeout(request);
+      started = performance.now();
+    }
+
+    let out: Outgoing | Promise<Outgoing>;
+    try {
+      out = this.runLifecycle(request, reply, route, scope);
+    } catch (thrown) {
+      if (timeout > 0) disarmRequestTimeout(request);
+      return this.recover(thrown, request, reply, scope, isHead, trace);
+    }
+    if (!(out instanceof Promise)) {
+      // Answered synchronously. A timer could not have interrupted that, so
+      // none was ever set.
+      if (timeout > 0) disarmRequestTimeout(request);
+      return this.complete(out, request, reply, scope, isHead, trace);
+    }
+    if (timeout <= 0) {
+      return out.then(
+        (settled) => this.complete(settled, request, reply, scope, isHead, trace),
+        (thrown) => this.recover(thrown, request, reply, scope, isHead, trace),
+      );
+    }
+
+    // Hooks and a handler that worked synchronously before the first
+    // asynchronous step have used part of the timeout already. Usually that is
+    // nothing, and then the timer gets the configured duration itself: Node
+    // keeps timers of one duration in one list, so a server's request timeouts
+    // all share it. Otherwise it gets what is left, rounded up so that it never
+    // fires before the deadline.
+    //
+    // Past the deadline already, no timer can be early enough. A timer set at
+    // the start of the request, as it used to be, would be due by now and
+    // would fire before any timer the handler set on its way here, so a
+    // handler that awaits one got the 504. A timer set now would be due after
+    // those. So the 504 comes once the microtask queue has drained instead
+    // (`remaining` 0, see settleWithin): a lifecycle that settles without
+    // waiting on anything still answers first, as it did before a timer set at
+    // the start could fire, and one that waits on anything is answered 504
+    // before what it waits on can run. (Off Node, a lifecycle that would have
+    // settled on microtasks alone may get the 504 as well: it is past its
+    // deadline either way. Without process.nextTick, a 1 ms timer as before.)
+    const elapsed = performance.now() - started;
+    const remaining =
+      elapsed < 1
+        ? timeout
+        : elapsed >= timeout && afterMicrotasks !== undefined
+          ? 0
+          : Math.max(1, Math.ceil(timeout - elapsed));
+    return this.settleWithin(out, remaining, request, reply, scope, isHead, trace);
+  }
+
+  /**
+   * The answer to a lifecycle that went asynchronous, with `remaining` ms of
+   * the request timeout left: the lifecycle's own if it settles in time, a 504
+   * through the error path if not. `remaining` 0 means the deadline has
+   * passed already: the 504 comes once the microtask queue has drained, unless
+   * the lifecycle settled by then (see respond).
+   *
+   * One timer, cleared by whichever way the lifecycle settles, and one
+   * promise. The lifecycle is watched once, and that same callback finishes
+   * the response (`complete`, or `recover` for a throw) instead of handing it
+   * through a second promise to do so. When the timeout wins, the lifecycle
+   * keeps running and its eventual result, or rejection, is dropped.
+   */
+  private settleWithin(
+    pending: Promise<Outgoing>,
+    remaining: number,
+    request: CelsianRequest,
+    reply: CelsianReply,
+    scope: ResolvedScope,
+    isHead: boolean,
+    trace: RequestTrace | null,
+  ): Promise<Outgoing> {
+    return new Promise<Outgoing>((resolve, reject) => {
+      // Whichever comes first, the lifecycle or the timeout, ends the other's say.
+      let timedOut = false;
+      let settled = false;
+      const onTimeout = () => {
+        if (settled) return;
+        timedOut = true;
+        try {
+          // Aborted (in addition to answering 504) so in-flight work can stop promptly.
+          fireRequestTimeout(request, new HttpError(504, "Gateway Timeout"));
+          resolve(this.recover(new HttpError(504, "Gateway Timeout"), request, reply, scope, isHead, trace));
+        } catch (failure) {
+          reject(failure);
+        }
+      };
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      if (remaining > 0) timer = setTimeout(onTimeout, remaining);
+      else (afterMicrotasks as (callback: () => void) => void)(onTimeout);
+      pending.then(
+        (outgoing) => {
+          if (timedOut) return;
+          settled = true;
+          if (timer !== undefined) clearTimeout(timer);
+          disarmRequestTimeout(request);
+          try {
+            resolve(this.complete(outgoing, request, reply, scope, isHead, trace));
+          } catch (failure) {
+            reject(failure);
+          }
+        },
+        (thrown) => {
+          if (timedOut) return;
+          settled = true;
+          if (timer !== undefined) clearTimeout(timer);
+          disarmRequestTimeout(request);
+          try {
+            resolve(this.recover(thrown, request, reply, scope, isHead, trace));
+          } catch (failure) {
+            reject(failure);
+          }
+        },
+      );
+    });
+  }
+
+  /** The lifecycle answered: log it and hand the response to onResponse. */
+  private complete(
+    response: Outgoing,
+    request: CelsianRequest,
+    reply: CelsianReply,
+    scope: ResolvedScope,
+    isHead: boolean,
+    trace: RequestTrace | null,
+  ): Outgoing | Promise<Outgoing> {
+    try {
+      if (isHead) response = headOf(response);
+      if (trace !== null) {
+        const duration = Math.round(performance.now() - trace.start);
+        this.log.info("request completed", {
+          method: trace.method,
+          url: trace.pathname,
           statusCode: response.status,
           duration,
-          requestId,
-          error: error.message,
+          requestId: trace.requestId,
         });
-        return this.finish(response, celsianRequest, reply, scope.onResponse);
       }
-    }
-
-    try {
-      let response = await this.runWithTimeout(celsianRequest, reply, match.route, scope, timeout);
-      if (isHead) response = new Response(null, { status: response.status, headers: response.headers });
-      return this.finish(response, celsianRequest, reply, scope.onResponse);
+      return this.finish(response, request, reply, scope.onResponse);
     } catch (thrown) {
-      let response = await this.handleError(wrapNonError(thrown), celsianRequest, reply, scope);
-      response = await this.applyOnSend(response, celsianRequest, reply, scope.onSend);
-      if (isHead) response = new Response(null, { status: response.status, headers: response.headers });
-      return this.finish(response, celsianRequest, reply, scope.onResponse);
+      return this.recover(thrown, request, reply, scope, isHead, trace);
     }
+  }
+
+  /** The lifecycle threw, rejected or timed out: answer through the error handlers and onSend. */
+  private recover(
+    thrown: unknown,
+    request: CelsianRequest,
+    reply: CelsianReply,
+    scope: ResolvedScope,
+    isHead: boolean,
+    trace: RequestTrace | null,
+  ): Outgoing | Promise<Outgoing> {
+    const error = wrapNonError(thrown);
+    const handled = this.handleError(error, request, reply, scope);
+    if (handled instanceof Promise) {
+      return handled.then((response) => this.recoverWith(response, error, request, reply, scope, isHead, trace));
+    }
+    return this.recoverWith(handled, error, request, reply, scope, isHead, trace);
+  }
+
+  private recoverWith(
+    handled: Response,
+    error: Error,
+    request: CelsianRequest,
+    reply: CelsianReply,
+    scope: ResolvedScope,
+    isHead: boolean,
+    trace: RequestTrace | null,
+  ): Outgoing | Promise<Outgoing> {
+    const sent = this.applyOnSend(handled, request, reply, scope.onSend);
+    if (sent instanceof Promise) {
+      return sent.then((response) => this.finishRecovered(response, error, request, reply, scope, isHead, trace));
+    }
+    return this.finishRecovered(sent, error, request, reply, scope, isHead, trace);
+  }
+
+  private finishRecovered(
+    response: Outgoing,
+    error: Error,
+    request: CelsianRequest,
+    reply: CelsianReply,
+    scope: ResolvedScope,
+    isHead: boolean,
+    trace: RequestTrace | null,
+  ): Outgoing {
+    if (isHead) response = headOf(response);
+    if (trace !== null) {
+      const duration = Math.round(performance.now() - trace.start);
+      this.log.error("request error", {
+        method: trace.method,
+        url: trace.pathname,
+        statusCode: response.status,
+        duration,
+        requestId: trace.requestId,
+        error: error.message,
+      });
+    }
+    return this.finish(response, request, reply, scope.onResponse);
   }
 
   /**
@@ -1062,96 +1370,127 @@ export class CelsianApp {
 
   // ─── Internal ───
 
-  /**
-   * Run the request lifecycle with an optional timeout.
-   */
-  private runWithTimeout(
+  // The lifecycle, one method per stretch between two steps that may be
+  // asynchronous. Each runs straight through into the next while its hooks
+  // return plain values, and hands the rest to a `.then()` the moment one
+  // returns a promise. So a request costs promises in proportion to the
+  // asynchronous work it actually does, and a fully synchronous one costs none.
+
+  private runLifecycle(
     request: CelsianRequest,
     reply: CelsianReply,
     route: InternalRoute,
     scope: ResolvedScope,
-    timeout: number,
-  ): Promise<Response> {
-    if (timeout <= 0) {
-      return this.runLifecycle(request, reply, route, scope);
-    }
-    // Per-request AbortController: exposed as request.signal so handlers can
-    // observe cancellation, and aborted when the timeout fires (in addition to
-    // rejecting with 504) so in-flight work can stop promptly.
-    const controller = new AbortController();
-    const incomingSignal = request.signal;
-    // The timeout must not replace transport cancellation, including after a
-    // handler returns a streaming response whose producer retains this signal.
-    if (typeof AbortSignal.any === "function") {
-      (request as Record<string, unknown>).signal = AbortSignal.any([incomingSignal, controller.signal]);
-    } else {
-      // Node 20.0 and older edge runtimes predate AbortSignal.any(). Each source
-      // is a request-local signal, so normal completion is garbage-collectable.
-      const abort = () => controller.abort(incomingSignal.reason);
-      if (incomingSignal.aborted) abort();
-      else {
-        incomingSignal.addEventListener("abort", abort, { once: true });
-        controller.signal.addEventListener("abort", () => incomingSignal.removeEventListener("abort", abort), {
-          once: true,
-        });
-      }
-      (request as Record<string, unknown>).signal = controller.signal;
-    }
-    let timer: ReturnType<typeof setTimeout>;
-    return Promise.race([
-      this.runLifecycle(request, reply, route, scope).finally(() => clearTimeout(timer)),
-      new Promise<Response>((_, reject) => {
-        timer = setTimeout(() => {
-          controller.abort(new HttpError(504, "Gateway Timeout"));
-          reject(new HttpError(504, "Gateway Timeout"));
-        }, timeout);
-      }),
-    ]);
-  }
-
-  private async runLifecycle(
-    request: CelsianRequest,
-    reply: CelsianReply,
-    route: InternalRoute,
-    scope: ResolvedScope,
-  ): Promise<Response> {
-    let earlyResponse: Response | null;
-
+  ): Outgoing | Promise<Outgoing> {
     // 1. onRequest hooks (skip if empty)
     if (scope.onRequest.length > 0) {
-      earlyResponse = await runHooks(scope.onRequest, request, reply);
-      if (earlyResponse) return mergeReplyIntoResponse(earlyResponse, reply, null);
+      const early = runHooksUntilAnswer(scope.onRequest, request, reply);
+      if (early instanceof Promise) {
+        return early.then((answer) =>
+          answer !== null ? mergeReply(answer, reply, null) : this.runFromPreParsing(request, reply, route, scope),
+        );
+      }
+      if (early !== null) return mergeReply(early, reply, null);
     }
+    return this.runFromPreParsing(request, reply, route, scope);
+  }
 
+  private runFromPreParsing(
+    request: CelsianRequest,
+    reply: CelsianReply,
+    route: InternalRoute,
+    scope: ResolvedScope,
+  ): Outgoing | Promise<Outgoing> {
     // 2. preParsing hooks (skip if empty)
     if (scope.preParsing.length > 0) {
-      earlyResponse = await runHooks(scope.preParsing, request, reply);
-      if (earlyResponse) return mergeReplyIntoResponse(earlyResponse, reply, null);
+      const early = runHooksUntilAnswer(scope.preParsing, request, reply);
+      if (early instanceof Promise) {
+        return early.then((answer) =>
+          answer !== null ? mergeReply(answer, reply, null) : this.runFromParsing(request, reply, route, scope),
+        );
+      }
+      if (early !== null) return mergeReply(early, reply, null);
     }
+    return this.runFromParsing(request, reply, route, scope);
+  }
 
-    // 3. Body parsing
-    await this.parseBody(request);
+  private runFromParsing(
+    request: CelsianRequest,
+    reply: CelsianReply,
+    route: InternalRoute,
+    scope: ResolvedScope,
+  ): Outgoing | Promise<Outgoing> {
+    // 3. Body parsing. `undefined` means there was nothing to read.
+    const parsing = parseBodyIfAny(request, this.cachedBodyLimit, this.contentTypeParsers);
+    if (parsing !== undefined) return parsing.then(() => this.runFromPreValidation(request, reply, route, scope));
+    return this.runFromPreValidation(request, reply, route, scope);
+  }
 
+  private runFromPreValidation(
+    request: CelsianRequest,
+    reply: CelsianReply,
+    route: InternalRoute,
+    scope: ResolvedScope,
+  ): Outgoing | Promise<Outgoing> {
     // 4. preValidation hooks (skip if empty)
     if (scope.preValidation.length > 0) {
-      earlyResponse = await runHooks(scope.preValidation, request, reply);
-      if (earlyResponse) return mergeReplyIntoResponse(earlyResponse, reply, null);
+      const early = runHooksUntilAnswer(scope.preValidation, request, reply);
+      if (early instanceof Promise) {
+        return early.then((answer) =>
+          answer !== null ? mergeReply(answer, reply, null) : this.runFromValidation(request, reply, route, scope),
+        );
+      }
+      if (early !== null) return mergeReply(early, reply, null);
     }
+    return this.runFromValidation(request, reply, route, scope);
+  }
 
+  private runFromValidation(
+    request: CelsianRequest,
+    reply: CelsianReply,
+    route: InternalRoute,
+    scope: ResolvedScope,
+  ): Outgoing | Promise<Outgoing> {
     // 5. Schema validation
     if (route.schema) {
-      this.validateRequest(request, route.schema);
+      this.validateRequest(request, route);
     }
 
     // 6. preHandler hooks (skip if empty)
     if (scope.preHandler.length > 0) {
-      earlyResponse = await runHooks(scope.preHandler, request, reply);
-      if (earlyResponse) return mergeReplyIntoResponse(earlyResponse, reply, null);
+      const early = runHooksUntilAnswer(scope.preHandler, request, reply);
+      if (early instanceof Promise) {
+        return early.then((answer) =>
+          answer !== null ? mergeReply(answer, reply, null) : this.runHandler(request, reply, route, scope),
+        );
+      }
+      if (early !== null) return mergeReply(early, reply, null);
     }
+    return this.runHandler(request, reply, route, scope);
+  }
 
+  private runHandler(
+    request: CelsianRequest,
+    reply: CelsianReply,
+    route: InternalRoute,
+    scope: ResolvedScope,
+  ): Outgoing | Promise<Outgoing> {
     // 7. Handler
-    const handlerResult = await route.handler(request, reply);
-    let response: Response;
+    const handlerResult = route.handler(request, reply);
+    if (isThenable(handlerResult)) {
+      return toPromise(handlerResult).then((settled) => this.runFromResult(settled, request, reply, route, scope));
+    }
+    return this.runFromResult(handlerResult, request, reply, route, scope);
+  }
+
+  private runFromResult(
+    handlerResult: unknown,
+    request: CelsianRequest,
+    reply: CelsianReply,
+    route: InternalRoute,
+    scope: ResolvedScope,
+  ): Outgoing | Promise<Outgoing> {
+    let response: Outgoing;
 
     if (handlerResult instanceof Response) {
       response = handlerResult;
@@ -1181,41 +1520,61 @@ export class CelsianApp {
     // Headers and cookies set on the reply belong on the response however the
     // handler finished. The reply helpers and the serializer above already
     // wrote them, so this only changes a Response the handler built itself.
-    response = mergeReplyIntoResponse(response, reply, null);
+    response = mergeReply(response, reply, null);
 
     // 8. Response schema validation (only for routes that declare schema.response)
     if (route.schema?.response && this.responseValidationEnabled) {
-      response = await this.validateResponse(response, handlerResult, route);
+      response = this.validateResponse(response, handlerResult, route);
     }
 
     // 9. preSerialization hooks (skip if empty)
     if (scope.preSerialization.length > 0) {
-      await runHooks(scope.preSerialization, request, reply);
+      const pending = runHooksUntilAnswer(scope.preSerialization, request, reply);
+      if (pending instanceof Promise) {
+        const built = response;
+        return pending.then(() => this.runOnSend(built, request, reply, scope.onSend));
+      }
     }
 
     // 10. onSend hooks, the resolved chain already runs root → plugin → route.
-    // They are shown the status that will actually be sent.
-    reply.statusCode = response.status;
-    if (scope.onSend.length > 0) {
-      const shown = { ...reply.headers };
-      try {
-        await runOnSendHooks(scope.onSend, request, reply);
-      } catch (err) {
-        this.log.error("onSend hook error", { error: err instanceof Error ? err.message : String(err) });
-        return response;
-      }
-      response = mergeReplyIntoResponse(response, reply, shown);
-    }
-
-    // onResponse runs in `handle()`, once the final response is known, so it
+    // onResponse runs in `respond()`, once the final response is known, so it
     // also covers early returns, errors and timeouts.
-    return response;
+    return this.runOnSend(response, request, reply, scope.onSend);
   }
 
-  private async createMissContext(
-    request: Request,
-    effectiveUrl: string,
-  ): Promise<{ request: CelsianRequest; reply: CelsianReply }> {
+  /**
+   * Run an onSend chain and put whatever it set on the reply onto the response.
+   * The hooks are shown the status that will actually be sent.
+   */
+  private runOnSend(
+    response: Outgoing,
+    request: CelsianRequest,
+    reply: CelsianReply,
+    hooks: HookHandler[],
+  ): Outgoing | Promise<Outgoing> {
+    reply.statusCode = response.status;
+    if (hooks.length === 0) return response;
+    const shown = { ...reply.headers };
+    let pending: Promise<void> | undefined;
+    try {
+      pending = runOnSendHooksNow(hooks, request, reply);
+    } catch (err) {
+      this.log.error("onSend hook error", { error: err instanceof Error ? err.message : String(err) });
+      return response;
+    }
+    if (pending !== undefined) {
+      return pending.then(
+        () => mergeReply(response, reply, shown),
+        (err) => {
+          this.log.error("onSend hook error", { error: err instanceof Error ? err.message : String(err) });
+          return response;
+        },
+      );
+    }
+    return mergeReply(response, reply, shown);
+  }
+
+  private createMissContext(request: Request, effectiveUrl: string): { request: CelsianRequest; reply: CelsianReply } {
     const fullUrl = new URL(effectiveUrl, "http://localhost");
     const celsianRequest = buildRequest(request, fullUrl, {});
     if (celsianRequest.ip === undefined) celsianRequest.ip = resolveClientIp(request, this.options.clientIp);
@@ -1229,24 +1588,13 @@ export class CelsianApp {
   }
 
   /** Run an already-resolved onSend chain against a response built outside the normal lifecycle. */
-  private async applyOnSend(
-    response: Response,
+  private applyOnSend(
+    response: Outgoing,
     request: CelsianRequest,
     reply: CelsianReply,
     hooks: HookHandler[],
-  ): Promise<Response> {
-    let merged = mergeReplyIntoResponse(response, reply, null);
-    reply.statusCode = merged.status;
-    if (hooks.length === 0) return merged;
-    const shown = { ...reply.headers };
-    try {
-      await runOnSendHooks(hooks, request, reply);
-    } catch (err) {
-      this.log.error("onSend hook error", { error: err instanceof Error ? err.message : String(err) });
-      return merged;
-    }
-    merged = mergeReplyIntoResponse(merged, reply, shown);
-    return merged;
+  ): Outgoing | Promise<Outgoing> {
+    return this.runOnSend(mergeReply(response, reply, null), request, reply, hooks);
   }
 
   /**
@@ -1254,20 +1602,25 @@ export class CelsianApp {
    * status actually sent first: a Response built by a handler, an error handler
    * or an early-returning hook never went through `reply.status()`.
    */
-  private finish(response: Response, request: CelsianRequest, reply: CelsianReply, hooks: HookHandler[]): Response {
+  private finish(response: Outgoing, request: CelsianRequest, reply: CelsianReply, hooks: HookHandler[]): Outgoing {
     reply.statusCode = response.status;
     if (hooks.length > 0) runHooksFireAndForget(hooks, request, reply, this.log);
     return response;
   }
 
   /** {@link finish} for a request that matched no route, which runs the root scope's hooks. */
-  private finishMiss(response: Response, context: { request: CelsianRequest; reply: CelsianReply }): Response {
+  private finishMiss(response: Outgoing, context: { request: CelsianRequest; reply: CelsianReply }): Outgoing {
     return this.finish(response, context.request, context.reply, this.rootScope.onResponse);
   }
 
-  private validateRequest(request: CelsianRequest, schema: NonNullable<InternalRoute["schema"]>): void {
+  private validateRequest(request: CelsianRequest, route: InternalRoute): void {
+    const schema = route.schema;
+    if (!schema) return;
+    // Adapters built when the route was registered, see route-validators.ts.
+    const validators = (route as RouteWithValidators)[ROUTE_VALIDATORS];
+
     if (schema.body) {
-      const bodySchema: StandardSchema = fromSchema(schema.body);
+      const bodySchema: StandardSchema = validatorFor(validators?.body, schema.body);
       const result = bodySchema.validate(request.parsedBody);
       if (!result.success) {
         throw new ValidationError(result.issues ?? []);
@@ -1276,7 +1629,7 @@ export class CelsianApp {
     }
 
     if (schema.querystring) {
-      const querySchema: StandardSchema = fromSchema(schema.querystring);
+      const querySchema: StandardSchema = validatorFor(validators?.querystring, schema.querystring);
       const result = querySchema.validate(request.query);
       if (!result.success) {
         throw new ValidationError(result.issues ?? []);
@@ -1290,7 +1643,7 @@ export class CelsianApp {
     }
 
     if (schema.params) {
-      const paramsSchema: StandardSchema = fromSchema(schema.params);
+      const paramsSchema: StandardSchema = validatorFor(validators?.params, schema.params);
       const result = paramsSchema.validate(request.params);
       if (!result.success) {
         throw new ValidationError(result.issues ?? []);
@@ -1307,7 +1660,7 @@ export class CelsianApp {
    * and the offending payload is only ever written to the server-side log.
    * Disable with `createApp({ validateResponses: false })`.
    */
-  private async validateResponse(response: Response, handlerResult: unknown, route: InternalRoute): Promise<Response> {
+  private validateResponse(response: Outgoing, handlerResult: unknown, route: InternalRoute): Outgoing {
     const schemas = route.schema?.response;
     if (!schemas) return response;
 
@@ -1322,7 +1675,9 @@ export class CelsianApp {
       payload = handlerResult;
     } else {
       // The handler built its own Response (reply.json(...), reply.send(...)).
-      if (!(peekHeaders(response).get("content-type") ?? "").includes("json")) return response;
+      const wire = response instanceof WireResponse ? response : null;
+      const contentType = wire ? wire.headers["content-type"] : peekHeaders(response as Response).get("content-type");
+      if (!(contentType ?? "").includes("json")) return response;
 
       // Only a body that was already serialized in memory may be read here.
       // `response.clone().json()` looks harmless but it TEES the body stream and
@@ -1331,17 +1686,19 @@ export class CelsianApp {
       // byte, and an endless stream hung until the request timeout fired a 504.
       // A response carrying a fast payload was built from a string or a byte
       // array, so parsing that payload reads no stream at all.
-      const fast = getFastPayload(response);
-      if (fast === undefined || fast.body === null) return response;
+      const body = wire ? wire.body : getFastPayload(response as Response)?.body;
+      if (body === undefined || body === null) return response;
       try {
-        payload = JSON.parse(typeof fast.body === "string" ? fast.body : RESPONSE_DECODER.decode(fast.body));
+        payload = JSON.parse(typeof body === "string" ? body : RESPONSE_DECODER.decode(body));
       } catch {
         // Body is not JSON after all, nothing to check.
         return response;
       }
     }
 
-    const result = fromSchema(responseSchema).validate(payload);
+    const result = responseValidatorFor((route as RouteWithValidators)[ROUTE_VALIDATORS], responseSchema).validate(
+      payload,
+    );
     if (result.success) return response;
 
     const detail = {
@@ -1354,11 +1711,7 @@ export class CelsianApp {
     if (this.usingNoopLogger) {
       console.error("[celsian] response schema validation failed", detail);
     }
-    return fastResponse(CelsianApp.RESPONSE_VALIDATION_BODY, 500, CelsianApp.JSON_CONTENT_TYPE);
-  }
-
-  private parseBody(request: CelsianRequest): Promise<void> {
-    return parseBody(request, this.cachedBodyLimit, this.contentTypeParsers);
+    return fastResponse(CelsianApp.RESPONSE_VALIDATION_BODY, 500, { ...CelsianApp.JSON_CONTENT_TYPE });
   }
 
   private handleError(
@@ -1366,8 +1719,8 @@ export class CelsianApp {
     request: CelsianRequest,
     reply: CelsianReply,
     scope: ResolvedScope,
-  ): Promise<Response> {
-    return handleErrorFn(error, request, reply, this.errorHandler, scope.onError, this.hasLogger ? this.log : null);
+  ): Response | Promise<Response> {
+    return handleErrorNow(error, request, reply, this.errorHandler, scope.onError, this.hasLogger ? this.log : null);
   }
 }
 

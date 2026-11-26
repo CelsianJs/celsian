@@ -16,6 +16,7 @@
     "release": "changeset publish",
     "bench": "pnpm --filter celsian-benchmarks exec tsx run.ts",
     "test:bench": "CELSIAN_INCLUDE_BENCH=1 vitest run packages/cache/test/bench.test.ts",
+    "test:alloc": "node benchmarks/alloc-gate.mjs",
     "verify:publish": "pnpm assert:release-private && pnpm assert:public-metadata && scripts/verify-publish.sh",
     "audit:release": "pnpm audit --prod --audit-level=moderate",
     "setup:pnpm": "corepack enable && corepack prepare pnpm@9.15.0 --activate",

@@ -1,6 +1,7 @@
 // @celsian/core, Radix tree router with URL pattern matching
 
 import { CelsianError, HttpError } from "./errors.js";
+import { compileRouteValidators, ROUTE_VALIDATORS, type RouteWithValidators } from "./route-validators.js";
 import type { InternalRoute, RouteHandler, RouteHooks, RouteMatch, RouteMethod } from "./types.js";
 
 /** Options controlling how the router normalizes and validates request paths. */
@@ -71,6 +72,12 @@ export class Router {
   // O(1) fast path: fully static routes (no `:param` or `*wildcard` segments)
   private staticRoutes = new Map<string, Map<RouteMethod, InternalRoute>>();
 
+  // The static routes whose key is already the canonical spelling of its own
+  // path (all of them, in practice). A request for exactly that string needs
+  // no canonicalization: it would come back unchanged. Shares its method maps
+  // with `staticRoutes`.
+  private exactStaticRoutes = new Map<string, Map<RouteMethod, InternalRoute>>();
+
   private readonly ignoreTrailingSlash: boolean;
   private readonly strictParams: boolean;
 
@@ -128,7 +135,7 @@ export class Router {
       }
     }
 
-    const route: InternalRoute = {
+    const route: InternalRoute & RouteWithValidators = {
       method,
       url,
       handler,
@@ -142,6 +149,10 @@ export class Router {
         onSend: hooks?.onSend ?? [],
       },
     };
+
+    // The schema adapters are built here, once, not on every request. Kept
+    // off the route's enumerable properties: it is not part of InternalRoute.
+    if (schema) Object.defineProperty(route, ROUTE_VALIDATORS, { value: compileRouteValidators(schema) });
 
     const duplicate = node.routes.get(method);
     if (duplicate) {
@@ -160,12 +171,26 @@ export class Router {
       if (!methodMap) {
         methodMap = new Map();
         this.staticRoutes.set(key, methodMap);
+        if (canonicalizePath(key, this.ignoreTrailingSlash) === key) this.exactStaticRoutes.set(key, methodMap);
       }
       methodMap.set(method, route);
     }
   }
 
   match(method: RouteMethod, pathname: string): RouteMatch | null {
+    // Fastest path: the path, exactly as received, is a static route. No
+    // canonicalization, no split, no tree walk. A miss here (another method,
+    // a trailing slash, a param route) takes the full path below.
+    const exact = this.exactStaticRoutes.get(pathname)?.get(method);
+    if (exact !== undefined) {
+      return {
+        handler: exact.handler,
+        params: EMPTY_PARAMS,
+        rawParams: EMPTY_PARAMS,
+        route: exact,
+      };
+    }
+
     // Canonicalize once. Aliased forms ('//admin', '/./admin', '/admin//') are
     // 404s, not alternate spellings of a route an upstream gateway allow-listed.
     const canonical = canonicalizePath(pathname, this.ignoreTrailingSlash);
@@ -188,7 +213,7 @@ export class Router {
     }
 
     // Slow path: radix tree walk (handles params & wildcards)
-    const segments = splitPath(canonical);
+    const segments = splitCanonicalPath(canonical);
     const params: Record<string, string> = {};
     const rawParams: Record<string, string> = {};
 
@@ -277,7 +302,7 @@ export class Router {
     if (canonical === null) return false;
     if (this.staticRoutes.has(canonical)) return true;
 
-    const segments = splitPath(canonical);
+    const segments = splitCanonicalPath(canonical);
     return this._hasPath(this.root, segments, 0);
   }
 
@@ -300,7 +325,7 @@ export class Router {
     if (staticRoutes) {
       for (const method of staticRoutes.keys()) found.add(method);
     }
-    this._collectMethods(this.root, splitPath(canonical), 0, found);
+    this._collectMethods(this.root, splitCanonicalPath(canonical), 0, found);
 
     if (found.has("GET")) found.add("HEAD");
     return METHOD_ORDER.filter((method) => found.has(method));
@@ -363,6 +388,15 @@ function splitPath(path: string): string[] {
   return path.split("/").filter(Boolean);
 }
 
+/**
+ * {@link splitPath} for a path `canonicalizePath` returned. Such a path is "/"
+ * or starts with one slash and has no empty segment, so everything after that
+ * slash splits cleanly and there is nothing to filter out.
+ */
+function splitCanonicalPath(canonical: string): string[] {
+  return canonical === "/" ? [] : canonical.slice(1).split("/");
+}
+
 /** Normalize a pathname for static-map keys: '/' for root, otherwise strip trailing slash. */
 function normalizePathname(p: string): string {
   if (p === "/" || p === "") return "/";
@@ -393,9 +427,12 @@ function canonicalizePath(pathname: string, ignoreTrailingSlash: boolean): strin
     if (path === "") return "/";
   }
 
-  // Dot segments ('/./', '/../') are aliases, not paths.
-  for (const seg of path.split("/")) {
-    if (seg === "." || seg === "..") return null;
+  // Dot segments ('/./', '/../') are aliases, not paths. A dot segment always
+  // follows a slash, so a path without "/." has none and needs no split.
+  if (path.includes("/.")) {
+    for (const seg of path.split("/")) {
+      if (seg === "." || seg === "..") return null;
+    }
   }
 
   return path;

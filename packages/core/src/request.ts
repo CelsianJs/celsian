@@ -1,5 +1,6 @@
 // @celsian/core -- Request builder
 
+import { parseCookies } from "./cookie.js";
 import type { CelsianRequest, ClientIpOptions } from "./types.js";
 
 // Shared empty query object for requests with no query string
@@ -11,34 +12,378 @@ const BLOCKED_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 // Symbol holding the source Web Request on the wrapper (excluded from Object.keys/JSON).
 const SRC = Symbol("celsian.srcRequest");
 
+// Symbol holding the request's resolved `signal`, once something has read it.
+const SIGNAL = Symbol("celsian.signal");
+
+// Symbol holding the request's parsed cookies, once something has read them.
+const COOKIES = Symbol("celsian.cookies");
+
+// Symbol holding the request timeout's state: undefined when no timeout can
+// abort this request, ARMED while one can, the AbortController it will abort
+// once `signal` has been read, or a TimedOut record after it fired unobserved.
+const TIMEOUT = Symbol("celsian.requestTimeout");
+const ARMED = Symbol("celsian.requestTimeout.armed");
+
+/** A request timeout that fired before anything had read the request's `signal`. */
+class TimedOut {
+  constructor(
+    readonly reason: unknown,
+    /** The transport had already aborted, so that abort is the one `signal` reports. */
+    readonly transportAbortedFirst: boolean,
+  ) {}
+}
+
+// Symbol recording that the request's body was read straight from the Node
+// stream under it: true until the web stream wrapped around that same stream
+// has been told, false afterwards. See `takeNodeBody`.
+const BODY_READ_DIRECTLY = Symbol("celsian.bodyReadDirectly");
+
+/** The fields the fast request wrapper keeps under symbols. */
+interface FastRequestState {
+  [SRC]: Request;
+  [BODY_READ_DIRECTLY]: boolean | undefined;
+  [SIGNAL]: AbortSignal | undefined;
+  [COOKIES]: Record<string, string> | undefined;
+  [TIMEOUT]: typeof ARMED | AbortController | TimedOut | undefined;
+}
+
+/** Node or Bun: the runtimes request.signal follows its input on through a relay (see `follow`). */
+const relayRuntime: boolean = (() => {
+  const proc = (globalThis as { process?: { versions?: Record<string, unknown> } }).process;
+  if (typeof proc?.versions?.bun === "string") return true;
+  const userAgent = (globalThis as { navigator?: { userAgent?: unknown } }).navigator?.userAgent;
+  // Node 21 and later name themselves here; Node 20 has no navigator.
+  return typeof userAgent === "string"
+    ? userAgent.startsWith("Node.js/")
+    : typeof proc?.versions?.node === "string" && !("Deno" in globalThis);
+})();
+
+/**
+ * `AbortSignal.any`, where request.signal is the combination of its input and
+ * the timeout's own signal, as it was on every runtime before: Deno, workerd
+ * and anything else that is neither Node nor Bun.
+ */
+const combine: ((signals: AbortSignal[]) => AbortSignal) | undefined =
+  !relayRuntime && typeof AbortSignal.any === "function" ? AbortSignal.any.bind(AbortSignal) : undefined;
+
+/** Whether this runtime can follow a signal weakly: WeakRef and FinalizationRegistry. */
+const weakRefs = typeof WeakRef === "function" && typeof FinalizationRegistry === "function";
+
+/**
+ * `AbortSignal.any` as it was when this module loaded, on Node or Bun, to make
+ * relays with (see `follow`); `undefined` where there is none.
+ */
+const relayOf: ((signals: AbortSignal[]) => AbortSignal) | undefined =
+  relayRuntime && typeof AbortSignal.any === "function" && weakRefs ? AbortSignal.any.bind(AbortSignal) : undefined;
+
+/** A request signal that follows its input: its controller, and how to stop following. */
+interface Following {
+  readonly controller: AbortController;
+  readonly stop: () => void;
+}
+
+/**
+ * Each following signal's record, kept by the signal itself (a WeakMap holds
+ * its value for as long as its key lives), so that the signal's controller,
+ * which can abort it, lives exactly as long as the signal does.
+ */
+const FOLLOWING = new WeakMap<AbortSignal, Following>();
+
+/** Stops following once a following signal has been collected. */
+const UNFOLLOW: FinalizationRegistry<() => void> | undefined = weakRefs
+  ? new FinalizationRegistry((stop) => stop())
+  : undefined;
+
+/** Marks an input signal that more than one request has followed. */
+const SHARED = Symbol("celsian.signal.shared");
+
+/**
+ * The controller each input signal keeps alive: the first request to follow
+ * it, until a second one does (then SHARED). Keyed weakly by the input.
+ */
+const KEPT = new WeakMap<AbortSignal, AbortController | typeof SHARED>();
+
+/**
+ * Make `controller` abort, with the input's reason, when `incoming` aborts.
+ *
+ * What it listens on. An ordinary listener on `incoming` would be added after
+ * any the application put there, and one of those that calls
+ * `event.stopImmediatePropagation()` would keep it from ever running. An
+ * `abort` event that someone merely dispatched on `incoming` would run it too,
+ * although `incoming` has not aborted. So the listener goes on a relay of its
+ * own, `AbortSignal.any([incoming])`, that nothing else can reach: the runtime
+ * aborts a signal made that way when `incoming` itself aborts, whatever
+ * `incoming`'s listeners do, and never for a dispatched event. Without
+ * `AbortSignal.any` the listener goes on `incoming`, checks that it really has
+ * aborted, and stays for the real abort after a dispatched one; a listener
+ * before it can stop it there.
+ *
+ * What it keeps alive. Node keeps a signal made by `AbortSignal.any()` that has
+ * a listener in a process-wide set, until the listener is removed (or, on Node
+ * 22 and later, until its input is collected). So the
+ * relay's listener must not keep the request: through `request.signal`'s own
+ * listeners it would keep everything they close over, and, once the input had
+ * aborted, everything the abort reason's stack reaches (for core's Node server,
+ * the IncomingMessage, its socket and its ServerResponse). It refers to the
+ * following signal only weakly, and is removed when that signal aborts, when
+ * the timeout aborts it, or when it is collected. An input signal is then
+ * never what keeps a finished request alive, which matters where one long-lived
+ * signal is the input of many requests (a test harness dispatching the same
+ * Request, an adapter passing one shutdown signal to every request).
+ *
+ * But a listener alone on `request.signal`, with nothing else holding the
+ * signal, is the ordinary way to stop work when the client goes away:
+ *
+ *     request.signal.addEventListener("abort", () => clearInterval(timer));
+ *     return new Response(stream);   // the stream does not refer to the signal
+ *
+ * That listener has to run when the input aborts after the handler returned.
+ * So the first request to follow an input is kept alive by it, as an ordinary
+ * listener on the input would keep it: for as long as the input lives (for a
+ * Node request, until the connection's request is over), `request.signal` and
+ * its listeners do too. Once a second request follows the same input, the
+ * input is shared, and no request is kept by it, the first one included: each
+ * signal then lives as long as something else holds it (a stream that refers
+ * to it does).
+ */
+function follow(incoming: AbortSignal, controller: AbortController): void {
+  const signal = controller.signal;
+  if (UNFOLLOW === undefined) {
+    FOLLOWING.set(signal, { controller, stop: listenFor(incoming, controller) });
+    return;
+  }
+  const stop = relayTo(relayOf === undefined ? incoming : relayOf([incoming]), new WeakRef(signal), UNFOLLOW);
+  FOLLOWING.set(signal, { controller, stop });
+  UNFOLLOW.register(signal, stop, stop);
+  const kept = KEPT.get(incoming);
+  if (kept === undefined) KEPT.set(incoming, controller);
+  else if (kept !== SHARED) KEPT.set(incoming, SHARED);
+}
+
+/**
+ * Abort the signal `target` refers to, through its controller, once `relay`
+ * aborts. Returns the function that stops listening.
+ *
+ * Its own function so that its closures hold only what is passed in: closures
+ * made in one call share that call's variables, and one that held the
+ * controller or its signal would keep them alive from the relay.
+ */
+function relayTo(
+  relay: AbortSignal,
+  target: WeakRef<AbortSignal>,
+  registry: FinalizationRegistry<() => void>,
+): () => void {
+  const forward = () => {
+    // An `abort` event dispatched on the input itself (no relay): not an abort.
+    if (!relay.aborted) return;
+    stop();
+    const followed = target.deref();
+    if (followed !== undefined) FOLLOWING.get(followed)?.controller.abort(relay.reason);
+  };
+  const stop = () => {
+    relay.removeEventListener("abort", forward);
+    registry.unregister(stop);
+  };
+  relay.addEventListener("abort", forward);
+  return stop;
+}
+
+/** {@link follow} without weak references: a listener on `incoming`, which keeps `controller`. */
+function listenFor(incoming: AbortSignal, controller: AbortController): () => void {
+  const forward = () => {
+    if (!incoming.aborted) return;
+    incoming.removeEventListener("abort", forward);
+    controller.abort(incoming.reason);
+  };
+  incoming.addEventListener("abort", forward);
+  return () => incoming.removeEventListener("abort", forward);
+}
+
+/**
+ * The signal a handler sees: the transport's own, which a request timeout can
+ * also abort. Built on first read. Most handlers never read it, and the
+ * controller and what follows the transport cost more than the rest of the
+ * request wrapper put together.
+ */
+function resolveSignal(state: FastRequestState): AbortSignal {
+  const incoming = state[SRC].signal;
+  const timeout = state[TIMEOUT];
+  if (timeout === undefined) return incoming;
+  if (timeout instanceof TimedOut) {
+    if (timeout.transportAbortedFirst) return incoming;
+    const fired = new AbortController();
+    fired.abort(timeout.reason);
+    return fired.signal;
+  }
+
+  // A timeout can still abort this request. Its controller is separate from
+  // the transport's, so a timeout never aborts the upstream signal, and the
+  // signal keeps following the transport after the handler returns (a
+  // streaming response's producer retains it). See `follow` for how.
+  const controller = timeout === ARMED ? new AbortController() : timeout;
+  state[TIMEOUT] = controller;
+  if (incoming.aborted) controller.abort(incoming.reason);
+  else if (combine !== undefined) return combine([incoming, controller.signal]);
+  else follow(incoming, controller);
+  return controller.signal;
+}
+
+/** Note that a request timeout may abort `request` from now on. Fast requests only. */
+export function armRequestTimeout(request: CelsianRequest): void {
+  const state = request as unknown as FastRequestState;
+  if (state[TIMEOUT] === undefined) state[TIMEOUT] = ARMED;
+}
+
+/** The request timeout fired: abort `request.signal` with `reason`, now or when it is first read. */
+export function fireRequestTimeout(request: CelsianRequest, reason: unknown): void {
+  const state = request as unknown as FastRequestState;
+  const timeout = state[TIMEOUT];
+  if (timeout instanceof AbortController) {
+    // Aborted by the timeout, the signal has nothing left to follow.
+    FOLLOWING.get(timeout.signal)?.stop();
+    timeout.abort(reason);
+  } else if (timeout === ARMED) state[TIMEOUT] = new TimedOut(reason, state[SRC].signal.aborted);
+}
+
+/** The request finished before its timeout: the timeout can no longer abort `request.signal`. */
+export function disarmRequestTimeout(request: CelsianRequest): void {
+  const state = request as unknown as FastRequestState;
+  // A controller that was handed out stays where it is; it is simply never aborted.
+  if (state[TIMEOUT] === ARMED) state[TIMEOUT] = undefined;
+}
+
+// ─── Reading a Node request's body without the web stream ───
+//
+// On core's Node server a request body is a Node stream, which the Request
+// wraps in a web ReadableStream (two of them, in fact). Reading a JSON body
+// through that wrapping costs some thirty promises in Node's stream plumbing.
+// The body parser therefore reads the Node stream itself when it can.
+//
+// The Request must not notice the difference. Afterwards its own stream is
+// still unread, though the bytes under it are gone. So the first time anything
+// asks the request about its body (`bodyUsed`, `body`, `text()`, `clone()`...)
+// that stream is cancelled, which marks it used. From then on the Request
+// answers exactly as it does after a body has been read through it: `bodyUsed`
+// is true, `text()` rejects with the platform's own "body already read" error,
+// `clone()` throws. A request whose body nobody asks about again never pays
+// for the cancel.
+
+/**
+ * Where a server records, on the Web Request it built, the Node stream that
+ * request's body comes from. `Symbol.for` so separately bundled copies agree.
+ */
+const NODE_BODY = Symbol.for("celsian.nodeBody");
+
+/** The part of Node's `IncomingMessage` the body parser reads from. */
+export interface NodeBodyStream {
+  readonly readableEnded: boolean;
+  readonly readableDidRead: boolean;
+  readonly destroyed: boolean;
+  // biome-ignore lint/suspicious/noExplicitAny: the listener type Node's own EventEmitter declares
+  on(event: string, listener: (...args: any[]) => void): unknown;
+  // biome-ignore lint/suspicious/noExplicitAny: the listener type Node's own EventEmitter declares
+  off(event: string, listener: (...args: any[]) => void): unknown;
+  pause(): unknown;
+}
+
+/** Record that `request`'s body is `stream`, so the body parser can read it without the web stream. */
+export function setNodeBody(request: Request, stream: NodeBodyStream): void {
+  (request as unknown as Record<symbol, NodeBodyStream | undefined>)[NODE_BODY] = stream;
+}
+
+/** Stop offering `request`'s Node stream to the body parser (the request was cloned, say). */
+export function clearNodeBody(request: Request): void {
+  (request as unknown as Record<symbol, NodeBodyStream | undefined>)[NODE_BODY] = undefined;
+}
+
+/**
+ * The Node stream to read `request`'s body from, or `undefined` when it must be
+ * read through the request as usual.
+ *
+ * Offered once, and only while nothing else can be reading the same bytes: the
+ * request's own stream is neither locked nor read, and nothing has read from
+ * the Node stream. Whoever takes it must read it to the end or fail.
+ */
+export function takeNodeBody(request: CelsianRequest | Request): NodeBodyStream | undefined {
+  const state = request as unknown as Partial<FastRequestState>;
+  const source = state[SRC];
+  // Only the fast wrapper has a source Request to ask.
+  if (source === undefined || state[BODY_READ_DIRECTLY] !== undefined) return undefined;
+  const stream = (source as unknown as Record<symbol, NodeBodyStream | undefined>)[NODE_BODY];
+  if (stream === undefined || stream.readableDidRead) return undefined;
+  const body = source.body;
+  if (body === null || body.locked || source.bodyUsed) return undefined;
+  state[BODY_READ_DIRECTLY] = true;
+  return stream;
+}
+
+/**
+ * Bring the source Request up to date before it is asked about its body: if
+ * the body was read from the Node stream, mark the Request's own stream used.
+ */
+function settleBody(state: FastRequestState): Request {
+  const source = state[SRC];
+  if (state[BODY_READ_DIRECTLY] === true) {
+    state[BODY_READ_DIRECTLY] = false;
+    // Cancelling is how a stream is marked used without being read. The Node
+    // stream under it has ended, so there is nothing left for it to release.
+    void source.body?.cancel().catch(() => {});
+  }
+  return source;
+}
+
 // Shared prototype for fast request wrappers: body-consuming methods and the
 // live body/bodyUsed accessors delegate to the source Request via `this[SRC]`.
 // Using a prototype avoids per-request `.bind()` (×6) and `Object.defineProperty`
 // (×2) -- ~10× cheaper to construct than per-request property definition.
 const REQUEST_PROTO = {
+  get signal(): AbortSignal {
+    const state = this as unknown as FastRequestState;
+    let signal = state[SIGNAL];
+    if (signal === undefined) {
+      signal = resolveSignal(state);
+      state[SIGNAL] = signal;
+    }
+    return signal;
+  },
+  set signal(value: AbortSignal) {
+    (this as unknown as FastRequestState)[SIGNAL] = value;
+  },
+  // Parsed from the Cookie header the first time they are read. This used to
+  // be a getter defined on every request with Object.defineProperty, which
+  // cost more than building the rest of the wrapper.
+  get cookies(): Record<string, string> {
+    const state = this as unknown as FastRequestState;
+    let cookies = state[COOKIES];
+    if (cookies === undefined) {
+      cookies = parseCookies(state[SRC].headers.get("cookie") ?? "");
+      state[COOKIES] = cookies;
+    }
+    return cookies;
+  },
   get body() {
-    return (this as Record<symbol, Request>)[SRC].body;
+    return settleBody(this as unknown as FastRequestState).body;
   },
   get bodyUsed() {
-    return (this as Record<symbol, Request>)[SRC].bodyUsed;
+    return settleBody(this as unknown as FastRequestState).bodyUsed;
   },
   json() {
-    return (this as Record<symbol, Request>)[SRC].json();
+    return settleBody(this as unknown as FastRequestState).json();
   },
   text() {
-    return (this as Record<symbol, Request>)[SRC].text();
+    return settleBody(this as unknown as FastRequestState).text();
   },
   formData() {
-    return (this as Record<symbol, Request>)[SRC].formData();
+    return settleBody(this as unknown as FastRequestState).formData();
   },
   arrayBuffer() {
-    return (this as Record<symbol, Request>)[SRC].arrayBuffer();
+    return settleBody(this as unknown as FastRequestState).arrayBuffer();
   },
   blob() {
-    return (this as Record<symbol, Request>)[SRC].blob();
+    return settleBody(this as unknown as FastRequestState).blob();
   },
   clone() {
-    return (this as Record<symbol, Request>)[SRC].clone();
+    return settleBody(this as unknown as FastRequestState).clone();
   },
 };
 
@@ -321,10 +666,13 @@ export function buildRequestFast(
   const celsianRequest = Object.create(REQUEST_PROTO) as CelsianRequest;
   const req = celsianRequest as unknown as Record<string | symbol, unknown>;
   req[SRC] = request;
+  req[BODY_READ_DIRECTLY] = undefined;
+  req[SIGNAL] = undefined;
+  req[COOKIES] = undefined;
+  req[TIMEOUT] = undefined;
   req.headers = request.headers;
   req.method = request.method;
   req.url = effectiveUrl;
-  req.signal = request.signal;
   req.params = params;
   req.query = query;
   req.parsedBody = undefined;

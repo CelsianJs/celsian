@@ -1,8 +1,57 @@
 // @celsian/core -- Carry the reply's headers and cookies onto a finished Response
 
-import { peekHeaders } from "./fast-response.js";
+import { getFastPayload, type Outgoing, peekHeaders, toResponse, WireResponse } from "./fast-response.js";
 import { replyCookies } from "./reply.js";
 import type { CelsianReply } from "./types.js";
+
+/** A header name `Headers` accepts, already lower-case. */
+const HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9a-z]+$/;
+/**
+ * A header value `Headers` accepts and stores unchanged: latin-1 text with no
+ * control character but tab, and no whitespace at either end (which `Headers`
+ * would strip).
+ */
+const HEADER_VALUE = /^(?:[\x21-\x7e\x80-\xff](?:[\t\x20-\x7e\x80-\xff]*[\x21-\x7e\x80-\xff])?)?$/;
+
+const NO_COOKIES: readonly string[] = Object.freeze([]);
+
+/** The whitespace `Headers` strips from both ends of a value: tab, LF, CR and space. */
+const ENDS_WHITESPACE = /^[\t\n\r ]+|[\t\n\r ]+$/g;
+
+/**
+ * `record` as a `Headers` object would hold it, for a merged fast response's
+ * wire record: the same object when every name and value is one `Headers`
+ * keeps unchanged, a copy (or `record` itself, when the caller `owns` it) with
+ * the whitespace at both ends of a value removed where that is all `Headers`
+ * would change, and `null` when `Headers` would refuse a name or value, or
+ * change it some other way, so the caller merges through `Headers` instead.
+ *
+ * The Response a handler built has already been through `Headers`, so
+ * `inject()` and every other runtime see `x`, not ` x `; this is the record
+ * core's Node server writes, which must say the same (on ef8953c a merged
+ * response was always rebuilt through `Headers`).
+ */
+function asHeadersHoldIt(record: Record<string, string>, owns: boolean): Record<string, string> | null {
+  let held: Record<string, string> | null = owns ? record : null;
+  for (const name in record) {
+    const value: unknown = record[name];
+    if (typeof value !== "string" || name === "__proto__" || !HEADER_NAME.test(name)) return null;
+    if (HEADER_VALUE.test(value)) continue;
+    const trimmed = value.replace(ENDS_WHITESPACE, "");
+    if (!HEADER_VALUE.test(trimmed)) return null;
+    held ??= { ...record };
+    held[name] = trimmed;
+  }
+  return held ?? record;
+}
+
+/** True when every name in `headers` is already lower-case, so a plain lookup finds what `Headers.get()` would. */
+function hasLowerCaseNames(headers: Record<string, string>): boolean {
+  for (const key in headers) {
+    if (key !== key.toLowerCase()) return false;
+  }
+  return true;
+}
 
 /** Union of two `Vary` values, keeping the first value's spelling and order. */
 function unionVary(current: string, extra: string): string {
@@ -30,7 +79,7 @@ function setCookiesOf(headers: Headers): string[] {
 }
 
 /**
- * Put the headers and cookies set on `reply` onto `response`.
+ * Put the headers and cookies set on `reply` onto the outgoing response.
  *
  * A header the Response does not carry is added. When both carry one, the
  * Response keeps its own value: whoever set the reply header could not see the
@@ -43,8 +92,135 @@ function setCookiesOf(headers: Headers): string[] {
  * `Vary` is a list, so the two sides' tokens are united. Set-Cookie values are
  * appended, each at most once, never overwritten.
  *
- * Returns `response` itself when there is nothing to add, so the common path
- * allocates nothing and keeps the Node adapter's fast-write payload.
+ * Returns `out` itself when there is nothing to add, so the common path
+ * allocates nothing. A fast response (`reply.json()` and friends) that does
+ * gain headers comes back as a {@link WireResponse}: the same Response with
+ * its final headers beside it, which the Node writer still sends in a single
+ * write. Anything else is rebuilt as a new Response, as before.
+ */
+export function mergeReply(out: Outgoing, reply: CelsianReply, shown: Record<string, string> | null): Outgoing {
+  if (out instanceof WireResponse) {
+    return (
+      mergeIntoFast(out, out.source, out.body, out.status, out.headers, out.cookies, reply, shown) ??
+      mergeReplyIntoResponse(toResponse(out), reply, shown)
+    );
+  }
+  const fast = getFastPayload(out);
+  // Once the Response's headers have been handed out they may differ from the
+  // payload's snapshot, so only the Response itself can be trusted.
+  if (fast !== undefined && !fast.headersExposed) {
+    const merged = mergeIntoFast(out, out, fast.body, fast.status, fast.headers, fast.cookies, reply, shown);
+    if (merged !== null) return merged;
+  }
+  return mergeReplyIntoResponse(out, reply, shown);
+}
+
+/**
+ * {@link mergeReply} for a fast response, done on its plain header record
+ * instead of a `Headers` object.
+ *
+ * Returns `null` whenever the plain record cannot be trusted to give the
+ * answer `Headers` would: a name that is not lower-case, a name or value
+ * `Headers` would reject or rewrite. The caller then merges through `Headers`
+ * exactly as it always has, so those cases behave (and fail) as before.
+ */
+function mergeIntoFast(
+  unchanged: Outgoing,
+  source: Response,
+  body: string | Uint8Array | null,
+  status: number,
+  baseHeaders: Record<string, string>,
+  baseCookies: readonly string[],
+  reply: CelsianReply,
+  shown: Record<string, string> | null,
+): Outgoing | null {
+  const replyHeaders = reply.headers;
+  let headers: Record<string, string> | null = null;
+  let checked = false;
+
+  for (const key in replyHeaders) {
+    const value = replyHeaders[key];
+    if (typeof value !== "string") continue;
+    const name = key.toLowerCase();
+    if (name === "set-cookie") continue;
+    if (!checked) {
+      if (!hasLowerCaseNames(baseHeaders)) return null;
+      checked = true;
+    }
+    const current: unknown = (headers ?? baseHeaders)[name];
+    if (current === value) continue;
+    let next: string;
+    if (current === undefined) {
+      next = value;
+    } else {
+      // A name that resolves to something inherited (`constructor`), or a
+      // value `Headers` would have trimmed, compares differently there.
+      if (typeof current !== "string" || !HEADER_VALUE.test(current)) return null;
+      if (name === "vary") {
+        next = unionVary(current, value);
+        if (next === current) continue;
+      } else if (shown !== null && shown[key] === current) {
+        next = value;
+      } else {
+        continue;
+      }
+    }
+    if (name === "__proto__" || !HEADER_NAME.test(name) || !HEADER_VALUE.test(next)) return null;
+    headers ??= { ...baseHeaders };
+    headers[name] = next;
+  }
+
+  let cookies: string[] | null = null;
+  const headerCookie = replyHeaders["set-cookie"];
+  const queued = replyCookies(reply);
+  if (typeof headerCookie === "string" || queued.length > 0) {
+    if (!checked && !hasLowerCaseNames(baseHeaders)) return null;
+    // Every Set-Cookie value the response carries so far. A Response is asked
+    // directly: its payload shares the reply's cookie list, which may have
+    // grown since the Response was built.
+    let present: readonly string[];
+    if (unchanged === source) {
+      present = setCookiesOf(peekHeaders(source));
+    } else {
+      const carried: unknown = (headers ?? baseHeaders)["set-cookie"];
+      if (carried === undefined) present = baseCookies;
+      else if (typeof carried === "string" && HEADER_VALUE.test(carried)) present = [carried, ...baseCookies];
+      else return null;
+    }
+    const pending = typeof headerCookie === "string" ? [headerCookie, ...queued] : queued;
+    for (const cookie of pending) {
+      if ((cookies ?? present).includes(cookie)) continue;
+      if (!HEADER_VALUE.test(cookie)) return null;
+      cookies ??= [...present];
+      cookies.push(cookie);
+    }
+    // `cookies` now lists every Set-Cookie value, so the header record gives up its own.
+    if (cookies !== null && (headers ?? baseHeaders)["set-cookie"] !== undefined) {
+      headers ??= { ...baseHeaders };
+      delete headers["set-cookie"];
+    }
+  }
+
+  if (headers === null && cookies === null) return unchanged;
+  // The record goes on the wire as it is, so it must hold what `Headers`
+  // would: the handler's own values too, which nothing above looked at.
+  const sent = asHeadersHoldIt(headers ?? baseHeaders, headers !== null);
+  if (sent === null) return null;
+  // The cookie list is copied: a payload's list is the reply's own, and a
+  // cookie queued after this point has not been merged yet.
+  return new WireResponse(
+    source,
+    body,
+    status,
+    sent,
+    cookies ?? (baseCookies.length === 0 ? NO_COOKIES : [...baseCookies]),
+  );
+}
+
+/**
+ * {@link mergeReply} through `Headers`, for a Response that carries no fast
+ * payload (one the handler built itself, a stream, a file) or whose headers
+ * have been handed out. Returns `response` itself when there is nothing to add.
  */
 export function mergeReplyIntoResponse(
   response: Response,

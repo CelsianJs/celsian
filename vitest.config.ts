@@ -10,6 +10,7 @@ export default defineConfig({
       "internal/test-real-world/**/*.test.ts",
       "internal/realism-audit/**/*.test.ts",
       "scripts/**/*.test.mjs",
+      "benchmarks/*.test.mjs",
     ],
     globals: true,
     env: {

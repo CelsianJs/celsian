@@ -1,0 +1,106 @@
+{
+  "note": "Ceilings for benchmarks/alloc-gate.mjs (pnpm test:alloc). The per-request counters are exact. minorGCs is the young-generation GC total over 'requests' requests, recorded 10% above the measured value and only compared on the Node major in 'node'. Regenerate with: pnpm build && node benchmarks/alloc-gate.mjs --update",
+  "node": "v22.13.1",
+  "requests": 20000,
+  "scenarios": {
+    "json": {
+      "promises": 3,
+      "timers": 1,
+      "AbortController": 1,
+      "Request": 1,
+      "Response": 1,
+      "Headers": 0,
+      "ReadableStream": 1,
+      "URL": 1,
+      "minorGCs": 432
+    },
+    "jsonAsync": {
+      "promises": 8,
+      "timers": 2,
+      "AbortController": 1,
+      "Request": 1,
+      "Response": 1,
+      "Headers": 0,
+      "ReadableStream": 1,
+      "URL": 1,
+      "minorGCs": 475
+    },
+    "body": {
+      "promises": 16,
+      "timers": 2,
+      "AbortController": 1,
+      "Request": 1,
+      "Response": 1,
+      "Headers": 0,
+      "ReadableStream": 3,
+      "URL": 1,
+      "minorGCs": 720
+    },
+    "bodyAsync": {
+      "promises": 19,
+      "timers": 2,
+      "AbortController": 1,
+      "Request": 1,
+      "Response": 1,
+      "Headers": 0,
+      "ReadableStream": 3,
+      "URL": 1,
+      "minorGCs": 744
+    },
+    "params": {
+      "promises": 3,
+      "timers": 1,
+      "AbortController": 1,
+      "Request": 1,
+      "Response": 1,
+      "Headers": 0,
+      "ReadableStream": 1,
+      "URL": 1,
+      "minorGCs": 444
+    },
+    "notFound": {
+      "promises": 3,
+      "timers": 1,
+      "AbortController": 2,
+      "Request": 1,
+      "Response": 1,
+      "Headers": 0,
+      "ReadableStream": 1,
+      "URL": 2,
+      "minorGCs": 600
+    },
+    "error": {
+      "promises": 3,
+      "timers": 1,
+      "AbortController": 1,
+      "Request": 1,
+      "Response": 1,
+      "Headers": 0,
+      "ReadableStream": 1,
+      "URL": 1,
+      "minorGCs": 479
+    },
+    "headers": {
+      "promises": 3,
+      "timers": 1,
+      "AbortController": 1,
+      "Request": 1,
+      "Response": 1,
+      "Headers": 0,
+      "ReadableStream": 1,
+      "URL": 1,
+      "minorGCs": 531
+    },
+    "validated": {
+      "promises": 16,
+      "timers": 2,
+      "AbortController": 1,
+      "Request": 1,
+      "Response": 1,
+      "Headers": 0,
+      "ReadableStream": 3,
+      "URL": 1,
+      "minorGCs": 830
+    }
+  }
+}
