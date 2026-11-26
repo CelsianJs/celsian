@@ -1,5 +1,17 @@
 # @celsian/adapter-lambda
 
+## 0.6.8
+
+### Patch Changes
+
+- 66e7f99: Compressed responses are no longer corrupted on Lambda. The adapter chose between a text body and a base64 body from `content-type` alone, so a response from `@celsian/compress` (`application/json` with `content-encoding: gzip`) was decoded as UTF-8 text and returned with `isBase64Encoded: false`. The client received a body labelled gzip that would not decompress. Any response with a `content-encoding` header is now returned base64-encoded with `isBase64Encoded: true`, for API Gateway HTTP API, REST API and ALB events.
+- Updated dependencies [f74a9f2]
+- Updated dependencies [8fe3f5d]
+- Updated dependencies [e8e1d79]
+- Updated dependencies [ef8953c]
+- Updated dependencies [d813e46]
+  - @celsian/core@0.6.8
+
 ## 0.6.7
 
 ### Patch Changes

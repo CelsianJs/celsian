@@ -1,5 +1,45 @@
 # @celsian/core
 
+## 0.6.8
+
+### Patch Changes
+
+- f74a9f2: `@celsian/adapter-node`'s `serve({ staticDir })` no longer serves files outside `staticDir` through a symlink. A link inside the directory that pointed out of it (for example `public/avatar.png -> ../.env`) was returned with a 200. Core's `serve()` was fixed for this in 0.6.0; the adapter had its own copy of the static-file code without the fix. It now uses the same confined reader as core, so such a request falls through to the app's routes. Symlinks that stay inside `staticDir` are still served.
+
+  `@celsian/core` now exports that reader, `readConfinedFile`, with its `ConfinedRead` and `SendFileOptions` types.
+
+- 8fe3f5d: A cron job that throws synchronously no longer takes the server down. The scheduler caught a rejected promise from a job but not a plain `throw` from a non-async handler. That throw skipped every other job due in the same minute and escaped the timer as an uncaught exception, which under `serve()` shuts the process down with exit code 1. It is now reported exactly like a rejection (`[celsian] Cron job error:` on `console.error`) and the remaining jobs run.
+- e8e1d79: A thrown error is now written to `console.error` when the app has no logger. `createApp()` without a `logger` option logs nothing, and in production the 500 response is sanitized as well, so an unhandled error left no trace anywhere. Any error answered with a 5xx by the default error handler now prints one line with the method, path and status, followed by the error and its stack:
+
+  ```
+  [celsian] GET /orders/7 failed with 500: Error: connect ECONNREFUSED ...
+  ```
+
+  4xx errors (`HttpError` below 500, validation failures, 404s) are not printed. Apps with a logger are unchanged: the error goes to the logger as `request error`, once. Nothing is printed when your own `setErrorHandler` or `onError` hook returns the response.
+
+- ef8953c: A header added to a response after it was built is now sent by the Node server. Responses from `reply.json()`, `reply.send()`, `reply.html()` and auto-serialized return values were written from a snapshot of their headers taken at creation, so this lost the header on a real server while `app.inject()`, Bun, Deno and Workers all showed it:
+
+  ```ts
+  app.get("/x", (_req, reply) => {
+    const res = reply.json({ ok: true });
+    res.headers.set("x-late", "1"); // present in inject(), missing from serve()
+    return res;
+  });
+  ```
+
+  The same applied to code that wraps `app.handle()` to add headers, and to headers replaced, deleted or appended (`set-cookie`) afterwards. The Node writer now uses the response's own headers whenever they have been read since it was built. Responses nobody touched are written exactly as before, with no added per-request work. This also applies to `@celsian/adapter-node`, which uses the same writer.
+
+- d813e46: RPC no longer returns raw error messages for errors that happen to carry a `statusCode`. `RPCHandler` trusted `statusCode` on anything thrown, so a database or HTTP-client error with `statusCode: 400` was answered as a 400 and skipped production sanitization: its full message, connection string included, went to the client. A value outside the valid range (`statusCode: 99`) made `handle()` reject instead of answering, as did throwing `undefined` or `null`.
+
+  RPC now applies the rule `@celsian/core` already uses: only `HttpError` and `ValidationError` choose the status, code and message. Anything else is a 500, logged in full and sent as `Internal error` in production.
+
+  **If you throw plain errors with a `statusCode` from RPC procedures or middleware** (`Object.assign(new Error('nope'), { statusCode: 403 })`), they now produce a 500. Throw `new HttpError(403, 'nope')` from `@celsian/core` instead.
+
+  `@celsian/core` marks `HttpError` and `ValidationError` with a registered symbol so `@celsian/rpc`, which does not depend on core, can recognise them, including across duplicate installs. The `HttpError` of earlier core versions is still recognised.
+
+- Updated dependencies [6abc1b5]
+  - @celsian/schema@0.6.8
+
 ## 0.6.7
 
 ### Patch Changes
